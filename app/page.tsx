@@ -67,7 +67,15 @@ export default function ScoreFollowPage() {
       const a = analyzePage(canvas, n, opt.seln);
       wijzerRef.current.reset(a);
       setAnalysis(a);
-      setCursor(null);
+      // 蓝 shade: 分析完即停在第一小节(免 TAP 先行), 跟随后由 tick 接管
+      const m0 = wijzerRef.current.measures[0];
+      if (m0) {
+        setCursor({ x: m0.x, y: m0.y, w: Math.max(2, m0.w * 0.06), h: m0.h });
+        setCursorInfo("m1");
+      } else {
+        setCursor(null);
+        setCursorInfo("");
+      }
       setStatus(
         `page ${n}: ${a.systems.length} systems, ` +
           `${a.bars.reduce((s, b) => s + Math.max(0, b.length - 1), 0)} measures, ` +
@@ -363,7 +371,7 @@ export default function ScoreFollowPage() {
           <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} viewBox={`0 0 ${analysis.pageW} ${analysis.pageH}`}>
             {analysis.systems.map((s, i) => (
               <rect key={`sys${i}`} x={s.xs.x1} y={s.cs[0]} width={s.xs.x2 - s.xs.x1} height={s.cs[s.cs.length - 1] - s.cs[0]}
-                fill="none" stroke="rgba(0,180,0,0.55)" strokeWidth={2} />
+                fill="rgba(0,200,0,0.10)" stroke="rgba(0,180,0,0.55)" strokeWidth={2} />
             ))}
             {(analysis.bars.flatMap((b, si) => {
               const s = analysis.systems[si];
