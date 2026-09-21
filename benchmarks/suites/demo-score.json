@@ -1,0 +1,11 @@
+{
+  "pdf": "demo-score.pdf",
+  "page": 1,
+  "renderWidth": 1000,
+  "systems": [
+    { "x1": 0, "y1": 0, "x2": 1000, "y2": 400 }
+  ],
+  "bars": [],
+  "measureCount": 0,
+  "_note": "占位标注: demo 谱合成页, 仅用于流程打通; 真实阈值标注待补"
+}

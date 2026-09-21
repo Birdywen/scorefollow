@@ -36,10 +36,20 @@ export const legacyOpt: SynpdfOpt = {
   playbtn: 0, mmin: "", fixwd: 1000, lastSynced: -2, eerst: 0, sysprf: 0, onestf: 0,
 };
 
+/** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
+export const ALGO_VERSION = 2;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
 export let spatium = 0;
+/** 最近一次 findBarLines 的逐候选诊断(供 core 组装 confidence/覆盖层) */
+export interface BarDiagnostic {
+  system: number; x: number; strength: number; rel: number;
+  kept: boolean; reason: string;
+}
+export const lastBarDiagnostics: BarDiagnostic[] = [];
+/** 最近一次每系统的置信度(0..1), 与 cxs 等长 */
+export const lastSystemConfidence: number[] = [];
 /** 注释字号(原版 annot_fontpx, drawRes 内按谱距推导) */
 export let annotFontPx = 32;
 /** 跳过前 N 个系统(countVsys 后切除, 原版 opt.skipn 語義) */
@@ -79,4 +89,54 @@ function countVsys(a: any, b: any, c: any): any { var d: any, e: any, f: any, g:
   g.push({ cs: a[a.length - 1], xs: l[a.length - 1] });
   return g }
 
-function findBarLines(a: any, b: any, c: any): any { var d: any, e: any, f: any, g: any, k = legacyOpt.mtdrmpl, l = legacyOpt.voorna, p = 1 * legacyOpt.dx, n = 2 * spatium, h: any[] = []; for (d = 0; d < a.length; ++d) { var m = 3 * witArr[d]; var u = a[d].xs; var q = u.x1 + 50; var v = u.x2 - 20; q >= v && (q = u.x1, v = u.x2); var r = a[d].cs; var w = r[0]; var t = r[r.length - 1]; var C = (w - n) * b; var z = w * b; var A = t * b; var D = (t + n) * b; r = []; var y: any = []; for (f = 0; f < b; f += 4) { var B = e = 0; for (g = C + f; g < z + f; g += b) { var x = c[g] + c[g + 1] + c[g + 2]; e += x } for (g = z + f; g < A + f; g += b) { x = c[g] + c[g + 1] + c[g + 2]; var E = c[g + 4] + c[g + 5] + c[g + 6]; B += Math.min(x, E) < m ? 1 : 0; e += x } for (g = A + f; g < D + f; g += b)x = c[g] + c[g + 1] + c[g + 2], e += x; r.push(e / (3 * (t - w + 2 * n))); y.push(B) } f = y.slice(q, v); f.sort(function (a: any, b: any) { return b - a }); m = f[0]; t = w = 0; for (f = q; f < v; f++)q = y[f], q > m * k && (r[f - p] > w && (w = r[f - p]), r[f + p] > t && (t = r[f + p])); e = [u.x1]; v = e[0]; for (f = 5; f < r.length - 5; f++)q = y[f], q > m * k && r[f - p] > w * l && r[f + p] > t * l && f - v > 3 * spatium && (e.push(f), v = f); u.x2 - v > 3 * spatium && e.push(u.x2); h.push(e) } return h }
+/** 纯函数: 非极大抑制, 半径按 spatium 比例, 强双线对予以保留 */
+export function nmsBarPeaks(
+  peaks: { x: number; rel: number }[],
+  spatiumPx: number,
+): { x: number; rel: number }[] {
+  const sp = Math.max(1, spatiumPx || 8);
+  const radius = Math.max(2, Math.round(sp * 0.6));
+  const dblGap = sp * 0.7;
+  const byStrength = peaks.slice().sort((p1, p2) => p2.rel - p1.rel);
+  const kept: { x: number; rel: number }[] = [];
+  for (const p of byStrength) {
+    let suppressed = false;
+    for (const k of kept) {
+      const dist = Math.abs(p.x - k.x);
+      if (dist < radius) {
+        // 双线/终止线: 两者都很强且间距达到 0.7 spatium 则同时保留
+        const bothStrong = p.rel >= 0.85 && k.rel >= 0.85;
+        if (!(bothStrong && dist >= dblGap)) { suppressed = true; break; }
+      }
+    }
+    if (!suppressed) kept.push(p);
+  }
+  return kept.sort((p1, p2) => p1.x - p2.x);
+}
+
+/** 纯函数: 系统置信度(内部候选中位强度 0.5 + 间距规则度 0.3 + 数量合理性 0.2) */
+export function scoreSystemConfidence(
+  keptInternal: { x: number; rel: number }[],
+  spatiumPx: number,
+): number {
+  if (!keptInternal.length) return 0.35;
+  const sp = Math.max(1, spatiumPx || 8);
+  const rels = keptInternal.map((p) => p.rel).sort((x, y) => x - y);
+  const median = rels[Math.floor(rels.length / 2)] ?? 0;
+  const strengthScore = Math.max(0, Math.min(1, median));
+  let regularity = 1;
+  if (keptInternal.length >= 2) {
+    const gaps: number[] = [];
+    for (let i = 1; i < keptInternal.length; i++) gaps.push(keptInternal[i].x - keptInternal[i - 1].x);
+    const mean = gaps.reduce((s, v) => s + v, 0) / gaps.length;
+    const variance = gaps.reduce((s, v) => s + (v - mean) * (v - mean), 0) / gaps.length;
+    const cv = mean > 0 ? Math.sqrt(variance) / mean : 1;
+    regularity = Math.max(0, Math.min(1, 1 - cv));
+    // 过密/过疏直接降权(符干误检或漏检的典型症状)
+    if (mean < 2 * sp || mean > 40 * sp) regularity *= 0.5;
+  }
+  const countScore = keptInternal.length >= 1 && keptInternal.length <= 32 ? 1 : 0.5;
+  return Math.round((0.5 * strengthScore + 0.3 * regularity + 0.2 * countScore) * 100) / 100;
+}
+
+function findBarLines(a: any, b: any, c: any): any { var d: any, e: any, f: any, g: any, k = legacyOpt.mtdrmpl, l = legacyOpt.voorna, p = 1 * legacyOpt.dx, n = 2 * spatium, h: any[] = []; lastBarDiagnostics.length = 0; lastSystemConfidence.length = 0; for (d = 0; d < a.length; ++d) { var m = 3 * witArr[d]; var u = a[d].xs; var q = u.x1 + 50; var v = u.x2 - 20; q >= v && (q = u.x1, v = u.x2); var r = a[d].cs; var w = r[0]; var t = r[r.length - 1]; var C = (w - n) * b; var z = w * b; var A = t * b; var D = (t + n) * b; r = []; var y: any = []; for (f = 0; f < b; f += 4) { var B = e = 0; for (g = C + f; g < z + f; g += b) { var x = c[g] + c[g + 1] + c[g + 2]; e += x } for (g = z + f; g < A + f; g += b) { x = c[g] + c[g + 1] + c[g + 2]; var E = c[g + 4] + c[g + 5] + c[g + 6]; B += Math.min(x, E) < m ? 1 : 0; e += x } for (g = A + f; g < D + f; g += b)x = c[g] + c[g + 1] + c[g + 2], e += x; r.push(e / (3 * (t - w + 2 * n))); y.push(B) } f = y.slice(q, v); f.sort(function (a: any, b: any) { return b - a }); m = f[0]; t = w = 0; for (f = q; f < v; f++)q = y[f], q > m * k && (r[f - p] > w && (w = r[f - p]), r[f + p] > t && (t = r[f + p])); var cands: { x: number; rel: number }[] = []; for (f = 5; f < r.length - 5; f++) { var yy = y[f]; if (!(yy > m * k)) continue; if (!(r[f - p] > w * l && r[f + p] > t * l)) continue; cands.push({ x: f, rel: m > 0 ? yy / m : 0 }); } var keptNms = nmsBarPeaks(cands, spatium); var minGap = 3 * spatium; var dblGap = Math.max(2, spatium * 0.7); var kept: number[] = []; var keptRel: { x: number; rel: number }[] = []; for (const cand of keptNms) { if (!kept.length) { kept.push(cand.x); keptRel.push(cand); continue; } var prevX = kept[kept.length - 1]; var prevRel = keptRel[keptRel.length - 1].rel; var gap = cand.x - prevX; var strongPair = cand.rel >= 0.85 && prevRel >= 0.85; var need = strongPair ? dblGap : minGap; if (gap >= need) { kept.push(cand.x); keptRel.push(cand); } else if (cand.rel > prevRel + 0.05) { kept[kept.length - 1] = cand.x; keptRel[keptRel.length - 1] = cand; } } for (const cd of cands) { var isKept = kept.indexOf(cd.x) >= 0; lastBarDiagnostics.push({ system: d, x: cd.x, strength: cd.rel, rel: Math.round(cd.rel * 100) / 100, kept: isKept, reason: isKept ? "kept" : "suppressed-by-nms-or-gap" }); } var conf = scoreSystemConfidence(keptRel, spatium); lastSystemConfidence.push(conf); e = [u.x1]; v = e[0]; for (const kx of kept) { if (kx > u.x1 + 2 && kx < u.x2 - 2) { e.push(kx); v = kx; } } if (u.x2 - v > 3 * spatium || e.length === 1) e.push(u.x2); h.push(e) } return h }

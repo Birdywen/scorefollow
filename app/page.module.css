@@ -1,4 +1,28 @@
-.page {
+ .page {
+  min-height: 100vh; padding: 20px; color: #dfe7f3; background: #101418;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.header { max-width: 1440px; margin: 0 auto 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.header h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
+.header p { margin: 3px 0 0; color: #8190a6; font-size: 12px; }
+.badge, .pill { background: #1b202b; border: 1px solid #2c3342; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #9fb0c8; }
+.toolbar, .subtoolbar { max-width: 1440px; margin: 0 auto 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.subtoolbar { padding-bottom: 4px; }
+.advpanel { max-width: 1440px; background: #161b26; border: 1px solid #2c3342; border-radius: 8px; padding: 12px; margin: 8px auto; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-start; font-size: 12px; color: #9fb0c8; }
+.advpanel label { display: inline-flex; gap: 6px; align-items: center; }
+.advpanel input[type=number] { width: 64px; background: #1b202b; color: #dfe7f3; border: 1px solid #2c3342; border-radius: 5px; padding: 4px 6px; }
+.advpanel fieldset { border: 1px solid #2c3342; border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.advpanel legend { padding: 0 6px; color: #7fe0a8; font-size: 11px; }
+.correctbar { max-width: 1440px; margin: 0 auto 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: #1a2440; border: 1px solid #3a5aa8; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #c9d8f5; }
+.notation { position: relative; display: block; width: min(100%, 1000px); margin: 16px auto 0; background: #fff; overflow: auto; box-shadow: 0 8px 30px rgba(0,0,0,.28); }
+.notation canvas { display: block; width: 100%; height: auto; }
+.footer { max-width: 1440px; margin: 10px auto 0; font-size: 12px; color: #8190a6; }
+:global(button) { background: #1b202b; color: #dfe7f3; border: 1px solid #2c3342; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+:global(button:hover) { background: #263143; }
+@media (max-width: 640px) { .page { padding: 12px; } .header { align-items: flex-start; } .badge { display: none; } .toolbar, .subtoolbar { gap: 6px; } .pill { max-width: 100%; } }
+
+/* Retain the generated app's old declarations below for compatibility with imported markup. */
+.legacy-page {
   --background: #fafafa;
   --foreground: #fff;
 

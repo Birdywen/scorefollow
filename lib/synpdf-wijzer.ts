@@ -16,12 +16,17 @@ const TOFF = 0.01;
 /** PageAnalysis → 小节矩形(等价原版 knip → deMaten) */
 export function buildMeasures(a: PageAnalysis): MeasureRect[] {
   const out: MeasureRect[] = [];
-  for (const s of a.systems) {
+  for (let si = 0; si < a.systems.length; si++) {
+    const s = a.systems[si];
     const y = s.cs[0];
     const h = s.cs[s.cs.length - 1] - y;
-    const bars = (a.bars[a.systems.indexOf(s)] ?? []) as number[];
+    const bars = (a.bars[si] ?? []) as number[];
     for (let i = 0; i + 1 < bars.length; i++) {
-      out.push({ x: bars[i], y, w: bars[i + 1] - bars[i], h });
+      const x1 = bars[i];
+      const x2 = bars[i + 1];
+      if (Number.isFinite(x1) && Number.isFinite(x2) && x2 > x1) {
+        out.push({ x: x1, y, w: x2 - x1, h });
+      }
     }
   }
   return out;
@@ -39,6 +44,18 @@ export class Wijzer {
     this.measures = buildMeasures(a);
     this.times = [];
     this.cursor = null;
+  }
+
+  /** 重分析后保留仍合法的同步点, 越界部分截断(调用方可据返回值提示) */
+  retainTimes(times: TimeEntry[]): { kept: number; dropped: number } {
+    const clean = times.filter(
+      (e) => Number.isFinite(e.t) && Number.isFinite(e.mix) && e.mix >= 0,
+    ).map((e) => ({ t: 1 * e.t, mix: Math.floor(1 * e.mix) }));
+    let kept = 0;
+    for (const e of clean) {
+      if (e.mix < this.measures.length) { this.times.push(e); kept++; }
+    }
+    return { kept, dropped: clean.length - kept };
   }
 
   /**
@@ -77,7 +94,7 @@ export class Wijzer {
   x2time(x: number, y: number): { t: number; measure: number } | null {
     for (let d = 0; d < this.measures.length; d++) {
       const e = this.measures[d];
-      if (y > e.y + e.h || x > e.x + e.w) continue;
+      if (y > e.y + e.h || y < e.y || x > e.x + e.w) continue;
       if (x < e.x) return null;
       for (let b = 0; b < this.times.length; b++) {
         if (d === this.times[b].mix) {

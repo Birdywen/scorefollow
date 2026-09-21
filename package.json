@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "regression": "node scripts/regression.mjs",
+    "verify": "npx tsc --noEmit && npm run regression && npm run build"
   },
   "dependencies": {
     "next": "16.3.5",
