@@ -41,8 +41,12 @@ export class Wijzer {
     this.cursor = null;
   }
 
-  /** 时间→光标(等价原版 time2x, 含小节内插值) */
-  time2x(t: number): CursorRect | null {
+  /**
+   * 时间→光标(等价原版 time2x)。
+   * lineCursor=false (默认): 蓝 shade 覆盖整小节 (原版 demaat d=c.w)。
+   * lineCursor=true: 细线 + 小节内插值 (原版 opt.lncsr, d=6)。
+   */
+  time2x(t: number, lineCursor = false): CursorRect | null {
     const T = this.times;
     if (!T.length || !this.measures.length) return null;
     let ix = -1;
@@ -53,19 +57,19 @@ export class Wijzer {
     const cur = T[ix];
     const m = this.measures[cur.mix];
     if (!m) return null;
-    let frac = 0;
-    const nxt = T[ix + 1];
-    if (nxt && nxt.t > cur.t && nxt.mix === cur.mix) {
-      frac = (t - cur.t) / (nxt.t - cur.t);
-      frac = Math.max(0, Math.min(1, frac));
+    let x = m.x;
+    let w = m.w;
+    if (lineCursor) {
+      let frac = 0;
+      const nxt = T[ix + 1];
+      if (nxt && nxt.t > cur.t && nxt.mix === cur.mix) {
+        frac = (t - cur.t) / (nxt.t - cur.t);
+        frac = Math.max(0, Math.min(1, frac));
+      }
+      x = m.x + m.w * frac;
+      w = Math.max(2, m.w * 0.06);
     }
-    this.cursor = {
-      x: m.x + m.w * frac,
-      y: m.y,
-      w: Math.max(2, m.w * 0.06),
-      h: m.h,
-      measure: cur.mix,
-    };
+    this.cursor = { x, y: m.y, w, h: m.h, measure: cur.mix };
     return this.cursor;
   }
 

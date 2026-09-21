@@ -67,10 +67,12 @@ export default function ScoreFollowPage() {
       const a = analyzePage(canvas, n, opt.seln);
       wijzerRef.current.reset(a);
       setAnalysis(a);
-      // 蓝 shade: 分析完即停在第一小节(免 TAP 先行), 跟随后由 tick 接管
+      // 蓝 shade: 分析完即覆盖第一小节(免 TAP 先行), 跟随后由 tick 接管
       const m0 = wijzerRef.current.measures[0];
       if (m0) {
-        setCursor({ x: m0.x, y: m0.y, w: Math.max(2, m0.w * 0.06), h: m0.h });
+        setCursor(opt.lncsr === 1
+          ? { x: m0.x, y: m0.y, w: Math.max(2, m0.w * 0.06), h: m0.h }
+          : { x: m0.x, y: m0.y, w: m0.w, h: m0.h });
         setCursorInfo("m1");
       } else {
         setCursor(null);
@@ -132,7 +134,7 @@ export default function ScoreFollowPage() {
         else clockRef.current = { t0: performance.now(), base: t, running: true };
       }
     }
-    const c = w.time2x(t);
+    const c = w.time2x(t, opt.lncsr === 1);
     if (c) {
       setCursor({ x: c.x, y: c.y, w: c.w, h: c.h });
       setCursorInfo(`m${c.measure + 1} t=${t.toFixed(2)}s`);
@@ -333,6 +335,7 @@ export default function ScoreFollowPage() {
         <label className="pill"><input type="checkbox" checked={showOverlay} onChange={(e) => setShowOverlay(e.target.checked)} /> analysis overlay</label>
         <label className="pill"><input type="checkbox" checked={advOpen} onChange={(e) => setAdvOpen(e.target.checked)} /> advanced</label>
         <label className="pill"><input type="checkbox" checked={synbox} onChange={(e) => setSynbox(e.target.checked)} /> enable sync</label>
+        <label className="pill"><input type="checkbox" checked={opt.lncsr === 1} onChange={(e) => applyAdv("lncsr", e.target.checked ? 1 : 0)} /> line cursor</label>
         <button onClick={saveTiming}>save timing</button>
         <label className="pill">load timing <input type="file" accept=".json" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTiming(f); }} /></label>
         <span style={{ fontSize: 12, color: "#9fb0c8" }}>{status}</span>
