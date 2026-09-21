@@ -1,0 +1,550 @@
+<!DOCTYPE HTML>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { max-width: 900px; width: 99%; margin-right: 0.5%; margin-left: 0.5%; }
+.tab { border: thin black solid; margin-top:0.5em; margin-bottom:0.5em;
+       width: 97%; table-layout: fixed; border-collapse: collapse; }
+.indent { margin-left: 3%; }
+td:first-child { width: 17%; word-break: break-word; }
+td:last-child { width: 83%; }
+.tab td { padding:0.2em; vertical-align: top; }
+.tab tr:nth-child(even) { background-color: #eee; }
+.dashed { border-top: dashed black 2px; }
+li { margin-bottom: 5px; }
+pre { overflow-x: auto; }
+img { display: block; max-width: 90%; margin: auto; }
+</style>
+</head><body>
+
+<h3>Synpdf</h3>
+You can either start <em>synpdf</em> from
+<a href="http://wim.vree.org/js2/synpdf.html">http://wim.vree.org/js2/synpdf.html</a> or from a local copy of this
+file on your computer.<br>
+<em>Synpdf</em> also supports loading and saving on dropbox, but only when you start from the website.
+A local copy will not work with dropbox and only load/save files locally.
+How to use <em>synpdf</em> on a computer without internet connection is explained at
+<a href="#nonet">the end</a> of this page.
+
+<h3><a name="load"></a>Opening score and media files</h3>
+With the <em>score file</em> button you can open a PDF file from the local computer (PC).
+When the &quot;<em>use dropbox</em>&quot; option is checked the <em>score file</em> button opens a Dropbox Chooser. This allows you
+to load score files directly from your dropbox.
+The same holds for the <em>media file</em> button. Normally local files are opened, but with dropbox enabled you can load
+the media from your dropbox. For video files there is a third possibility: &quot;<em>use youtube</em>&quot;. With this option checked the
+<em>media file</em> button changes into a text field where you can enter the youtube-id of the video you want to display.
+With both &quot;<em>use dropbox</em>&quot; and &quot;<em>use youtube</em>&quot; checked, you can load the score file from dropbox and
+the video from youtube.<br>
+When you have opened (and possibly synchronized) a score file and a media file you can save the result into a
+<a href="#preload">preload file</a>. This preload file will be saved locally or, when &quot;<em>use dropbox</em>&quot; is checked in your
+dropbox. Such a preload file can be opened with the <em>score file</em> button or by specifying it in the URL as explained in the section
+on <a href="#preload">saving and using a preload file</a>. Opening a preload file loads score an media and all settings as the were at
+the time of saving.
+
+<h3><a name="speed"></a>Speed</h3>
+<a href="#speedctl">Speed control</a> can be enabled in the menu. With the input field appearing to the right of the media player you
+can change the play back speed. The available speed values are determined by the media player.
+Normal speed is 1.0. The speed factor can range between 0.5 and 2.0. (the Youtube player only allows a few speed
+values). <a href="#sync">Synchronization</a> works at all speeds and can be done more precisely with lower speed settings.
+
+<h3><a name="loop"></a>Looping</h3>
+When <a href="#loopmode">loop mode</a> is enabled in the menu, a <em>long</em> click/tap
+(or <em>shift</em> click) in a measure,
+moves or defines the edges of a looping range. The first two long/shift clicks in the score set the
+left and right edge of the looping
+range. Each edge is marked with a bold red character:
+&apos;<b>&lt;</b>&apos; for the left side and &apos;<b>&gt;</b>&apos; for the right side.
+When <em>long/shift</em> clicking again in
+a staff the loop marker closest to the click location is repositioned. (closest in time)<br>
+When both range markers are placed, play back will continuously loop between these points.
+The loop range can still
+be adjusted by <em>long/shift</em> clicking in the staff near one of the markers (also when playing).
+The loop mode is switched off by unchecking the loop mode in the menu. Both range markers will be
+retained and when you check
+the loop box again they will reappear (en be active immediately). Loop markers are saved in the
+<a href="#preload">preload file</a>
+and the preload will start play back at the first loop marker.
+
+<h3><a name="annot"></a>Annotations</h3>
+Annotations can be added or edited in the score when <a href="#antmode">annotation mode</a> is
+enabled in the menu.
+Annotations can be added anywhere in the score area. A <em>long</em> click/tap (or <em>shift</em> click )
+adds a default annotation.
+Clicking (tapping) in an (existing) annotation pops up an edit dialog where arbitrary (html formatted)
+text can be entered.
+Annotations can be dragged to a new position anywhere on the score page.
+An annotation is removed by <em>long/shift</em> clicking on it. Annotations are always saved in the
+<a href="#preload">preload file</a>.
+In principle all html tags are allowed in an annotation. No checks are made.
+Not all tags may work, but many do (e.g. img, svg).
+<!-- Menu -->
+
+<h3><a name="menu"></a>Menu</h3>
+Several settings can be changed with checkboxes via the menu. When you make a <a href="#preload">preload file</a>, all
+settings are saved, except the &quot;<em>enable sync</em>&quot; setting.
+<table class="indent tab">
+<a name="synbx"></a>
+<tr><td><em>enable sync</em></td>
+    <td>Turns on <a href="#sync">synchronization</a> mode. A <a href="#synpn">special panel</a> appears in the top right corner.
+    This panel also contains the <a href="#save"><em>save button</em></a></td></tr>
+<tr><td><em>advanced</em></td>
+    <td>also shows menu items that allow changing more complicated parameters (see below)</td></tr>
+<tr class="dashed"><td><em>full screen</em></td>
+    <td>Switches the browser to full screen display (if supported)</td></tr>
+<tr><td><em>file buttons</em></td>
+    <td>Shows the buttons to load score and media. Also shows the &quot;<em>use dropbox</em>&quot; checkbox</td></tr>
+<tr><td><a name="save"></a><em>save</em></td>
+    <td>Saves score, settings and synchronization data to a file, called the
+    <a href="#preload">preload file</a>.
+    </td></tr>
+<tr><td><a name="lncsr"></a><em>line cursor</em></td>
+    <td>Displays a line cursor in the score as an alternative to the <em>measure shading</em>.</td></tr>
+<tr><td><a name="speedctl"></a><em>speed ctrl</em></td>
+    <td>Shows the <a href="#speed">speed</a> input field, next to the media.</td></tr>
+<tr><td><a name="loopmode"></a><em>loop mode</em></td>
+    <td>Enables <a href="#loop">loop mode</a>. A long click/tap (or shift click) in a measure
+    sets/moves the edges of a looping range</td></tr>
+<tr><td><a name="antmode"></a><em>annotate</em></td>
+    <td>Enables <a href="#annot">annotation mode</a>. A long click (or shift click) in the
+    score adds/deletes an annotation in the score.</td></tr>
+<tr><td><em>hide player</em></td>
+    <td>Hides the media player and resizes the height of the button area to zero.</td></tr>
+<tr><td><em>hide dashes</em></td>
+    <td>Hides the dashed horizontal line to which the top of the currently playing staff is aligned</td></tr>
+<tr><td><em>count-in</em></td>
+    <td>Displays a count down timer before starting playback. Only works when starting playback with
+    the space bar or a click in the margin (does not work when starting the html-player directly).
+    The initial value of the count down timer is determined by (URL) option "cnt=n". The default is 4 beats.
+    </td></tr>
+</table>
+<!-- Synchronization -->
+
+<h3><a name="sync"></a>Synchronization</h3>
+To synchronize a live performance to the score you have to mark the
+<a href="#synbx"><em>enable sync</em></a> checkbox. A special area
+becomes visible which shows some information related to synchronization:
+<a name="synpn"></a>
+<table class="indent tab">
+<tr><td><a name="mdur"></a><em>duration measure</em></td>
+    <td>The time in seconds that the measure stays shaded (or the time that it takes for the line cursor
+    to traverse the measure).
+    </td></tr>
+<tr><td><a name="offset"></a><em>media offset</em></td>
+    <td>The time in seconds from the beginning of the media file to the first note of the score.
+    Some media files start (far) before the point where the score starts. The offset is the media
+    playback time at the point where the score starts.
+    </td></tr>
+<tr><td><a name="clear"></a><em>Backspace</em></td>
+    <td>Does a "backspace" of one measure. It erases the current synchronization point and backs up
+    to (the beginning of) the previous measure. It also erases the timing data after the current measure.
+    Playback will resume at the start of the previous measure (now shaded).
+    </td></tr>
+</table>
+Synchronization starts at the currently selected measure.
+When you check <em>enable sync</em> with a new score the measure shading disappears and the audio/video
+is positioned at the beginning (rewound).
+Before starting playback you can now adjust the
+audio/video position with the media controls. It will not change the (disappeared)
+cursor. The media should start a little bit before the first note of the measure the cursor was on.
+<div style="margin-left: 30px; margin-bottom: 5px; margin-top: 5px;">- <i>click while playing (or just type a &apos;B&apos;)</i></div>
+Now there are two situations:
+<ol>
+<li>The media starts (some time) <em>before</em> the first note of the selected measure.</li>
+<li>The media starts (precisely) <em>at the time</em> of the first note of the selected measure.</li>
+</ol>
+In the first case you switch on playback (spacebar!) and wait until you hear the first note of the measure.
+Precisely at that time you hit the B-key. Now the shaded cursor appears at the selected measure
+and waits for you to hit B again to mark the begin of the next measure.
+<br>
+In the second case you do not switch on playback, but just press B. This switches on playback and
+puts the shaded cursor on the selected measure.
+Wait until you hear the first note of the next measure and
+tap again (press B again). The cursor will move to the next measure.
+<br>
+Each time you press B or tap in the
+score the cursor moves to the next measure. When you arive at the end of the score and the last note
+has been played, tap once
+again (press B) to terminate the synchronization. This final tap (B) is essential as it records the end of
+play back time and removes the shading from the last measure.
+
+<div style="margin-left: 30px; margin-bottom: 5px; margin-top: 5px;">- <i>saving</i></div>
+When all measures are synchronized you can save the results (w or <a href="#save">save button</a>) to a
+preload file. The preload file
+can have any name, but should end with &quot;.js&quot; as it is a regular javascript file.
+
+<div style="margin-left: 30px; margin-bottom: 5px; margin-top: 5px;">- <i>errors</i></div>
+When you make an error you can press the <em>Backspace</em> button (in the sync menu) or press the
+<em>Backspace</em> key. This erases the last synchronization point and backs up
+to the previous measure. Playback jumps to the begin of that measure. The cursor waits again for you to tap
+(or press B).<br>
+You can press the Backspace button (or Backspace key) without pausing play back. Because play back jumps
+back one measure, you have plenty of time to catch up with the rhythm until you have to press B again
+at the end of the measure.<br>
+However, you may prefer to
+stop play back when you made an error (tap in margin or press Spacebar).
+You can then press the <em>Backspace</em> button (or press the <em>Backspace</em> key) once or multiple times.
+Each time it goes back one measure.
+Then you have to restart playback (Spacebar, or tap in left margin), which will start at the beginning
+of the currently shaded measure.
+The cursor will wait for your tap (or B) at the end of that measure and you can continue
+the synchronization.<br>
+
+<div style="margin-left: 30px; margin-bottom: 5px; margin-top: 5px;">- <i>re-syncing with the B-key</i></div>
+You can also re-synchronize a fragment of the score using the B-key.
+Stay in sync mode (enable sync checked), go back to the measure where you want to start
+re-synchronizing (with the arrow keys), switch on playback (space bar). Now the cursor starts moving
+normally just like during play back, but, your strokes on the B-key will be noticed and used to redefine
+the <em>nearest</em> time point (bar line).
+You do not have to
+tap the B-key at every measure, just (near to) those where you want to correct the timing. You can
+best see the effect of your B-key stokes when the line cursor mode is enabled, because you will
+see the line cursor jump immediately (forwards or backwards) to the nearest bar line.
+
+<div style="margin-left: 30px; margin-bottom: 5px; margin-top: 5px;">
+    <a name="repeats"></a>- <i>synchronizing repeats</i>
+</div>
+<em>Synpdf</em> is not smart enough to recognize repeat bars. Thus,
+before you start synchronizing, you have to mark all repeats. A repeat mark is set by <em>long</em>-clicking
+on a measure (or <em>shift</em>-clicking).
+First mark the end of a repeat (where the jump is made), then the begin (where the jump goes to).
+<br>
+At the first long/shift click you see a blue text &quot;<span style="color: blue">Jump_1</span>&quot;
+appear above the
+measure. At the second long/shift click a red text &quot;<span style="color: red">Repeat_1</span>&quot;
+is written. Every repeat section requires 2 long clicks.
+<img src="readme_1.svg">
+The figure above shows a score after the two repeat bars have been marked with two long/shift
+clicks. It may be
+counter intuitive that you have to mark the end bar of the repeat section first and then the
+start of the repeat section, but it is
+logical in terms of jumping: first from, then to. For instance, when we add an alternative ending:
+<img src="readme_2.svg">
+In the figure above four long/shift clicks have been made for 2 repeat actions. The first is a
+normal repeat (jump backwards), while the second is a jump skipping an alternative ending.<br>
+After thus marking all repeats you can start synchronizing, using the B-key. The repeat jumps will be made
+automatically when you press B at (the end of) a measure with a
+&quot;<span style="color: blue">Jump_x</span>&quot; mark.
+<br>
+When you make an error while marking the repeats you can use key-G to erase the last pair of markings.
+Repeatedly pressing G erases all pairs until none are left.<br>
+You can enter multiple repeat marks in one measure. They will be stacked. This is needed when a section is
+repeated twice or more, for instance.
+
+<div style="margin-left: 30px; margin-bottom: 5px; margin-top: 5px;">- <i>using keys while paused</i></div>
+Once you have synchronized the score, you can always edit the synchronization accurately with
+the keyboard. The relevant timing data is displayed in the
+sync area at the top right corner of the page.
+<ol>
+<li>Adjusting one measure.<br>
+Stop play back (Spacebar).<br>Select a measure (with the arrow keys) where you find that the ending time deviates too much from the
+actual music. Use the keys <b>.</b> or <b>,</b> to increase or decrease the
+<a href="#mdur"><em>measure duration</em></a>. When the cursor jumps too
+late you have to decrease the duration.</li>
+<li>Adjusting the offset.<br>
+Stop play back (Spacebar). Switch to line cursor mode (key-L)<br>
+Go back (key Left Arrow) to the first measure and look at the <a href="#offset">offset time</a>.
+Use the keys <em>Ctrl-<b>.</b></em> and <em>Ctrl-<b>,</b></em> to increase or decrease this offset time by 0.1 sec per keystroke.
+Adjust the offset until the music starts at the same time as the line cursor starts moving.
+</li>
+</ol>
+
+<!-- Advanced Settings -->
+
+<h3><a name="advanced"></a>Advanced Settings</h3>
+These items only appear in the menu when the <em>advanced</em> checkbox is marked.
+<table class="indent tab">
+<tr><td><em>line threshold</em></td>
+    <td>Lower the value of this threshold when not enough staves are recognized. Increase the value
+    when too many areas are recognized as a staff (e.g. lyrics). The threshold determines when a horizontal
+    line is considered as a real staff line and not a cross section of notes or text.</td></tr>
+<tr><td><em>cluster threshold</em></td>
+    <td>Lower this value (to somewhere between 1.0 and 1.5) for complex director scores, where the systems on a page
+    have different vertical sizes (== are composed of different number of staves).</td></tr>
+<tr><td><em>skip</em></td>
+    <td>Some times there are title or text areas in the beginning of a score that are recognized as staves
+    and get selected (green) in the beginning. Here you can set the number of such areas that have to be
+    skipped.</td></tr>
+<tr><td><em>select</em></td>
+    <td>In director scores, where multiple instruments are shown on a page, you can focus on one particular
+    instrument by setting the select parameter to the position of that instrument on the page. For instance,
+    setting select to 3 will only show (make green) the third instrument (system) on each page. A select value
+    of zero (default) disables this feature.</td></tr>
+<tr><td><em>first quarter</em></td>
+    <td>Normally only the rightmost quarter of the page is processed to find staves. With this checkbox
+    the program only scans the leftmost quarter of the page. This is needed when some staves are shortened
+    and left aligned with the other staves.</td></tr>
+<tr><td><em>prefer systems</em></td>
+    <td>This checkbox increases the likelihood to group staves into a system.</td></tr>
+<tr><td><em>single staves</em></td>
+    <td>Completely disable grouping of staves into systems. Only single staves are selectable (green shading).
+    Use this if you have a single staff score and some staves are erroneously grouped into systems.</td></tr>
+<tr class="dashed"><td><em>black theshold</em></td>
+    <td>Theshold value (0..1) between black (0) and white (1). Only applies when searching for bar lines.
+    Rarely needs to be changed. (lower value -> less black pixels)</td></tr>
+<tr><td><em>before/after theshold</em></td>
+    <td>Fraction (0-1) of the maximum whiteness before and after a bar line.<br>
+    (lower number &rarr; more bar lines)</td></tr>
+<tr><td><em>barline threshold</em></td>
+    <td>Fraction (0-1) of maximum blackness that a bar line should have.<br>
+    (lower number &rarr; more potential bar lines)</td></tr>
+<tr><td><em>dx</em></td>
+    <td>The distance in pixels where whiteness (before/after barline) is measured</td></tr>
+<tr><td><em><b>page</b></em></td>
+    <td>The page that is displayed. In advanced mode only one page of the score is shown. This
+    enables fast rending after changes are made with the controls. Also, the changes
+    are only applied to the page shown. The other pages remain unchanged. When you change the page
+    number the current values of all advanced controls are then applied to this new page. This means that if
+    you want to apply the same (changed settings) to all pages, you have to go through al these
+    pages using the page number input box.</td></tr>
+<tr><td><em>fixed width</em></td>
+    <td>This checkbox (checked by default) takes care that the score is displayed with a fixed
+    resolution of 1000 pixels width. This is important because all advanced parameters are preset to
+    values that work best with this resolution.<br>
+    When you uncheck this checkbox, the score will be displayed with the actual window width. When you do
+    this, you will probably have to change one or more advanced parameter values considerably. That is
+    why it is better to start tuning the recognition parameters with the fixed width option checked. Then
+    you have to change less and the optical recognition works better.
+    </td></tr>
+<tr class="dashed"><td><em>no menu</em></td>
+    <td>Save a preload file that hides the menu for the user. The preload file will set the internal option &quot;no_menu&quot;
+    that hides the menu and disables the context menu. This is meant to protect score files from being easily copied.</td></tr>
+<tr><td><a name="import"></a><em>import</em></td>
+    <td>Imports timing data from another <a href="#preload">preload file</a>. When separate parts of the same score have to be
+    synchronized, one only has to synchronize one part and import that data into the other parts.
+    </td></tr>
+<tr><td><a name="scrm"></a><em>pdf data</em></td>
+    <td>Embed the pdf (or jpeg) data in the preload file. This makes the preload file much bigger, but the advantage is that
+    <em>synpdf</em> does not need to read a separately stored score file. Expecially when uploading to a server this is an
+    advantage. When the preload file refers to a Youtube video, then also embedding the score data makes the
+    preload file completely self contained.
+    </td></tr>
+</table>
+
+
+<table class="indent tab">
+<tr><td></td>
+    <td>The following two settings can only be changed by manually editing
+    the <a href="#preload">preload file</a> with a text editor</td></tr>
+<tr><td><em>msc_credits</em></td>
+    <td>The contents of <em>msc_credits</em> will be displayed next to, and to the right of,
+    the media player.
+    The setting is made by adding the following string assignment to the preload file:
+    <pre>msc_credits = "any html formatted credit text goes here"</pre></td></tr>
+<tr><td><em>opacity</em></td>
+    <td>Sets the opacity of the measure shading (0.0 is no shading, default: 0.2,
+    solid color is 1.0). This setting is in the line that looks like:
+    <pre>opt = {"jump":0, ..., "opacity":0.2, ...,"btns":0};</pre></td></tr>
+</table>
+<!-- Saving and using a preload file -->
+
+<a name="preload"></a>
+<h3>Saving and using a preload file</h3>
+<em>synpdf</em> can preload score data, media file, synchronization data and several settings from a special javascript file.
+Such a &quot;<em>preload file</em>&quot; is made by pressing the <a href="#save">save button</a> in the menu of <em>synpdf</em>.<br>
+
+To use a preload file you can either load it like a score file with the <a href="#load">score file</a> button
+or you can add the path to the preload file as a parameter in the URL that starts <em>synpdf</em>.<br>
+For example, when you use a webserver:<br>
+<pre>
+    https://your.domain/synpdf.html?preload_file.js
+</pre>
+or when the preload is on dropbox (explanation <a href="#dropbox">below</a>):
+<pre>
+    https://your.domain/synpdf.html?d:e4w11guylw3wb4of97o7k/preload_file.js&amp;rlkey=m02ylgu3pisel6j8u1ug0cr2b</a>
+</pre>
+or when opening <em>synpdf</em> as a local file (this only works when you allow <a href="#fileacc">local file access</a> in your browser):
+<pre>
+    file:///path/to/synpdf.html?preload_file.js
+</pre>
+The first and third example assume that the preload file is in the same directory as <em>synpdf.html</em>.
+When it is in another location, the relative path to the preload file should be given.
+As an example, suppose the following directory layout:
+<pre>
+    /root
+    /score/synpdf.html
+          /media/example.mp3
+          /preload/example.js
+</pre>
+Then <em>synpdf.html</em> can be opened in the browser using the following (local file) URL: 
+<pre>
+    file:///score/synpdf.html?../preload/example.js
+</pre>
+The preload file is a regular javascript file. It only contains a couple of assignments. The first assignment sets the
+media file to load. When <em>example.js</em> is freshly saved using <em>synpdf</em> it will look as follows:
+<pre>
+    media_file = "example.mp3";
+</pre>
+Note that only a file name is specified and no path. Due to security restrictions in the
+browser, <em>synpdf</em> cannot save the correct path. This means that you have to <b>add the path manually</b> into
+<em>example.js</em>. With the example directory tree from above, the first assignment should read:
+<pre>
+    media_file = "../media/example.mp3";
+</pre>
+<!-- Preload files with Dropbox -->
+
+<a name="dropbox"></a>
+<h3>Preload files with Dropbox</h3>
+<em>Synpdf</em> can use a preload file from Dropbox when its shared link is specified with a URL parameter.
+For example:
+<pre>
+    <a href= "http://wim.vree.org/js2/synpdf.html?d:e4w11guylw3wb4of97o7k/bwv0539.js&rlkey=m02ylgu3pisel6j8u1ug0cr2b"><!--
+-->http://wim.vree.org/js2/synpdf.html?d:e4w11guylw3wb4of97o7k/bwv0539.js&amp;rlkey=m02ylgu3pisel6j8u1ug0cr2b</a>
+</pre>
+In this example <em>synpdf</em> fetches the preload file <em>bwv0539.js</em> from the user's dropbox.
+However, when you obtain a shared link from dropbox it has a different form, as follows:
+<pre>
+    https://www.dropbox.com/scl/fi/e4w11guylw3wb4of97o7k/bwv0539.js?rlkey=m02ylgu3pisel6j8u1ug0cr2b&amp;st=p0vwfg4p&amp;dl=0
+</pre>
+Unfortunalely the link in this form cannot be used for <em>synpdf</em>.
+You have to extract the 21 character file_identifier
+(&quot;<em>e4w11guylw3wb4of97o7k</em>&quot; in the example above) and the file_name. The URL parameter you have
+to use for <em>synpdf</em> then becomes &quot;<em>d:file_identifier/file_name</em>&quot;. For the example above it would be:
+<pre>
+    d:e4w11guylw3wb4of97o7k/bwv0539.js
+</pre>
+However, this is still not sufficient, because Dropbox also requires a file_key, which has to be added as an extra
+URL parameter: &amp;rlkey=file_key (which is <em>m02ylgu3pisel6j8u1ug0cr2b</em> in the example), resulting
+in the following two URL parameters for <em>synpdf</em>:
+<pre>
+    d:e4w11guylw3wb4of97o7k/bwv0539.js&amp;rlkey=m02ylgu3pisel6j8u1ug0cr2b
+</pre>
+The complete example then becomes:
+<pre>
+    <a href= "http://wim.vree.org/js2/synpdf.html?d:e4w11guylw3wb4of97o7k/bwv0539.js&rlkey=m02ylgu3pisel6j8u1ug0cr2b"><!--
+-->http://wim.vree.org/js2/synpdf.html?d:e4w11guylw3wb4of97o7k/bwv0539.js&amp;rlkey=m02ylgu3pisel6j8u1ug0cr2b</a>
+</pre>
+Be careful to use an <b>&amp;</b> before the file_key part and not a <b>?</b> as in the original shared link from Dropbox.
+<br>
+<span style="border: thin black dotted; padding-left:0.2em; padding-right:0.2em; background: #eee; line-height: 1.5;">
+A preload file on DropBox must always have extension <b>.js</b> otherwise it will not load.</span>
+
+<h3 style="display:inline-block"><a name="nonet"></a>Operation without internet connection</h3><br>
+When you want to run <em>synpdf</em> on a computer <em>without</em> internet connection you need to have the
+following files in a directory of your choice:
+<pre>
+    jquery-1.11.1.min.js
+    pdf.js
+    pdf.worker.js
+    synpdf.html
+    synpdf.js
+</pre>
+All files are included in <a href="synpdf_194.zip">synpdf_194.zip</a>.
+You can open the local file <em>synpdf.html</em> in your browser and everything should work normally if you
+have permitted local file access for javascript in your browser (see <a href="#fileacc">local file access</a>).
+The same files can also be put on your own server when you want to serve synpdf your self.
+Note, however, that the Dropbox Chooser and Saver only work when synpdf is loaded from wim.vree.org.
+In practice this means: you cannot use the Dropbox Chooser and Saver with your local copy.
+
+<h3><a name="fileacc"></a>Local file access</h3>
+<p>
+Nowadays access to local files (in javascript) is not permitted by browsers. Thus, when you open the local
+file synpdf.html in your browser it will not work. You have to explicitly allow local file access.</p>
+<p>For FireFox you can achieve this by opening the page <em>about:config</em> and change the option 
+<em>security.fileuri.strict_origin_policy</em> to false.</p>
+<p>For Chrome and Chromium you can achieve this by opening the browser with a special command line flag:
+<pre>   $ chromium --allow-file-access-from-files </pre>
+The name (and path) of the Chrome (or Chromium) executable may be different on your platform.
+</p>
+
+<!--Extra parameters in the URL -->
+
+<h3><a name="params"></a>Extra parameters in the URL</h3>
+Synpdf.html recognizes some parameters in the URL:
+<table class="indent tab">
+<tr><td><em>ln=</em></td><td>Switch the line cursor on/off (ln=1 or ln=0)
+    </td></tr>
+<tr><td><em>mmin=</em></td><td>Hide all menu items given in this comma separated list (no spaces).
+    The names given in this list should be the ID's of the menu items to be hidden. You can find those
+    ID's in the file <em>synpdf.html</em>.
+    For example: mmin=lp,l2,l3,l5,l6,lg,lo,ln
+    </td></tr>
+<tr><td><em>playbtn</em></td><td>Shows a small play button at the top left of the score window. This button
+    starts/stops playback (same as hitting the space bar or clicking in the margin)
+    </td></tr>
+<tr><td><em>cnt=</em></td><td>Determines the initial count down value when the count-in
+    menu option is checked. Should be the number of beats to count down before starting playback.
+    For instance: cnt=3 for a 3/4 time signature. The default value of the count down timer is 4 (beats).
+    </td></tr>
+<tr><td><em>nosm</em></td><td>Disables smooth scrolling.
+    </td></tr>
+<tr><td><em>fullmenu</em></td><td>Shows all menu items, in case some were hidden by option mmin= (see above)
+    </td></tr>
+<tr><td><a name="ip"></a><em>ip=</em></td><td>With the parameter <em>ip=ip_number</em> you specify the ip number of a WebSocket
+    server on your local network. All instances of abcweb that are started with the same <em>ip=ip_number</em> are
+    playing synchronized with each other. This is useful to get a group of computers/tablets play the same score at
+    precisely the same time. Each instance can start/stop playing and all others follow. Same for jumping to a different measure.
+    See <a href="#wsok"> Web Sockets</a> for more details on how the run the server.
+    </td></tr>
+<tr><td><a name="mstr"></a><em>mstr</em></td>
+    <td>The master parameter <em>mstr</em> makes one device the master of a group of synchronized devices. Only
+    the master device can issue play/pause commands and position the playback. All other devices follow the master but
+    cannot play/pause or jump to another measure.</td></tr>
+<tr><td><em>nomed</em></td>
+    <td>Skips the loading of the media and aligns the score with the top of the page. On a synchronized device
+    this option shows the score and the synchronized cursor, but does not load or play the media file.</td></tr>
+<tr><td><em>dx.x</em></td>
+    <td>Inserts an initial latency of 0.xx seconds for all commands received on a synchronized device. This is useful if some
+    devices of a synchronized group are slower than others. For example, the simulated default player is much faster than the
+    youtube player. A latency of 0.3 seconds is no exception, which can be compensated by adding d3 as parameter:
+    <pre>
+    http://.../synpdf.html?preload&amp;ip=192.168.xx.xx&amp;mstr        (master with slow video player)
+    http://.../dynpdf.html?preload&amp;ip=192.168.xx.xx&amp;nomed&amp;d3    (fast slaves with delay of 0.3 sec)</pre>
+    </td></tr>
+</table>
+<!--Multiple devices running synpdf synchronized -->
+
+<h3><a name="wsok"></a>Multiple devices running synpdf synchronized (with Web Sockets)</h3>
+When you have a group of tablets/phones/computers playing synpdf, you can synchronize these devices.
+When one device starts playing all other devices start as well. When one device jumps to a different measure
+all devices jump at the same time.
+<br>This only requires one extra parameter in the URL: <a href="#ip"><em>ip=ip_number</em></a>. It needs to be typed on each device
+to be synchronized. The <em>ip_number</em> in this parameter is the address of a computer/tablet/phone
+running the javascript program <em>abcSrv.js</em>. Thus, one of the devices on your local network
+has to run an special program (<em>abcSrv.js</em>) which takes care of the start/stop synchronization. (see <a href="#server">running
+abcSrv.js</a>).
+<br>A group of devices synchronized with the parameter <a href="#ip"><em>ip=ip_number</em></a>, behaves in a symmetrical fashion.
+Every device in the group can initiate a play/pause command, or jump to a different measure.
+One extra parameter: <a href="#mstr">&quot;<em>mstr</em>&quot;</a> makes the device where this parameter is present the master of
+the group, disabling all others from issuing play/pause or jump commands. Only the master can now initiate play/pause of jump.
+For example:
+<pre class="indent">
+http://wim.vree.org/js/synpdf.html?some_preload.js&amp;ip=192.168.178.xx      (for all slave devices)
+http://wim.vree.org/js/synpdf.html?some_preload.js&amp;ip=192.168.178.xx&amp;mstr (for the master device)
+</pre>
+where the device with ip number 192.168.178.xx has to run <a href="#server"><em>abcSrv.js</em></a>
+<br>The device where abcSrv.js runs can also serve the preloads and media files (so you do not need internet connection):
+<pre class="indent">
+http://192.168.178.xx:8090/synpdf.html?some_preload.js&amp;ip=host      (for all slave devices)
+http://192.168.178.xx:8090/synpdf.html?some_preload.js&amp;ip=host&amp;mstr (for the master device)
+</pre>
+This works while <em>abcSrv.js</em> not only synchronizes the devices but also acts as a normal web server (on port 8090).
+In this case one needs all <a href="#nonet">abcweb files</a> to be present in the same directory where <em>abcSrv.js</em> is located.
+Also <em>some_preload.js</em> and its corresponding media file have to be there.
+This is because <em>abcSrv.js</em> uses its own directory as root directory for the http server it implements.
+<br>Note the special abbreviation <em>ip=host</em>. This short form of the <a href="#ip"><em>ip=</em> parameter</a> can only be used
+when the real ip number of the web socket server is already present (as host address) in the URL (so you do not have to type the
+ip number twice).
+<!-- Running abcSrv.js -->
+
+<h3><a name="server"></a>Running abcSrv.js</h3>
+<em>AbcSrv.js</em> is included in: <a href="synpdf_194.zip">synpdf_194.zip</a>. It is a javascript program
+that implements a simple http server and a special Web Socket server. The normal http server runs on port 8090 and the web socket server
+on port 8091. <em>Synpdf</em> expects the web socket server to be on port 8091.
+<br> To run <em>abcSrv.js</em> you need to have <a href="http://nodejs.org/"><em>Node</em></a> installed. <em>Node</em> is a javascript
+engine with unrestricted access to many underlying computer capabilities. Browsers can run javascript too, but they hide these capabilities
+almost completely (sandbox) and are of no use to implement servers.
+<br>When you have <em>Node</em> installed you can start abcSrv.js with a command like:
+<pre class="indent">
+# nodejs abcSrv.js
+</pre>
+When started it prints the following output on the console:
+<pre class="indent">
+websocket server listening on port: 8091, address: 192.168.178.xx
+http server listening in port: 8090, adress: 192.168.178.xx
+web server root directory: /path/to/where/abcSrv.js/is/located/
+</pre>
+On a normal (i.e. not jailbroken) iPad, <em>abcSrv.js</em> has been tested using the app Touch Code Pro from iTunes. This app can load
+and run <em>abcSrv.js</em>, which turns the iPad into a simple http server and websocket server, so you can not only synchonize a group
+of other tablets but also serve the score an media locally, without connecting to the internet (<a href="#nonet">more info</a>).
+</body></html>
