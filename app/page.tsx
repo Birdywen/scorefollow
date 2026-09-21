@@ -275,6 +275,25 @@ export default function ScoreFollowPage() {
     if (!mediaURL) clockRef.current.running = playing;
   }, [speed, mediaURL, playing]);
 
+  // demo 模式: ?demo=1 自动载入内置谱 (免上传即测)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!new URLSearchParams(window.location.search).has("demo")) return;
+    let dead = false;
+    (async () => {
+      try {
+        const r = await fetch("/demo-score.pdf");
+        const b = await r.blob();
+        if (dead) return;
+        await onPdfFile(new File([b], "demo-score.pdf", { type: "application/pdf" }));
+        if (!dead) setStatus((s) => s + " · demo 谱已载入");
+      } catch {
+        if (!dead) setStatus("demo 谱载入失败");
+      }
+    })();
+    return () => { dead = true; };
+  }, [onPdfFile]);
+
   const barsTotal = analysis
     ? analysis.bars.reduce((s, b) => s + Math.max(0, b.length - 1), 0)
     : 0;
