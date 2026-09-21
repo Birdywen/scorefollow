@@ -40,6 +40,7 @@ export default function ScoreFollowPage() {
   const [loopA, setLoopA] = useState(0);
   const [loopB, setLoopB] = useState(0);
   const [tapCount, setTapCount] = useState(0);
+  const [synbox, setSynbox] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   // pdf.js worker(同构安全: 只在客户端配)
@@ -173,6 +174,60 @@ export default function ScoreFollowPage() {
     setStatus(`tap m${e.mix + 1} @ ${e.t.toFixed(2)}s`);
   }, [now]);
 
+  const adjustLast = useCallback((d: number) => {
+    const T = wijzerRef.current.times;
+    if (!T.length) return;
+    const last = T[T.length - 1];
+    last.t = Math.round(1e3 * (last.t + d)) / 1e3;
+    setStatus(`m${last.mix + 1} ${d > 0 ? "+" : ""}${d.toFixed(2)}s → ${last.t.toFixed(2)}s`);
+  }, []);
+
+  const backupOne = useCallback(() => {
+    const T = wijzerRef.current.times;
+    if (!T.length) return;
+    const e = T.pop()!;
+    setTapCount(T.length);
+    setStatus(`backup: erased m${e.mix + 1}, ${T.length} taps left`);
+  }, []);
+
+  // preload 等价物: timing JSON 存取 (原版 saveTiming/evalPreload)
+  const saveTiming = useCallback(() => {
+    const w = wijzerRef.current;
+    const payload = {
+      app: "scorefollow",
+      version: "2.1",
+      opt: { ...opt },
+      times_arr: w.times,
+      measures: w.measures,
+      loop: { start: w.loopStart, end: w.loopEnd },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 1)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "scorefollow-timing.json";
+    a.click();
+    setStatus(`saved ${w.times.length} sync points`);
+  }, []);
+
+  const loadTiming = useCallback((f: File) => {
+    f.text().then((txt) => {
+      const p = JSON.parse(txt);
+      if (p.opt) {
+        for (const [k, v] of Object.entries(p.opt)) {
+          if (k === "skipn") { setSkipn(1 * (v as number)); opt.skipn = 1 * (v as number); }
+          else if (k === "sysprf") setSysprf(1 * (v as number));
+          else (opt as unknown as Record<string, number>)[k] = 1 * (v as number);
+        }
+      }
+      if (p.times_arr) wijzerRef.current.loadTimes(p.times_arr);
+      setTapCount(wijzerRef.current.times.length);
+      clearPageCache();
+      forceAdv((n) => n + 1);
+      if (pdfDocRef.current) void renderPage(pdfDocRef.current, pageNum);
+      setStatus(`loaded ${wijzerRef.current.times.length} sync points`);
+    }).catch(() => setStatus("timing file parse failed"));
+  }, [pageNum, renderPage]);
+
   const onScoreClick = useCallback(
     (ev: React.MouseEvent) => {
       const canvas = canvasRef.current;
@@ -203,11 +258,16 @@ export default function ScoreFollowPage() {
         const t = wijzerRef.current.goMsre(-1, now());
         const m = mediaRef.current as any;
         if (m && mediaURL) m.currentTime = t;
-      }
+      } else if (e.key === "+" || e.key === "=") setSpeed((s) => Math.min(2, Math.round((s + 0.05) * 100) / 100));
+      else if (e.key === "-") setSpeed((s) => Math.max(0.5, Math.round((s - 0.05) * 100) / 100));
+      else if (synbox && (e.key === "b" || e.key === "B")) { e.preventDefault(); doTap(); }
+      else if (synbox && e.key === "Backspace") { e.preventDefault(); backupOne(); }
+      else if (synbox && e.key === ",") adjustLast(e.ctrlKey ? -0.1 : -0.05);
+      else if (synbox && e.key === ".") adjustLast(e.ctrlKey ? 0.1 : 0.05);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playing, doPlay, doPause, now, mediaURL]);
+  }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast]);
 
   useEffect(() => {
     const m = mediaRef.current as any;
@@ -245,6 +305,9 @@ export default function ScoreFollowPage() {
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
         <label className="pill"><input type="checkbox" checked={showOverlay} onChange={(e) => setShowOverlay(e.target.checked)} /> analysis overlay</label>
         <label className="pill"><input type="checkbox" checked={advOpen} onChange={(e) => setAdvOpen(e.target.checked)} /> advanced</label>
+        <label className="pill"><input type="checkbox" checked={synbox} onChange={(e) => setSynbox(e.target.checked)} /> enable sync</label>
+        <button onClick={saveTiming}>save timing</button>
+        <label className="pill">load timing <input type="file" accept=".json" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTiming(f); }} /></label>
         <span style={{ fontSize: 12, color: "#9fb0c8" }}>{status}</span>
         <span style={{ fontSize: 12, color: "#7fe0a8" }}>{cursorInfo}</span>
       </div>
@@ -261,6 +324,7 @@ export default function ScoreFollowPage() {
           <label><input type="checkbox" checked={opt.onestf ? true : false} onChange={(e) => applyAdv("onestf", e.target.checked ? 1 : 0)} /> onestf</label>
           <label><input type="checkbox" checked={opt.eerst ? true : false} onChange={(e) => applyAdv("eerst", e.target.checked ? 1 : 0)} /> eerst</label>
           <label>skipn <input type="number" min={0} max={5} value={opt.skipn} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
+          <label>seln <input type="number" min={0} max={9} value={opt.seln} onChange={(e) => applyAdv("seln", Number(e.target.value))} /></label>
           <label>cropx <input type="number" min={0} value={opt.cropx} onChange={(e) => applyAdv("cropx", Number(e.target.value))} /></label>
           <label>pagewd <input type="number" min={600} max={3000} step={50} value={opt.pagewd} onChange={(e) => applyAdv("pagewd", Number(e.target.value) || 1000)} /></label>
           <label>fixwd <input type="number" min={0} step={100} value={opt.fixwd} onChange={(e) => applyAdv("fixwd", Number(e.target.value) || 0)} /></label>
@@ -305,7 +369,7 @@ export default function ScoreFollowPage() {
 
       <div style={{ fontSize: 12, color: "#9fb0c8", marginTop: 8 }}>
         {analysis ? `${analysis.systems.length} systems · ${barsTotal} measures · spatium ${analysis.spatium.toFixed(1)}px · ${tapCount} taps` : "no analysis yet"} ·
-        keys: space play · ←/→ bar
+        keys: space play · ←/→ bar · +/− speed{synbox ? " · B tap · ⌫ backup · ,/. adjust" : ""}
       </div>
 
       <style>{`
