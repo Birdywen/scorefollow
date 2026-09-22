@@ -28,6 +28,14 @@ function check(name, cond, detail = "") {
   ).map((p) => p.x);
   check("nms-suppresses-weak-neighbour", JSON.stringify(kept) === JSON.stringify([100, 200]), JSON.stringify(kept));
 }
+// NMS: plateau 取中位数 (消除左缘偏好, 锁定线中心)
+{
+  const kept = legacy.nmsBarPeaks(
+    [{ x: 199, rel: 1 }, { x: 200, rel: 1 }, { x: 201, rel: 1 }, { x: 300, rel: 0.9 }],
+    10,
+  ).map((p) => p.x);
+  check("nms-plateau-median", JSON.stringify(kept) === JSON.stringify([200, 300]), JSON.stringify(kept));
+}
 // NMS: 强双线对保留 (间距 >= 0.7 spatium)
 {
   const kept = legacy.nmsBarPeaks(

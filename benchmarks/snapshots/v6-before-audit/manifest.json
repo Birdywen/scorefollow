@@ -1,0 +1,62 @@
+[
+  {
+    "suite": "gpu",
+    "score": "arpeggione_sonata",
+    "pdf_sha256": "4324d0af8bcdc7bad78804191f79f3cd0b28601f5d6972a331451dd44e27ef0c"
+  },
+  {
+    "suite": "gpu",
+    "score": "kupdf_net_suzuki-cello-school-vol-3-piano-accomp",
+    "pdf_sha256": "f14a31ae916e893889419498bd6b9b0be5643648e4e10be69daa0f74e91c0e38"
+  },
+  {
+    "suite": "gpu",
+    "score": "saint-preux_-_le_reve",
+    "pdf_sha256": "0ed3fa0d06b5ae756b99971ed956881e512f36bdf3cd0d8385fe0953ac060d7a"
+  },
+  {
+    "suite": "gpu",
+    "score": "serenade_vl_pf",
+    "pdf_sha256": "149affb01951ba8e7b6f583e9bec66e4e9f398ce7b731076a18fab9046a28d12"
+  },
+  {
+    "suite": "gpu",
+    "score": "suzuki-book3-3-4",
+    "pdf_sha256": "b62c5811c8cae02bc7eb21248ea1bb46a34f4a16206aacaa637c8e7f58137993"
+  },
+  {
+    "suite": "gpu",
+    "score": "swan_cello_melody",
+    "pdf_sha256": "c9f965e19b0c93d96c6fbc5de21691169175e3dd65b97b0211901586651445ae"
+  },
+  {
+    "suite": "gpu",
+    "score": "tschaikowsky_rococo_gru_mmer_cello",
+    "pdf_sha256": "851a53dca94096de9a17f095f16b155a704eb4fce9c0a78e04c7c3a173b62580"
+  },
+  {
+    "suite": "gpu",
+    "score": "vivaldi-bajazet-sposa-son-disprezzata-aria-irene",
+    "pdf_sha256": "bb04a023b15ff929b7b034e6de8b4ea7d55b36dd650a58de55b71fb6a13ec7fc"
+  },
+  {
+    "suite": "gpu",
+    "score": "yradier_c_la_paloma_piano_beg",
+    "pdf_sha256": "00f610da290928353850fa492338a6236b5dd24e3b91593284e838e04247d55c"
+  },
+  {
+    "suite": "homr",
+    "score": "demo",
+    "pdf_sha256": "4a2919897193f9934846cb34fefbe47730fa3dda9525b0f2bc28c2f152b6eac5"
+  },
+  {
+    "suite": "homr",
+    "score": "secret_garden",
+    "pdf_sha256": "4a2919897193f9934846cb34fefbe47730fa3dda9525b0f2bc28c2f152b6eac5"
+  },
+  {
+    "suite": "homr",
+    "score": "toccatta",
+    "pdf_sha256": "dc2b10d984eccdacee07b01df21cf21e23d24dc6c122f1cf48a479b72407e6da"
+  }
+]

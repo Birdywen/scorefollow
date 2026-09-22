@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Manual Annotation Index</title>
+<style>
+body { font-family: monospace; margin: 40px; background: #1a1a1a; color: #e0e0e0; }
+.container { max-width: 1200px; margin: 0 auto; }
+h1 { color: #4a9eff; }
+.instructions { background: #2a2a2a; padding: 20px; border-radius: 5px; margin: 20px 0; }
+.instructions h2 { color: #4a9eff; margin-top: 0; }
+.instructions ol { line-height: 1.8; }
+.instructions code { background: #1a1a1a; padding: 2px 6px; border-radius: 3px; }
+.pages { margin: 30px 0; }
+.page-card { background: #2a2a2a; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #4a9eff; }
+.page-card h3 { margin: 0 0 10px 0; color: #4a9eff; }
+.page-card a { color: #4a9eff; text-decoration: none; }
+.page-card a:hover { text-decoration: underline; }
+.page-card .stats { color: #888; margin: 5px 0; }
+.priority { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.9em; margin-left: 10px; }
+.p0 { background: #ff6b6b; color: white; }
+.p1 { background: #ffaa00; color: black; }
+.status { margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 5px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Barline Detection - Manual Annotation</h1>
+
+<div class="instructions">
+<h2>Instructions</h2>
+<ol>
+<li><strong>Open annotation page:</strong> Click the link below to review a specific page.</li>
+<li><strong>Review overlay:</strong> 
+<ul>
+<li><span style="color:#00ff00">Green lines</span> = Our detections only (FP candidates)</li>
+<li><span style="color:#ff6b6b">Red lines</span> = HOMR only (FN candidates)</li>
+<li><span style="color:#4a9eff">Blue lines</span> = Matched (within 4px tolerance)</li>
+</ul>
+</li>
+<li><strong>Toggle layers:</strong> Use checkboxes to show/hide overlays and adjust line width.</li>
+<li><strong>Inspect systems:</strong> System breakdown shows TP/FP/FN counts and coordinates for each line.</li>
+<li><strong>Annotate:</strong> In the text area, record:
+<ul>
+<li>Corrected system boundaries if needed: <code>System 1: y=[165,193]</code></li>
+<li>True bar positions: <code>bars=[310, 558, 712, ...]</code></li>
+<li>Notes on ambiguous cases: <code>x=467 is valid barline touching beam</code></li>
+<li>Clef changes, repeat signs, double bars, etc.</li>
+</ul>
+</li>
+<li><strong>Save:</strong> Click "Save Annotation" to download JSON. Place saved files in <code>benchmarks/annotations/confirmed/</code>.</li>
+</ol>
+</div>
+
+<div class="pages">
+<h2>Priority Pages</h2>
+
+<div class="page-card">
+<h3>
+<a href="tschaikowsky_rococo_gru_mmer_cello_page2.html" target="_blank">Rococo Page 2</a>
+<span class="priority p0">P0</span>
+</h3>
+<div class="stats">Systems: 11 | FP: 72 (highest in dataset) | FN: 6</div>
+<div>Single-staff cello solo with dense stem false positives. Key test case for stem veto logic.</div>
+</div>
+
+<div class="page-card">
+<h3>
+<a href="serenade_vl_pf_page4.html" target="_blank">Serenade Page 4</a>
+<span class="priority p0">P0</span>
+</h3>
+<div class="stats">Systems: 9 (piano grand staff) | FP: 28 | FN: 6</div>
+<div>Violin + piano. Multiple v6 new FN cases. Beam/chord interactions.</div>
+</div>
+
+<div class="page-card">
+<h3>
+<a href="suzuki-book3-3-4_page2.html" target="_blank">Suzuki Book 3 Page 2</a>
+<span class="priority p0">P0</span>
+</h3>
+<div class="stats">Systems: 9 | FP: 31 | FN: 1</div>
+<div>Dense candidate pool. System grouping edge case (sys2 unmatched).</div>
+</div>
+
+</div>
+
+<div class="status">
+<h2>Current Status</h2>
+<p><strong>Baseline (v6 after evaluator fix):</strong> TP=520, FP=249, FN=53 (ref=573)</p>
+<p><strong>Toccatta:</strong> Not in GPU dataset. Requires separate annotation using benchmarks/homr/.</p>
+<p><strong>Next Step:</strong> After confirming annotations, integrate into regression test suite and design next feature iteration.</p>
+</div>
+
+</div>
+</body>
+</html>

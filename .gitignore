@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# homr benchmark bulky artifacts (regenerable via scripts/homr-data.py);
+# keep meta.json / homr.json / ours.json / adjudicated.json as committed fixtures
+benchmarks/homr/**/*.raw
+benchmarks/homr/**/*.png
+# gpu benchmark bulky artifacts (regenerable via scripts/gpu-data.py);
+# keep meta.json / homr.json / ours.json / gpu_p*.json / *.musicxml as fixtures
+benchmarks/gpu/**/*.raw
+benchmarks/gpu/**/*.png

@@ -1,0 +1,19 @@
+{
+  "_doc": "人工仲裁结论(宽1000坐标)。verdict=homr-fp: HOMR 误报、我方无条线为正确；verdict=homr-miss: HOMR 漏报、我方有条线为正确。compare 脚本据此做回归门禁。",
+  "cases": [
+    {
+      "score": "toccatta", "page": 2, "sys": 1, "x": 167,
+      "verdict": "pending",
+      "note": "撤回此前 HOMR 错误结论。用户确认第二页应采纳 HOMR，并指出我方将谱号区误算小节；本坐标与该错误的对应关系待确认。"
+    },
+    {
+      "score": "toccatta", "page": 3, "sys": 5, "x": 705,
+      "verdict": "pending",
+      "note": "撤回此前 HOMR 漏检结论。用户确认第三页非标准排版下 HOMR 可采纳；需区分物理竖线与逻辑小节边界。"
+    }
+  ],
+  "resolved": [
+    "v3 期 extra=[59/58/60](各页钢琴初始小节线): HOMR 谱框自 x≈88 起未收录, 我方正确。现版双方已对齐, 不再分歧。",
+    "p3 row5 整系统丢失: countVsys 中部亮度绝对阈值(5列)误杀 D.S./Coda 缺口系统, v4 改相对阈值后恢复；帧分裂缺口 v5 union-span 修复。"
+  ]
+}

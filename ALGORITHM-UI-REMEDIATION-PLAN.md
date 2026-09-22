@@ -78,7 +78,28 @@
 
 ## 下一批实施顺序
 
-1. 基准集与回归脚本。
-2. 小节线多证据评分和置信度。
-3. 当前页人工校正层。
-4. timing schema 校验、撤销/重做和 UI 截图验收。
+1. 基准集与回归脚本(已部分: 合成纯函数回归 + 合成谱端到端真值, 待用户真谱标注)。
+2. 小节线多证据评分和置信度(已实施, 待真谱数据调阈值)。
+3. 当前页人工校正层(已实施)。
+4. timing schema 校验、撤销/重做(已实施)和 UI 截图验收(待三档截图)。
+
+## 进展 (2026-09-21 补充)
+- `countPixFromBuffer` 解耦像素输入, Node 可跑完整流水线, 与 canvas 行為一致。
+- `scripts/synth.mjs` SYNTH_PASS: 单系统/双系统+双小节线, 内部小节线 precision/recall 100%,
+  平均偏差 0.00px(plateau 取中后系统性 -1px 偏差消除), 符干零误报, 系统框±3px内。
+- `npm run verify` = tsc + regression + synth + build。
+- HOMR 交叉验证 (`npm run homr`, 本机 :8000)：Secret Garden 2 页 + Toccatta 3 页，
+  algo v5 记分牌 24/24 系统、tp=61、meanDev 0.71px；2 处分歧人工仲裁均为 HOMR 错误
+  （p2sys1 符干误报 / p3sys5 Coda 起始线漏报），仲裁后我方 7 页全对，门禁已入脚本。
+  分歧驱动 5 项修复：直度豁免对比门、plateau 簇中位数、左端点去碎片、countVsys 相对阈值、
+  系统 x 并集（D.S./Coda 缺口）。详见 `benchmarks/README.md` 与 `benchmarks/homr/adjudicated.json`。
+- 待用户乐谱：真谱人工标注（阶段 1 最后 20%）；D.S./反复非线性跳转超出线性 TAP 模型，暂以打印序
+  跟随 + 手动校正覆盖，不做跳谱逻辑。
+- algo v6（2026-09-22）：用户 9 谱 27 页 GPU 交叉验证驱动。独奏单谱表里符干与真线等高，
+  新增"孤独检测"否决（`barStemFeatures`）：端窗宽行≥4（符头/符梁附着，中位数抗谱线干扰，
+  8 行窗）且游程≥0.9（被蹭的真线游程多半是断的）且中段干净（midWidth≤5，被蹭的真线中段脏）。
+  三阈值全部从 TP/FP 分布里长出来。效果：gpu fp 505→223（Rococo 单页 319→114），fn 48→47
+  （NMS 少了强符干搅局，真线反而多活下来 1 根）；committed 基线逐字不变（tp=61/fp=1/fn=1）。
+  已知残留：梁丛符干、符头在谱表外的净杆（像素几何理论上限）、5 个误杀（rococo 467+serenade 4，
+  众数皆为梁端触碰，有 overlay 待仲裁）。工具：`scripts/stem-feat.mjs`（特征 dump+真值标注）、
+  `scripts/stem-profile.mjs`（逐行宽剖面）。

@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "regression": "node scripts/regression.mjs",
-    "verify": "npx tsc --noEmit && npm run regression && npm run build"
+    "synth": "node scripts/synth.mjs",
+    "homr": "node scripts/homr-compare.mjs",
+    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run build"
   },
   "dependencies": {
     "next": "16.3.5",
