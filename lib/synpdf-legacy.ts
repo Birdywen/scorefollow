@@ -37,7 +37,7 @@ export const legacyOpt: SynpdfOpt = {
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 16;
+export const ALGO_VERSION = 17;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
@@ -81,7 +81,47 @@ export function countPix(a: any, b: number): CountPixResult { const w: any = a.w
  * 无头像素输入: 与 countPix 同一流水线(drawRes→countVsys→findBarLines),
  * 供 Node 合成谱回归直接喂 RGBA 缓冲, 行为与 canvas 输入逐行一致。
  */
-export function countPixFromBuffer(w: number, h: number, data: Uint8ClampedArray | number[], seln: number): CountPixResult { var c: any, e: any; var f: any = w; var g = 4 * f; var k = h; var a: any = data; var l = 0; var p: any = []; var n = 3 * g / 4, stride = g; legacyOpt.eerst && (n = 0, stride = g / 4); for (e = 0; e < k; e++) { var m = 0; for (c = l + n; c < l + stride; c += 4)m += a[c], m += a[c + 1], m += a[c + 2]; c = m / (3 * (stride - n)); p.push(c); l += g } f = drawRes(p, f, k); lastRowGroups.length = 0; for (const gg of (f as number[][])) lastRowGroups.push((gg as number[]).slice()); for (f = countVsys(f, g, a); f.length && skipnV;)f.shift(), --skipnV; seln && (f = f.slice(seln - 1, seln)); const foundBars = findBarLines(f, g, a); return { cxs: f, bxs: foundBars } }
+/**
+ * v17: 谱表宽度归一(只扩不缩 + 空白验证)。同一首曲子谱表宽度统一,
+ * 个别系统因亮度估计偏窄会连带收窄小节线扫描窗 [x1+50, x2-20] 造成漏线;
+ * 以中位数为稳健平均, 窄边向平均看齐。但缩进系统(首行缩进/声部名/琴架)
+ * 的窄是真实的: 膨胀条带含实墨(暗像素>2%)则保留原值, 只向空白边距胀。
+ * 宽边不动, 不裁剪真实内容。
+ */
+export function normalizeStaffWidths(systems: SystemInfo[], stride: number, pix: any): void {
+  if (systems.length < 2) return;
+  const med = (arr: number[]): number => {
+    const s = arr.slice().sort((x, y) => x - y);
+    return s[Math.floor(s.length / 2)];
+  };
+  const m1 = med(systems.map((sy) => sy.xs.x1));
+  const m2 = med(systems.map((sy) => sy.xs.x2));
+  const stripDark = (si: number, xa: number, xb: number): number => {
+    const sy = systems[si];
+    const w0 = sy.cs[0]; const t0 = sy.cs[sy.cs.length - 1];
+    const darkSum = 3 * witArr[si];
+    const x0 = Math.max(0, Math.floor(Math.min(xa, xb)));
+    const x1 = Math.min(Math.floor(stride / 4) - 1, Math.ceil(Math.max(xa, xb)));
+    if (x1 <= x0) return 0;
+    let dark = 0, total = 0;
+    for (let row = w0; row <= t0; row++) {
+      const base = row * stride;
+      for (let col = x0; col <= x1; col++) {
+        const g = base + col * 4;
+        total++;
+        if (pix[g] + pix[g + 1] + pix[g + 2] < darkSum) dark++;
+      }
+    }
+    return total ? dark / total : 0;
+  };
+  for (let si = 0; si < systems.length; si++) {
+    const sy = systems[si];
+    if (sy.xs.x1 > m1 && stripDark(si, m1, sy.xs.x1) <= 0.02) sy.xs.x1 = Math.round(m1);
+    if (sy.xs.x2 < m2 && stripDark(si, sy.xs.x2, m2) <= 0.02) sy.xs.x2 = Math.round(m2);
+  }
+}
+
+export function countPixFromBuffer(w: number, h: number, data: Uint8ClampedArray | number[], seln: number): CountPixResult { var c: any, e: any; var f: any = w; var g = 4 * f; var k = h; var a: any = data; var l = 0; var p: any = []; var n = 3 * g / 4, stride = g; legacyOpt.eerst && (n = 0, stride = g / 4); for (e = 0; e < k; e++) { var m = 0; for (c = l + n; c < l + stride; c += 4)m += a[c], m += a[c + 1], m += a[c + 2]; c = m / (3 * (stride - n)); p.push(c); l += g } f = drawRes(p, f, k); lastRowGroups.length = 0; for (const gg of (f as number[][])) lastRowGroups.push((gg as number[]).slice()); for (f = countVsys(f, g, a); f.length && skipnV;)f.shift(), --skipnV; seln && (f = f.slice(seln - 1, seln)); normalizeStaffWidths(f, g, a); const foundBars = findBarLines(f, g, a); return { cxs: f, bxs: foundBars } }
 
 function countVsys(a: any, b: any, c: any): any { var d: any, e: any, f: any, g: any = [], k: any = [], l: any = []; for (f = 0; f < a.length; ++f) { var p = a[f][0]; var n: any = a[f][a[f].length - 1]; var h: any = []; for (d = 0; d < b; d += 4) { var m = 0; for (e = p * b + d; e < n * b + d; e += b)m += c[e], m += c[e + 1], m += c[e + 2]; h.push(m / (3 * (n - p))) } for (d = m = 0; d < h.length; ++d)h[d] > m && (m = h[d]); witArr[f] = m * legacyOpt.zwgrens; d = Math.floor(h.length / 2); e = d + d / 2; for (p = 0; d < e; d++)n = h[d], n > m - 10 && (p += 1); var brightLimit = Math.max(5, Math.floor(h.length * 0.03)); if (!(brightLimit < p) || legacyOpt.eerst) { g.push(a[f]); n = []; for (d = 0; d < h.length;)if (h[d] > m - 15)d += 1; else { for (e = d; d < h.length && h[d] <= m - 5;)d += 1; n.push([e, d - 1]) } n.sort(function (a: any, b: any) { return b[1] - b[0] - (a[1] - a[0]) }); var wideRuns = n.filter(function (rg: any) { return rg[1] - rg[0] > 10 * spatium }); var spanRuns = wideRuns.length ? wideRuns : [n[0]]; h = spanRuns[0][0]; d = spanRuns[0][1]; for (var sri = 1; sri < spanRuns.length; sri++) { if (spanRuns[sri][0] < h) h = spanRuns[sri][0]; if (spanRuns[sri][1] > d) d = spanRuns[sri][1]; } l.push({ x1: h, x2: d }) } } a = g; g = []; if (0 == a.length) return a; for (f = 0; f < a.length - 1; ++f) { n = a[f][a[f].length - 1]; p = a[f + 1][0]; h = []; for (d = 0; d < b; d += 4) { m = 0; for (e = n * b + d; e < p * b + d; e += b)m += c[e], m += c[e + 1], m += c[e + 2]; h.push(m / (3 * (p - n))) } e = h[0]; for (d = m = 0; d < h.length; d++)n = h[d], e = Math.abs(n - e), 10 < e && e > m && (m = e), e = n;     k.push(m) } const gaps: number[] = (k as number[]).slice().sort(function (x: number, y: number) { return x - y });
   if (!gaps.length) { for (let fi = 0; fi < a.length; ++fi) g.push({ cs: a[fi], xs: l[fi] }); return g; }
@@ -446,6 +486,29 @@ export function debugBarColumn(sysIdx: number, x: number): { sp: number; w0: num
   return { sp, w0, t0, rows: out.join(" ") };
 }
 
+/**
+ * v17 双线抢救: 反复/终止处的细+粗线对里, 粗线常因 midWidth 大被否决、
+ * 细线被 twin 规则误伤, 导致整组双线漏光。被否决列若自身纵贯(runRatio≥0.7)
+ * 且近邻(≤1.5sp)有强竖列(rel≥0.75), 则保留为候选, 后续窄间隙合并归一为单线。
+ * 升号双竖(twinRel<0.65)与梁列(run 短)达不到双阈值, 不会被捞回。
+ */
+export function doubleBarRescue(
+  sysIdx: number, x: number, ys: number[], m: number,
+  stride: number, pix: any, rw0: number, rt0: number,
+): boolean {
+  if (!(m > 0)) return false;
+  const sp = Math.max(1, spatium);
+  if (columnRunRatio(x, rw0, rt0, stride, pix, 3 * witArr[sysIdx]) < 0.7) return false;
+  const maxD = Math.max(3, Math.round(1.5 * sp));
+  for (let dist = 2; dist <= maxD; dist++) {
+    for (const c of [x - dist, x + dist]) {
+      if (c < 0 || c >= ys.length) continue;
+      if (ys[c] / m >= 0.75) return true;
+    }
+  }
+  return false;
+}
+
 /** 否决判据(候选阶段 + NMS 后复核共用): NMS 中位数可把峰搬到 1-2px 外、
  * 落到否决区内的列上, 复核 catches 这类漏网。525 个 TP 在终检位置零命中(实测)。 */
 export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: number): boolean {
@@ -454,10 +517,11 @@ export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: num
   var narrowSys = (rt0 - rw0 + 1) <= 6.5 * spatium;
   return ((Math.max(sf0.topBlob, sf0.botBlob) >= 4 && sf0.runRatio >= 0.8 && sf0.midWidth <= 5) ||
     (sf0.runRatio >= 0.9 && sf0.noteheadProximity >= 1) ||
+    (sf0.runRatio >= 0.95 && sf0.noteheadProximity >= 1) ||
     (sf0.runRatio >= 0.6 && sf0.midWidth >= 6) ||
     (sf0.twinDist >= 4 && sf0.twinDist <= 6 && sf0.twinRel >= 0.55 && sf0.twinRel < 0.65) ||
     (sf0.runRatio >= 0.8 && sf0.noteheadProximity >= 1 && Math.max(sf0.topBlob, sf0.botBlob) >= 6) ||
     (narrowSys && sf0.runRatio < 0.95 && sf0.midWidth <= 2));
 }
 
-function findBarLines(a: any, b: any, c: any): any { lastEB_A = a; lastEB_B = b; lastEB_C = c; var d: any, e: any, f: any, g: any, k = legacyOpt.mtdrmpl, l = legacyOpt.voorna, p = 1 * legacyOpt.dx, n = 2 * spatium, h: any[] = []; lastBarDiagnostics.length = 0; lastSystemConfidence.length = 0; for (d = 0; d < a.length; ++d) { var m = 3 * witArr[d]; var u = a[d].xs; var q = u.x1 + 50; var v = u.x2 - 20; q >= v && (q = u.x1, v = u.x2); var r = a[d].cs; var w = r[0]; var t = r[r.length - 1]; var C = (w - n) * b; var z = w * b; var A = t * b; var D = (t + n) * b; var evd = columnEvidence(r, m, b, c, n); r = evd.rs; var y: any = evd.ys; f = y.slice(q, v); f.sort(function (a: any, b: any) { return b - a }); m = f[0]; t = w = 0; for (f = q; f < v; f++)q = y[f], q > m * k && (r[f - p] > w && (w = r[f - p]), r[f + p] > t && (t = r[f + p])); var cands: { x: number; rel: number; bypass: boolean }[] = []; var csRows0: number[] = a[d].cs; var rw0 = csRows0[0]; var rt0 = csRows0[csRows0.length - 1]; var darkSum0 = 3 * witArr[d]; for (f = 5; f < r.length - 5; f++) { var yy = y[f]; if (!(yy > m * k)) continue; if (f - u.x1 < Math.max(80, 8 * spatium)) continue; var passC = r[f - p] > w * l && r[f + p] > t * l; var bypass = false; if (!passC) { if (columnRunRatio(f, rw0, rt0, b, c, darkSum0) < 0.9) continue; bypass = true; } var sf0 = barStemFeatures(d, f); if (barColumnVetoed(d, f, rw0, rt0)) continue; cands.push({ x: f, rel: m > 0 ? yy / m : 0, bypass }); } var keptNms = nmsBarPeaks(cands, spatium); var minGap = 3 * spatium; var dblGap = Math.max(2, spatium * 0.7); var kept: number[] = []; var keptRel: { x: number; rel: number }[] = []; for (const cand of keptNms) { if (!kept.length) { kept.push(cand.x); keptRel.push(cand); continue; } var prevX = kept[kept.length - 1]; var prevRel = keptRel[keptRel.length - 1].rel; var gap = cand.x - prevX; var strongPair = cand.rel >= 0.85 && prevRel >= 0.85; var need = strongPair ? dblGap : minGap; if (gap >= need) { kept.push(cand.x); keptRel.push(cand); } else if (cand.rel > prevRel + 0.05) { kept[kept.length - 1] = cand.x; keptRel[keptRel.length - 1] = cand; } } var keptF: number[] = []; var keptRelF: { x: number; rel: number }[] = []; for (var kfi = 0; kfi < kept.length; kfi++) { if (!barColumnVetoed(d, kept[kfi], rw0, rt0)) { keptF.push(kept[kfi]); keptRelF.push(keptRel[kfi]); } } kept = keptF; keptRel = keptRelF; for (const cd of cands) { var isKept = kept.indexOf(cd.x) >= 0; lastBarDiagnostics.push({ system: d, x: cd.x, strength: cd.rel, rel: Math.round(cd.rel * 100) / 100, kept: isKept, reason: isKept ? (cd.bypass ? "kept-straight-bypass" : "kept") : "suppressed-by-nms-or-gap" }); } var conf = scoreSystemConfidence(keptRel, spatium); lastSystemConfidence.push(conf); e = []; v = u.x1; for (const kx of kept) { if (kx > u.x1 + 2 && kx < u.x2 - 2) { e.push(kx); v = kx; } } if (!e.length) { e = [u.x1]; v = u.x1; } else if (e[0] - u.x1 > 3 * spatium) e.unshift(u.x1); if (u.x2 - v > 3 * spatium || e.length === 1) e.push(u.x2); h.push(e) } return h }
+function findBarLines(a: any, b: any, c: any): any { lastEB_A = a; lastEB_B = b; lastEB_C = c; var d: any, e: any, f: any, g: any, k = legacyOpt.mtdrmpl, l = legacyOpt.voorna, p = 1 * legacyOpt.dx, n = 2 * spatium, h: any[] = []; lastBarDiagnostics.length = 0; lastSystemConfidence.length = 0; for (d = 0; d < a.length; ++d) { var m = 3 * witArr[d]; var u = a[d].xs; var q = u.x1 + 50; var v = u.x2 - 20; q >= v && (q = u.x1, v = u.x2); var r = a[d].cs; var w = r[0]; var t = r[r.length - 1]; var C = (w - n) * b; var z = w * b; var A = t * b; var D = (t + n) * b; var evd = columnEvidence(r, m, b, c, n); r = evd.rs; var y: any = evd.ys; f = y.slice(q, v); f.sort(function (a: any, b: any) { return b - a }); m = f[0]; t = w = 0; for (f = q; f < v; f++)q = y[f], q > m * k && (r[f - p] > w && (w = r[f - p]), r[f + p] > t && (t = r[f + p])); var cands: { x: number; rel: number; bypass: boolean }[] = []; var csRows0: number[] = a[d].cs; var rw0 = csRows0[0]; var rt0 = csRows0[csRows0.length - 1]; var darkSum0 = 3 * witArr[d]; for (f = 5; f < r.length - 5; f++) { var yy = y[f]; if (!(yy > m * k)) continue; if (f - u.x1 < Math.max(80, 8 * spatium)) continue; var passC = r[f - p] > w * l && r[f + p] > t * l; var bypass = false; if (!passC) { if (columnRunRatio(f, rw0, rt0, b, c, darkSum0) < 0.9) continue; bypass = true; } var sf0 = barStemFeatures(d, f); if (barColumnVetoed(d, f, rw0, rt0)) continue; cands.push({ x: f, rel: m > 0 ? yy / m : 0, bypass }); } var keptNms = nmsBarPeaks(cands, spatium); var minGap = 3 * spatium; var dblGap = Math.max(2, spatium * 0.7); var kept: number[] = []; var keptRel: { x: number; rel: number }[] = []; for (const cand of keptNms) { if (!kept.length) { kept.push(cand.x); keptRel.push(cand); continue; } var prevX = kept[kept.length - 1]; var prevRel = keptRel[keptRel.length - 1].rel; var gap = cand.x - prevX; var strongPair = cand.rel >= 0.85 && prevRel >= 0.85; var need = strongPair ? dblGap : minGap; if (gap >= need) { kept.push(cand.x); keptRel.push(cand); } else if (cand.rel > prevRel + 0.05) { kept[kept.length - 1] = cand.x; keptRel[keptRel.length - 1] = cand; } } var keptF: number[] = []; var keptRelF: { x: number; rel: number }[] = []; var rescuedXs: number[] = []; for (var kfi = 0; kfi < kept.length; kfi++) { if (!barColumnVetoed(d, kept[kfi], rw0, rt0)) { keptF.push(kept[kfi]); keptRelF.push(keptRel[kfi]); } else if (doubleBarRescue(d, kept[kfi], y, m, b, c, rw0, rt0)) { keptF.push(kept[kfi]); keptRelF.push(keptRel[kfi]); rescuedXs.push(kept[kfi]); } } kept = keptF; keptRel = keptRelF; var mgA: number[] = []; for (var mgi = 1; mgi < kept.length; mgi++) mgA.push(kept[mgi] - kept[mgi - 1]); if (mgA.length) { mgA.sort(function (x, y) { return x - y }); var medGap = mgA[Math.floor(mgA.length / 2)]; var mergeMax = Math.min(0.45 * medGap, 2 * spatium); if (mergeMax >= 3) { var mPass = true; while (mPass) { mPass = false; for (var mqi = 1; mqi < kept.length; mqi++) { if (kept[mqi] - kept[mqi - 1] < mergeMax) { var featL = barStemFeatures(d, kept[mqi - 1]); var featR = barStemFeatures(d, kept[mqi]); var nbL = featL ? featL.noteheadProximity : 0; var nbR = featR ? featR.noteheadProximity : 0; var mdi = -1; if (nbL >= 1 && nbR < 1) mdi = mqi - 1; else if (nbR >= 1 && nbL < 1) mdi = mqi; if (mdi >= 0) { var mdx = kept[mdi]; kept.splice(mdi, 1); keptRel.splice(mdi, 1); lastBarDiagnostics.push({ system: d, x: mdx, strength: 0, rel: 0, kept: false, reason: "dropped-stem-graze" }); mPass = true; break; } } } } } } for (const cd of cands) { var isKept = kept.indexOf(cd.x) >= 0; lastBarDiagnostics.push({ system: d, x: cd.x, strength: cd.rel, rel: Math.round(cd.rel * 100) / 100, kept: isKept, reason: isKept ? (rescuedXs.indexOf(cd.x) >= 0 ? "kept-rescued-double" : cd.bypass ? "kept-straight-bypass" : "kept") : "suppressed-by-nms-or-gap" }); } var conf = scoreSystemConfidence(keptRel, spatium); lastSystemConfidence.push(conf); e = []; v = u.x1; for (const kx of kept) { if (kx > u.x1 + 2 && kx < u.x2 - 2) { e.push(kx); v = kx; } } if (!e.length) { e = [u.x1]; v = u.x1; } else if (e[0] - u.x1 > 3 * spatium) e.unshift(u.x1); if (u.x2 - v > 3 * spatium || e.length === 1) e.push(u.x2); h.push(e) } return h }

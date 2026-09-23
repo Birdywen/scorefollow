@@ -40,6 +40,44 @@ const ADV_STEPS: Record<string, number> = {
   zwgrens: 0.05, drmpl: 0.05, drmpl2: 0.1, mtdrmpl: 0.05, voorna: 0.05, dx: 1,
 };
 
+// 界面中英双语: 静态 chrome 字符串走这里, 动态诊断 status 保持原文(调试用)
+type Lang = "zh" | "en";
+const STR: Record<string, { zh: string; en: string }> = {
+  score: { zh: "谱", en: "Score" },
+  media: { zh: "媒体", en: "Media" },
+  noScore: { zh: "未载入谱面", en: "No score loaded" },
+  loadPdf: { zh: "载入 PDF 谱", en: "Load PDF score" },
+  loadMedia: { zh: "载入音频/视频", en: "Load audio/video" },
+  settings: { zh: "设置", en: "Settings" },
+  play: { zh: "▶ 播放", en: "▶ Play" },
+  pause: { zh: "❚❚ 暂停", en: "❚❚ Pause" },
+  prevPage: { zh: "上一页", en: "Previous page" },
+  nextPage: { zh: "下一页", en: "Next page" },
+  speed: { zh: "速度", en: "Speed" },
+  correct: { zh: "纠错", en: "Correct" },
+  correcting: { zh: "✓ 纠错中", en: "✓ Correcting" },
+  cleanView: { zh: "干净视图", en: "Clean view" },
+  panelBtn: { zh: "面板", en: "Panel" },
+  waiting: { zh: "等待谱面", en: "Waiting for score" },
+  sysUnit: { zh: "行", en: "systems" },
+  barUnit: { zh: "小节", en: "measures" },
+  lowConf: { zh: "低置信", en: "low-conf" },
+  pageUnit: { zh: "页", en: " pages" },
+  close: { zh: "关闭", en: "Close" },
+  closePanel: { zh: "关闭面板", en: "Close panel" },
+  practice: { zh: "练习控制", en: "Practice controls" },
+  measureOps: { zh: "小节操作", en: "Measure actions" },
+  resetDefaults: { zh: "恢复默认值", en: "Reset defaults" },
+  pieSplit: { zh: "拆分", en: "Split" },
+  pieMergeR: { zh: "右合▶", en: "Merge ▶" },
+  pieDelete: { zh: "删除", en: "Delete" },
+  pieRedo: { zh: "重做", en: "Redo" },
+  pieAllPages: { zh: "全页", en: "All pgs" },
+  pieReset: { zh: "重置", en: "Reset" },
+  pieUndo: { zh: "撤销", en: "Undo" },
+  pieMergeL: { zh: "◀左合", en: "◀ Merge" },
+};
+
 function cloneBars(bars: number[][]): number[][] {
   return bars.map((b) => b.slice());
 }
@@ -73,7 +111,7 @@ export default function ScoreFollowPage() {
 
   const [status, setStatus] = useState("scorefollow ready — upload a PDF score");
   const [cursorInfo, setCursorInfo] = useState("");
-  const [advOpen, setAdvOpen] = useState(true);
+  const [advOpen, setAdvOpen] = useState(false);
   const [advNonce, forceAdv] = useState(0);
   const [analysis, setAnalysis] = useState<PageAnalysis | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -108,6 +146,16 @@ export default function ScoreFollowPage() {
   const [darkTheme, setDarkTheme] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [lang, setLang] = useState<Lang>(() =>
+    typeof window !== "undefined" && localStorage.getItem("sf-lang") === "en" ? "en" : "zh");
+  const tx = (k: keyof typeof STR) => STR[k][lang];
+  const toggleLang = useCallback(() => {
+    setLang((v) => {
+      const n: Lang = v === "zh" ? "en" : "zh";
+      try { localStorage.setItem("sf-lang", n); } catch { /* ignore */ }
+      return n;
+    });
+  }, []);
   const [chromeOpen, setChromeOpen] = useState(true);
   const [mediaName, setMediaName] = useState("");
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -1383,9 +1431,8 @@ export default function ScoreFollowPage() {
       {!chromeOpen && <button className={styles.showui} onClick={() => setChromeOpen(true)} title="Show toolbar (T)">UI</button>}
       {chromeOpen && <header className={styles.topbar}>
         <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>SMART-METRO</span>
-        <button className={styles.tbPlay} onClick={() => playing ? doPause() : doPlay()}>{playing ? "❚❚ pause" : "▶ play"}</button>
-        <button className={`${styles.tbBtn} ${pdfName ? styles.tbBtnOn : ""}`} onClick={() => pdfInputRef.current?.click()} title={pdfName || "载入 PDF 谱"}>📄 {pdfName ? (pdfName.length > 16 ? pdfName.slice(0, 14) + "…" : pdfName) : "谱"}</button>
-        <button className={`${styles.tbBtn} ${mediaURL ? styles.tbBtnOn : ""}`} onClick={() => mediaInputRef.current?.click()} title={mediaName || "载入音频/视频"}>🎵 {mediaName ? (mediaName.length > 16 ? mediaName.slice(0, 14) + "…" : mediaName) : "媒体"}</button>
+         <button className={`${styles.tbBtn} ${pdfName ? styles.tbBtnOn : ""}`} onClick={() => pdfInputRef.current?.click()} title={pdfName || tx("loadPdf")}>📄 {pdfName ? (pdfName.length > 16 ? pdfName.slice(0, 14) + "…" : pdfName) : tx("score")}</button>
+        <button className={`${styles.tbBtn} ${mediaURL ? styles.tbBtnOn : ""}`} onClick={() => mediaInputRef.current?.click()} title={mediaName || tx("loadMedia")}>🎵 {mediaName ? (mediaName.length > 16 ? mediaName.slice(0, 14) + "…" : mediaName) : tx("media")}</button>
         <input ref={pdfInputRef} type="file" accept=".pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPdfFile(f); e.target.value = ""; }} />
         <input ref={mediaInputRef} type="file" accept="audio/*,video/*" hidden onChange={(e) => {
           const f = e.target.files?.[0]; if (!f) return;
@@ -1394,43 +1441,12 @@ export default function ScoreFollowPage() {
           setMediaKind(f.type.startsWith("video") ? "video" : "audio");
           e.target.value = "";
         }} />
+        <span className={styles.tbTitle}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
         <span className={styles.tbSpacer} />
         <span className={styles.tbMenuWrap}>
-          <button className={styles.tbBtn} onClick={() => setMenuOpen((v) => !v)} title="设置 (F)">⚙ 设置</button>
+          <button className={styles.tbBtn} onClick={toggleLang} title="语言 / Language">{lang === "zh" ? "En" : "中"}</button>
+          <button className={styles.tbBtn} onClick={() => setMenuOpen((v) => !v)} title={`${tx("settings")} (F)`}>⚙ {tx("settings")}</button>
           {menuOpen && <div className={styles.tbMenu} role="menu" aria-label="设置">
-            <div className={styles.tbMenuRow}>
-              <span>page</span>
-              <button className={styles.pagerBtn} onClick={() => {
-                const n = Math.max(1, pageNum - 1);
-                pageNumRef.current = n; setPageNum(n);
-                const off = pageOffsetsRef.current.find((o) => o.page === n);
-                if (off && notationRef.current && stackRef.current && analysis) {
-                  notationRef.current.scrollTop = off.y * (stackRef.current.clientWidth / Math.max(1, analysis.pageW));
-                }
-              }} title="Previous page">‹</button>
-              <input type="number" min={1} max={Math.max(1, numPages)} value={pageNum} onChange={(e) => {
-                const n = Math.min(Math.max(1, Number(e.target.value) || 1), numPages || 1);
-                pageNumRef.current = n;
-                setPageNum(n);
-                const off = pageOffsetsRef.current.find((o) => o.page === n);
-                if (off && notationRef.current && stackRef.current && analysis) {
-                  const scale = stackRef.current.clientWidth / Math.max(1, analysis.pageW);
-                  notationRef.current.scrollTop = off.y * scale;
-                }
-              }} /> / {numPages}
-              <button className={styles.pagerBtn} onClick={() => {
-                const n = Math.min(Math.max(1, numPages || 1), pageNum + 1);
-                pageNumRef.current = n; setPageNum(n);
-                const off = pageOffsetsRef.current.find((o) => o.page === n);
-                if (off && notationRef.current && stackRef.current && analysis) {
-                  notationRef.current.scrollTop = off.y * (stackRef.current.clientWidth / Math.max(1, analysis.pageW));
-                }
-              }} title="Next page">›</button>
-            </div>
-            <div className={styles.tbMenuRow}>
-              <span>speed</span>
-              <input type="range" min={0.1} max={4} step={0.05} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} /> {speed.toFixed(2)}x
-            </div>
             <div className={styles.tbMenuRow}>
               <label><input type="checkbox" checked={loopB > loopA} onChange={(e) => {
                 if (e.target.checked) wijzerRef.current.setLoop(loopA || 0, loopB || Math.max(loopA + 4, 4));
@@ -1457,11 +1473,40 @@ export default function ScoreFollowPage() {
 
       {/* 分析开关与存取已并入右侧 panel, 状态行见底部 statusbar */}
 
-      {helpOpen && <section className={styles.advpanel} role="dialog" aria-label="help">
+       {chromeOpen && <nav className={styles.practicebar} aria-label={tx("practice")}>
+          <button className={styles.practicePlay} onClick={() => playing ? doPause() : doPlay()}>
+            {playing ? tx("pause") : tx("play")}
+          </button>
+         <span className={styles.practiceDivider} />
+         <button className={styles.practiceBtn} onClick={() => {
+           const n = Math.max(1, pageNum - 1); pageNumRef.current = n; setPageNum(n);
+           const off = pageOffsetsRef.current.find((o) => o.page === n);
+           if (off && notationRef.current && stackRef.current && analysis) notationRef.current.scrollTop = off.y * (stackRef.current.clientWidth / Math.max(1, analysis.pageW));
+          }} aria-label={tx("prevPage")}>‹</button>
+          <span className={styles.pageIndicator}>{lang === "zh" ? `第 ${pageNum} / ${numPages || 1} 页` : `Page ${pageNum} / ${numPages || 1}`}</span>
+         <button className={styles.practiceBtn} onClick={() => {
+           const n = Math.min(numPages || 1, pageNum + 1); pageNumRef.current = n; setPageNum(n);
+           const off = pageOffsetsRef.current.find((o) => o.page === n);
+           if (off && notationRef.current && stackRef.current && analysis) notationRef.current.scrollTop = off.y * (stackRef.current.clientWidth / Math.max(1, analysis.pageW));
+          }} aria-label={tx("nextPage")}>›</button>
+          <span className={styles.practiceDivider} />
+          <label className={styles.speedControl}>{tx("speed")}
+           <input type="range" min={0.1} max={4} step={0.05} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+           <b>{speed.toFixed(2)}×</b>
+         </label>
+         <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }}>
+            {correctMode ? tx("correcting") : tx("correct")}
+          </button>
+          <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} onClick={toggleCleanView}>{tx("cleanView")}</button>
+          <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>
+          <span className={styles.practiceHint}>{analysis ? `${analysis.systems.length} ${tx("sysUnit")} · ${barsTotal} ${tx("barUnit")}${lowConfSystems ? ` · ${lowConfSystems}${tx("lowConf")}` : ""}` : tx("waiting")}</span>
+       </nav>}
+
+       {helpOpen && <section className={`${styles.advpanel} ${styles.helpPanel}`} role="dialog" aria-label="help">
         <strong>Keyboard</strong>
         <div>←/→ next or previous measure · ↑/↓ next system · PageUp/PageDown page</div>
         <div>Space play/pause · B sync · Backspace backup · ,/. adjust duration</div>
-        <div>F setting · H help · L line cursor · M menu · V clean view · Esc close</div>
+        <div>F setting · H help · L line cursor · M panel · V clean view · Esc close</div>
         <div>C correction mode · S split · A merge left · D merge right (with selection)</div>
         <div>Annotation: enable annot, then long-click/shift-click to add; drag to move.</div>
       </section>}
@@ -1469,17 +1514,17 @@ export default function ScoreFollowPage() {
       {/* pie 接管全部纠错操作, 顶部 correctbar 已移除 */}
 
       {chromeOpen && correctMode && pie && selectedBar && (
-        <div className={styles.pie} style={{ left: pie.x, top: pie.y }} role="menu" aria-label="小节操作">
+        <div className={styles.pie} style={{ left: pie.x, top: pie.y }} role="menu" aria-label={tx("measureOps")}>
           <div className={styles.pieDisc} onClick={() => setPie(null)} />
           {([
-            { label: "拆分", title: "split: 从中间拆开 (S)", ang: -90, fn: pieAction(splitSelectedMeasure, true) },
-            { label: "右合▶", title: "merge right: 与右侧小联合并 (D)", ang: -45, fn: pieAction(() => mergeSelectedMeasure("right"), true) },
-            { label: "删除", title: "delete: 删除选中线 (Delete)", ang: 0, fn: pieAction(deleteSelectedBar, false), tone: "danger" },
-            { label: "重做", title: "redo", ang: 45, fn: pieAction(doRedo, false) },
-            { label: "全页", title: "复制本页校正到全部页", ang: 90, fn: pieAction(copyCorrectionsToAll, false) },
-            { label: "重置", title: "恢复自动识别", ang: 135, fn: pieAction(resetPageCorrections, false) },
-            { label: "撤销", title: "undo", ang: 180, fn: pieAction(doUndo, false) },
-            { label: "◀左合", title: "merge left: 与左侧小联合并 (A)", ang: -135, fn: pieAction(() => mergeSelectedMeasure("left"), true) },
+            { label: tx("pieSplit"), title: "split: 从中间拆开 (S)", ang: -90, fn: pieAction(splitSelectedMeasure, true) },
+            { label: tx("pieMergeR"), title: "merge right: 与右侧小联合并 (D)", ang: -45, fn: pieAction(() => mergeSelectedMeasure("right"), true) },
+            { label: tx("pieDelete"), title: "delete: 删除选中线 (Delete)", ang: 0, fn: pieAction(deleteSelectedBar, false), tone: "danger" },
+            { label: tx("pieRedo"), title: "redo", ang: 45, fn: pieAction(doRedo, false) },
+            { label: tx("pieAllPages"), title: "复制本页校正到全部页", ang: 90, fn: pieAction(copyCorrectionsToAll, false) },
+            { label: tx("pieReset"), title: "恢复自动识别", ang: 135, fn: pieAction(resetPageCorrections, false) },
+            { label: tx("pieUndo"), title: "undo", ang: 180, fn: pieAction(doUndo, false) },
+            { label: tx("pieMergeL"), title: "merge left: 与左侧小联合并 (A)", ang: -135, fn: pieAction(() => mergeSelectedMeasure("left"), true) },
           ] as { label: string; title: string; ang: number; fn: () => void; tone?: "danger" }[]).map((it) => {
             const r = 92;
             const dx = Math.round(r * Math.cos((it.ang * Math.PI) / 180));
@@ -1496,14 +1541,15 @@ export default function ScoreFollowPage() {
           })}
           <div className={styles.pieCenter}>
             <span>s{selectedBar.si + 1}·m{selectedBar.bi + 1}</span>
-            <button onClick={() => setPie(null)} aria-label="关闭">×</button>
+            <button onClick={() => setPie(null)} aria-label={tx("close")}>×</button>
           </div>
         </div>
       )}
 
-      {chromeOpen && advOpen && (
-        <div className={styles.advpanel} role="dialog" aria-label="control panel">
-          <div className={styles.pcardHead}><span>Barline Correction</span><button onClick={() => setAdvOpen(false)} aria-label="关闭面板">×</button></div>
+      <div className={styles.workspace}>
+       {chromeOpen && advOpen && (
+         <aside className={`${styles.advpanel} ${styles.controlPanel}`} role="dialog" aria-label="control panel">
+           <div className={styles.pcardHead}><span>Barline Correction</span><button onClick={() => setAdvOpen(false)} aria-label={tx("closePanel")}>×</button></div>
           <div className={styles.pcard}>
             <div className={styles.pcardTitle}><span>View</span></div>
             <div className={styles.pillRow}>
@@ -1518,16 +1564,16 @@ export default function ScoreFollowPage() {
               <label className={`${styles.pill} ${opt.lncsr === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.lncsr === 1} onChange={(e) => applyAdv("lncsr", e.target.checked ? 1 : 0)} /> line cursor</label>
               <label className={`${styles.pill} ${cleanView ? styles.pillOn : ""}`}><input type="checkbox" checked={cleanView} onChange={() => toggleCleanView()} /> clean (V)</label>
               <label className={`${styles.pill} ${correctMode ? styles.pillOn : ""}`}><input type="checkbox" checked={correctMode} onChange={(e) => { setCorrectMode(e.target.checked); setSelectedBar(null); setPie(null); }} /> correct</label>
-            </div>
-          </div>
+             </div>
+           </div>
           <div className={styles.pcard}>
             <div className={styles.pcardTitle}><span>Mode</span></div>
             <div className={styles.pillRow}>
-              {(["fast", "balanced", "scan"] as AnalysisProfileName[]).map((name) => (
+             {(["fast", "balanced", "scan"] as AnalysisProfileName[]).map((name) => (
                 <label key={name} className={`${styles.pill} ${profileName === name ? styles.pillOn : ""}`}><input type="radio" name="profile" checked={profileName === name} onChange={() => applyProfile(name)} /> {name}</label>
               ))}
-            </div>
-            <button className={styles.pfileBtn} onClick={resetAdvDefaults}>恢复默认值</button>
+             </div>
+            <button className={styles.pfileBtn} onClick={resetAdvDefaults}>{tx("resetDefaults")}</button>
           </div>
           <div className={styles.pcard}>
             <div className={styles.pcardTitle}><span>Timing</span></div>
@@ -1571,15 +1617,15 @@ export default function ScoreFollowPage() {
             <label className={styles.stepper}>pagewd <input type="number" min={600} max={3000} step={50} value={opt.pagewd} onChange={(e) => applyAdv("pagewd", Number(e.target.value) || 1000)} /></label>
             <label className={styles.stepper}>fixwd <input type="number" min={0} step={100} value={opt.fixwd} onChange={(e) => applyAdv("fixwd", Number(e.target.value) || 0)} /></label>
           </details>
-        </div>
+         </aside>
       )}
 
       <div className={styles.mainarea}>
       {mediaURL && mediaKind === "video" && (
-        <video ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls style={{ maxHeight: 160, maxWidth: 280 }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
+        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
       )}
       {mediaURL && mediaKind === "audio" && (
-        <audio ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls style={{ width: 280, height: 36, alignSelf: "flex-start" }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
+        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
       )}
 
       <div
@@ -1692,6 +1738,7 @@ export default function ScoreFollowPage() {
           );
         }))}
         </div>
+       </div>
       </div>
       </div>
 
