@@ -1094,7 +1094,7 @@ export default function ScoreFollowPage() {
     L.push("//# the same folder as synpdf.html. Synpdf preloads score and media when it is opened with the");
     L.push("//# file name as parameter in the url, for example: http://your.domain.org/synpdf.html?file_name.js");
     L.push("//# Also works locally with file:///path/to/synpdf.html?file_name.js");
-    L.push(`//# **** exported by scorefollow algo v${ALGO_VERSION} · ${numPages} pages metric + pdf_data + timing ****`);
+    L.push(`//# **** exported by scorefollow algo v${ALGO_VERSION} · ${numPages} pages metric + ${pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0 ? "pdf_data + " : ""}timing ****`);
     L.push("//########################################");
     L.push(`pdf_file = ${JSON.stringify(base + ".pdf")};`);
     if (pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0) {
@@ -1132,8 +1132,9 @@ export default function ScoreFollowPage() {
     a.download = base + ".js";
     a.click();
     if (pdfDocRef.current) await renderPage(pdfDocRef.current, pageNum);
+    const withPdf = pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0;
     setStatus(`saved preload ${base}.js · ${numPages} pages · ${w.times.length} sync points` +
-      (pdfBytesRef.current ? " · 含PDF" : " · 无PDF(直接打开的?demo)"));
+      (withPdf ? " · 含PDF" : (pdfBytesRef.current ? " · 无PDF(+PDF 已关)" : " · 无PDF(直接打开的?demo)")));
   }, [analysis, numPages, pageNum, pdfName, renderAndAnalyze, bin2txt, embedMetro, buildMetricArr]);
 
   // preload.js 载入(原版兼容): pdf_data 内嵌PDF + 全页 metric 配对 + times + 逐页 adv
@@ -1610,6 +1611,7 @@ export default function ScoreFollowPage() {
             <div className={styles.pillRow}>
               <label className={`${styles.pill} ${synbox ? styles.pillOn : ""}`}><input type="checkbox" checked={synbox} onChange={(e) => setSynbox(e.target.checked)} /> enable sync</label>
               <label className={`${styles.pill} ${embedMetro ? styles.pillOn : ""}`}><input type="checkbox" checked={embedMetro} onChange={(e) => setEmbedMetro(e.target.checked)} /> +metro</label>
+              <label className={`${styles.pill} ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? styles.pillOn : ""}`}><input type="checkbox" checked={((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0} onChange={(e) => applyAdv("wpdf", e.target.checked ? 1 : 0)} title="preload.js 是否内嵌 pdf_data base64(关=只存 metric/timing, 体积小)" /> +PDF</label>
             </div>
           </div>
           <details className={styles.pcard}>
