@@ -145,6 +145,8 @@ export default function ScoreFollowPage() {
   const [fullScreen, setFullScreen] = useState(false);
   const [darkTheme, setDarkTheme] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [preloadPreview, setPreloadPreview] = useState<{ head: string; truncated: boolean; lines: number; bytes: number } | null>(null);
+  const preloadFullRef = useRef<string>("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [lang, setLang] = useState<Lang>(() =>
     typeof window !== "undefined" && localStorage.getItem("sf-lang") === "en" ? "en" : "zh");
@@ -381,7 +383,7 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = `${BASE}/metro-engine.js?v=20260923-jump`;
+    s.src = `${BASE}/metro-engine.js?v=20260924-export`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
@@ -1061,10 +1063,11 @@ export default function ScoreFollowPage() {
     return '["' + parts.join('",\n"') + '"]';
   }, []);
 
-  // preload.js 导出(原版 synpdf.html 兼容: 全页 metric + pdf_data + 全局 timing + 逐页 adv)
-  const savePreload = useCallback(async () => {
+  // preload.js 文本组装(原版 synpdf.html 兼容: 全页 metric + pdf_data + 全局 timing + 逐页 adv)
+  // 供 File 卡预览/下载 + 节拍器面板 ⤓ Export(经 window.__sfPreloadText)共用
+  const buildPreloadText = useCallback(async (): Promise<string | null> => {
     const pdf = pdfDocRef.current;
-    if (!pdf || !numPages) { setStatus("先载入谱面再保存 preload"); return; }
+    if (!pdf || !numPages) { setStatus("先载入谱面再保存 preload"); return null; }
     const w = wijzerRef.current;
     // 全页分析(缺失页后台补算, 人工校正优先)
     const off = document.createElement("canvas");
@@ -1126,16 +1129,57 @@ export default function ScoreFollowPage() {
     L.push(`times_arr = ${JSON.stringify(w.times.map((e) => ({ t: 1 * e.t, mix: 1 * e.mix })))};`);
     L.push(`metric_arr = ${JSON.stringify(metric)};`);
     L.push(`adv_settings = ${JSON.stringify(adv)};`);
-    const blob = new Blob([L.join("\n") + "\n"], { type: "text/javascript" });
+    return L.join("\n") + "\n";
+  }, [analysis, numPages, pageNum, pdfName, renderAndAnalyze, bin2txt, embedMetro, buildMetricArr, opt]);
+
+  // save preload.js: 先弹数据 preview(截断 80 行), 确认后再下载/复制
+  const savePreload = useCallback(async () => {
+    const txt = await buildPreloadText();
+    if (!txt) return;
+    preloadFullRef.current = txt;
+    const lines = txt.split("\n");
+    const HEAD = 80;
+    const bytes = new Blob([txt]).size;
+    setPreloadPreview({
+      head: lines.slice(0, HEAD).join("\n"),
+      truncated: lines.length > HEAD,
+      lines: lines.length,
+      bytes,
+    });
+    setStatus(`preload preview: ${lines.length} 行 · ${(bytes / 1024).toFixed(0)} KB — 检查后点下载`);
+  }, [buildPreloadText]);
+
+  const downloadPreload = useCallback(() => {
+    const txt = preloadFullRef.current;
+    if (!txt) return;
+    const base = (pdfName || "score").replace(/\.pdf$/i, "");
+    const blob = new Blob([txt], { type: "text/javascript" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = base + ".js";
     a.click();
-    if (pdfDocRef.current) await renderPage(pdfDocRef.current, pageNum);
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    if (pdfDocRef.current) void renderPage(pdfDocRef.current, pageNum);
+    const w = wijzerRef.current;
     const withPdf = pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0;
     setStatus(`saved preload ${base}.js · ${numPages} pages · ${w.times.length} sync points` +
       (withPdf ? " · 含PDF" : (pdfBytesRef.current ? " · 无PDF(+PDF 已关)" : " · 无PDF(直接打开的?demo)")));
-  }, [analysis, numPages, pageNum, pdfName, renderAndAnalyze, bin2txt, embedMetro, buildMetricArr]);
+    setPreloadPreview(null);
+  }, [pdfName, pageNum, numPages, renderPage, opt]);
+
+  const copyPreload = useCallback(async () => {
+    const txt = preloadFullRef.current;
+    if (!txt) return;
+    try {
+      await navigator.clipboard.writeText(txt);
+      setStatus(`preload 已复制(${(new Blob([txt]).size / 1024).toFixed(0)} KB)`);
+    } catch { setStatus("复制失败: 剪贴板被浏览器拒绝, 请用下载"); }
+  }, []);
+
+  // 宿主 builder 桥: 节拍器面板 ⤓ Export 在无原版 #show 时走这里拿校对数据
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__sfPreloadText = () => buildPreloadText();
+  }, [buildPreloadText]);
 
   // preload.js 载入(原版兼容): pdf_data 内嵌PDF + 全页 metric 配对 + times + 逐页 adv
   const loadPreload = useCallback(async (f: File) => {
@@ -1510,6 +1554,16 @@ export default function ScoreFollowPage() {
         <div>F setting · H help · L line cursor · M panel · V clean view · Esc close</div>
         <div>C correction mode · S split · A merge left · D merge right (with selection)</div>
         <div>Annotation: enable annot, then long-click/shift-click to add; drag to move.</div>
+      </section>}
+
+      {preloadPreview && <section className={`${styles.advpanel} ${styles.helpPanel}`} role="dialog" aria-label="preload preview" style={{ maxWidth: "min(860px, 92vw)" }}>
+        <strong>preload.js preview · {preloadPreview.lines} 行 · {(preloadPreview.bytes / 1024).toFixed(0)} KB{preloadPreview.truncated ? " · 只显示前 80 行" : ""}</strong>
+        <pre style={{ maxHeight: "46vh", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 11, margin: "8px 0", textAlign: "left" }}>{preloadPreview.head}{preloadPreview.truncated ? "\n…(已截断, 下载文件是完整的)" : ""}</pre>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className={styles.practiceBtn} onClick={downloadPreload}>下载 .js</button>
+          <button className={styles.practiceBtn} onClick={() => void copyPreload()}>复制</button>
+          <button className={styles.practiceBtn} onClick={() => setPreloadPreview(null)}>关闭</button>
+        </div>
       </section>}
 
       {/* pie 接管全部纠错操作, 顶部 correctbar 已移除 */}

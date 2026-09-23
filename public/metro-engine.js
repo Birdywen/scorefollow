@@ -845,7 +845,18 @@ function boot(){
   function readFullJs(cb){
     // 触发 synpdf 的 show: 把完整.js填进 #saveDlg pre
     var showBtn=document.getElementById('show');
-    if(!showBtn){ cb(null); return; }
+    if(!showBtn){
+      // scorefollow Next.js 版没有原版 #show: 走宿主 builder(异步, 含人工校正)
+      try{
+        var hook=window.__sfPreloadText;
+        if(typeof hook==='function'){
+          hook().then(function(txt){ cb(txt && /metric_arr\s*=/.test(txt) ? txt : null); },
+                      function(){ cb(null); });
+          return;
+        }
+      }catch(e){}
+      cb(null); return;
+    }
     showBtn.click();
     var tries=0;
     var iv=setInterval(function(){
