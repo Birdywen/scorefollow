@@ -34,3 +34,18 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## 发布流程 (Oracle 开发 → ezmusics 上线)
+
+```bash
+# 1. Oracle 提交+推送
+npx tsc --noEmit && npm run build   # 先本地验绿
+git add -A && git commit -m "..." && git push origin main
+
+# 2. ezmusics 拉取+发布（一键）
+~/scorefollow/deploy.sh   # = git pull + npm install + next build + cp out/* 到 ~/public_html/scorefollow/
+```
+
+约定位死勿动：`next.config.ts` 的 `output: export` + `basePath: /scorefollow`
+（静态托管要求；改了它，`app/page.tsx` 里所有 `/xxx` 绝对路径都要经 `BASE` 前缀），
+`app/api/*` 禁止加 route handler（会炸静态导出）。
