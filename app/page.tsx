@@ -7,6 +7,9 @@
  * + 人工小节线校正层(manualBarsByPage) / 覆盖层开关 / timing 校验。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+
+// 静态部署 basePath（next.config.ts 保持同步）
+const BASE = "/scorefollow";
 import {
   analyzePage,
   clearPageCache,
@@ -131,7 +134,7 @@ export default function ScoreFollowPage() {
   useEffect(() => {
     (async () => {
       const pdfjs: any = await import("pdfjs-dist");
-      pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      pdfjs.GlobalWorkerOptions.workerSrc = `${BASE}/pdf.worker.min.mjs`;
     })();
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
@@ -330,7 +333,7 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = "/metro-engine.js?v=20260923-jump";
+    s.src = `${BASE}/metro-engine.js?v=20260923-jump`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
@@ -346,7 +349,7 @@ export default function ScoreFollowPage() {
         const pdfjs: any = await import("pdfjs-dist");
         const buf = await f.arrayBuffer();
         pdfBytesRef.current = buf.slice(0);
-        const pdf = await pdfjs.getDocument({ data: buf, wasmUrl: "/wasm/" }).promise;
+        const pdf = await pdfjs.getDocument({ data: buf, wasmUrl: `${BASE}/wasm/` }).promise;
         pdfDocRef.current = pdf;
         clearPageCache();
         autoRef.current = {};
@@ -1061,7 +1064,7 @@ export default function ScoreFollowPage() {
     const isEngineAnnot = (t: string) =>
       t.includes("__sgaBoot") || t.includes("metro-engine.js") || t.includes("sga_config");
     if (embedMetro) {
-      const engineURL = window.location.origin + "/metro-engine.js";
+      const engineURL = window.location.origin + `${BASE}/metro-engine.js`;
       const loader = '<scr' + 'ipt>window.sga_config={};(function(){if(window.__sgaBoot)return;window.__sgaBoot=1;' +
         'var s=document.createElement("script");s.src="' + engineURL + '";s.async=true;' +
         '(document.head||document.documentElement).appendChild(s);})();</scr' + 'ipt>';
@@ -1163,7 +1166,7 @@ export default function ScoreFollowPage() {
     let pdf = pdfDocRef.current;
     if (pdfBytes) {
       pdfBytesRef.current = pdfBytes.slice(0);
-      pdf = await pdfjs.getDocument({ data: pdfBytes, wasmUrl: "/wasm/" }).promise;
+      pdf = await pdfjs.getDocument({ data: pdfBytes, wasmUrl: `${BASE}/wasm/` }).promise;
       pdfDocRef.current = pdf;
       const want = getStr("pdf_file");
       pdfNameRef.current = want || f.name.replace(/\.js$/i, ".pdf");
@@ -1352,7 +1355,7 @@ export default function ScoreFollowPage() {
     let dead = false;
     (async () => {
       try {
-        const r = await fetch("/demo-score.pdf");
+        const r = await fetch(`${BASE}/demo-score.pdf`);
         const b = await r.blob();
         if (dead) return;
         await onPdfFile(new File([b], "demo-score.pdf", { type: "application/pdf" }));
