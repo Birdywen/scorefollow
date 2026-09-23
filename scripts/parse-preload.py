@@ -32,11 +32,30 @@ def parse_preload(text):
     if m:
         result['offset_js'] = float(m.group(1))
     
-    # adv_settings = {...};
-    m = re.search(r'adv_settings\s*=\s*(\{[^}]*\});', text, re.DOTALL)
-    if m:
-        result['adv_settings'] = json.loads(m.group(1))
-    
+    # adv_settings = {...}; (per-page nested objects: brace-match, not regex)
+    i = text.find('adv_settings')
+    if i >= 0:
+        j = text.find('{', i)
+        depth = 0
+        instr = False
+        for k in range(j, len(text)):
+            ch = text[k]
+            if instr:
+                if ch == '"':
+                    instr = False
+            elif ch == '"':
+                instr = True
+            elif ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    try:
+                        result['adv_settings'] = json.loads(text[j:k + 1])
+                    except json.JSONDecodeError:
+                        pass
+                    break
+
     return result
 
 if __name__ == '__main__':

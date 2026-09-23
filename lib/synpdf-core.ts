@@ -145,8 +145,9 @@ export function analyzePage(
   canvas: HTMLCanvasElement,
   pageNumber: number,
   seln: number = 0,
+  docId: string = "",
 ): PageAnalysis {
-  const key = pageNumber + "_" + canvas.width + "x" + canvas.height + "_v" + ALGO_VERSION + "_" +
+  const key = docId + "_" + pageNumber + "_" + canvas.width + "x" + canvas.height + "_v" + ALGO_VERSION + "_" +
     [legacyOpt.seln, legacyOpt.skipn, legacyOpt.zwgrens, legacyOpt.drmpl,
       legacyOpt.drmpl2, legacyOpt.mtdrmpl, legacyOpt.voorna, legacyOpt.dx,
       legacyOpt.sysprf, legacyOpt.onestf, legacyOpt.eerst,

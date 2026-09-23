@@ -134,6 +134,15 @@ export class Wijzer {
     this.times = times.map((e) => ({ t: 1 * e.t, mix: 1 * e.mix }));
   }
 
+  /** 原版 knip: 小节比同步点多时按 +2s 补齐, 点击/方向键无需先 TAP */
+  fillDummyTimes(): void {
+    while (this.times.length < this.measures.length) {
+      const i = this.times.length;
+      const prev = i > 0 ? this.times[i - 1].t : 0;
+      this.times.push({ t: Math.round((prev + 2) * 1000) / 1000, mix: i });
+    }
+  }
+
   /** A-B 循环(秒) */
   setLoop(a: number, b: number): void {
     this.loopStart = a;
