@@ -281,6 +281,7 @@ export interface BarStemFeatures {
   neighbors: number; strength: number; noteheadProximity: number;
   headSegs: { y: number; h: number; w: number }[];
   twinDist: number; twinRel: number; extAbove: number; beamAbove: number; beamBelow: number;
+  headDip: boolean;
 }
 
 /** 只读: 茎干判别特征(符干必带符头/符梁附着 + 成束出现, 小节线孤独)。
@@ -354,6 +355,7 @@ export function barStemFeatures(sysIdx: number, x: number): BarStemFeatures | nu
   };
   const endTop = wideRows(bestR1 - 2, bestR1 + 5);
   const endBot = wideRows(bestR2 - 5, bestR2 + 2);
+  let headDip = false;
   // 符头相接: 符干必连符头(与杆连通的符头级宽段, 高 4~12 行), 小节线永不相接。
   // 行宽以 xi±1 三列为中心向两侧扩展, 中间有 1px 白缝即断开 → 紧贴不算相接。
   // 跳过谱线行但不断段(符头常横跨谱线)。梁行(>2*sp)排除在外, 只认符头级宽度。
@@ -387,7 +389,11 @@ export function barStemFeatures(sysIdx: number, x: number): BarStemFeatures | nu
   const headSegs: { y: number; h: number; w: number }[] = [];
   const flushHead = (): void => {
     // 真符头高 4-8 行; 2-3 行是紧贴粘连/连音线交叉(实测 9 个 FN 误杀全落此区间), 不计。
+    // headDip: 计入段行序宽度先降后升(斜穿连音线如 740:[10,7,6,8], 实符头单调如
+    // 931:[8,10,11,11]), rule2 遇 dip 放行(救 740, 931 照杀)。topDip(顶端窗版)
+    // 已证伪: 放进 4 个 GT 符干, 已删。
     if (headRun >= 4 && headRun <= 12) {
+      if (headW.length >= 3 && headW[1] < headW[0] && headW[headW.length - 1] > headW[headW.length - 2]) headDip = true;
       noteheadProximity++;
       headW.sort((a, b) => a - b);
       headSegs.push({ y: headY0, h: headRun, w: headW[Math.floor(headW.length / 2)] });
@@ -434,6 +440,7 @@ export function barStemFeatures(sysIdx: number, x: number): BarStemFeatures | nu
     midWidth: bandWidth(w0 + band, t0 - band),
     neighbors, strength: m > 0 ? Math.round((ev.ys[xi] / m) * 1000) / 1000 : 0,
     noteheadProximity, headSegs, twinDist, twinRel, extAbove, beamAbove, beamBelow,
+    headDip,
   };
 }
 
@@ -498,8 +505,8 @@ export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: num
   }
   var narrowSys = (rt0 - rw0 + 1) <= 6.5 * spatium;
   return ((Math.max(sf0.topBlob, sf0.botBlob) >= 4 && sf0.runRatio >= 0.8 && sf0.midWidth <= 5) ||
-    (sf0.runRatio >= 0.9 && sf0.noteheadProximity >= 1) ||
-    (sf0.runRatio >= 0.95 && sf0.noteheadProximity >= 1) ||
+    (sf0.runRatio >= 0.9 && sf0.noteheadProximity >= 1 && !sf0.headDip) ||
+    (sf0.runRatio >= 0.95 && sf0.noteheadProximity >= 1 && !sf0.headDip) ||
     (sf0.runRatio >= 0.6 && sf0.midWidth >= 6) ||
     (sf0.twinDist >= 4 && sf0.twinDist <= 6 && sf0.twinRel >= 0.55 && sf0.twinRel < 0.65) ||
     (sf0.runRatio >= 0.8 && sf0.noteheadProximity >= 1 && Math.max(sf0.topBlob, sf0.botBlob) >= 6) ||
