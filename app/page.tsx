@@ -76,6 +76,29 @@ const STR: Record<string, { zh: string; en: string }> = {
   pieReset: { zh: "重置", en: "Reset" },
   pieUndo: { zh: "撤销", en: "Undo" },
   pieMergeL: { zh: "◀左合", en: "◀ Merge" },
+  diagnostics: { zh: "诊断视图", en: "Diagnostics" },
+  correctHint: { zh: "点击选中 · 拖动线条 · 双击新增 · Ctrl+Z 撤销", en: "Click to select · drag a line · double-click to add · Ctrl+Z to undo" },
+  exitCorrect: { zh: "完成校正", en: "Done correcting" },
+  noPdfHint: { zh: "加载 PDF 乐谱，开始连续练习", en: "Load a PDF score to begin practicing" },
+  exportPreview: { zh: "导出预览", en: "Export preview" },
+  selected: { zh: "已选中", en: "Selected" },
+  fileSection: { zh: "文件与导出", en: "Files & export" },
+  viewSection: { zh: "谱面视图", en: "Score display" },
+  modeSection: { zh: "识别模式", en: "Recognition mode" },
+  timingSection: { zh: "识别参数", en: "Recognition settings" },
+  barsSection: { zh: "小节与批注", en: "Measures & annotations" },
+  expertSection: { zh: "专家参数", en: "Expert settings" },
+  systemOverlay: { zh: "系统区域", en: "Systems" },
+  barOverlay: { zh: "小节线", en: "Barlines" },
+  cursorOverlay: { zh: "播放光标", en: "Cursor" },
+  lowOverlay: { zh: "低置信区域", en: "Low confidence" },
+  lineCursor: { zh: "线形光标", en: "Line cursor" },
+  annotate: { zh: "批注", en: "Annotations" },
+  enableSync: { zh: "启用同步", en: "Enable sync" },
+  saveTiming: { zh: "导出同步数据", en: "Save timing" },
+  loadTiming: { zh: "导入同步数据", en: "Load timing" },
+  savePreload: { zh: "导出 preload.js", en: "Save preload.js" },
+  loadPreload: { zh: "导入 preload.js", en: "Load preload.js" },
 };
 
 function cloneBars(bars: number[][]): number[][] {
@@ -168,10 +191,11 @@ export default function ScoreFollowPage() {
   const [synbox, setSynbox] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // 覆盖层四开关: 系统框 / 小节线 / 光标 / 低置信度
-  const [showSystems, setShowSystems] = useState(true);
-  const [showBars, setShowBars] = useState(true);
+  const [showSystems, setShowSystems] = useState(false);
+  const [showBars, setShowBars] = useState(false);
   const [showCursor, setShowCursor] = useState(true);
   const [showLowConf, setShowLowConf] = useState(true);
+  const [diagnosticMode, setDiagnosticMode] = useState(false);
   // 干净视图: 一键隐藏全部覆盖层(含 line cursor), 供 metronome 播放时用, 再按恢复
   const [cleanView, setCleanView] = useState(false);
   const cleanSavedRef = useRef<{ sys: boolean; bars: boolean; cur: boolean; low: boolean; lncsr: number } | null>(null);
@@ -188,6 +212,8 @@ export default function ScoreFollowPage() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [preloadPreview, setPreloadPreview] = useState<{ head: string; truncated: boolean; lines: number; bytes: number } | null>(null);
   const preloadFullRef = useRef<string>("");
+  const previewCloseRef = useRef<HTMLButtonElement>(null);
+  const previewReturnRef = useRef<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [lang, setLang] = useState<Lang>(() =>
     typeof window !== "undefined" && localStorage.getItem("sf-lang") === "en" ? "en" : "zh");
@@ -203,6 +229,15 @@ export default function ScoreFollowPage() {
   const [mediaName, setMediaName] = useState("");
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
+
+  const closePreview = useCallback(() => {
+    setPreloadPreview(null);
+    requestAnimationFrame(() => previewReturnRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (preloadPreview) previewCloseRef.current?.focus();
+  }, [preloadPreview]);
 
   const toggleFullScreen = useCallback(async () => {
     try {
@@ -446,6 +481,9 @@ export default function ScoreFollowPage() {
         const pdf = await pdfjs.getDocument({ data: buf, wasmUrl: `${BASE}/wasm/` }).promise;
         pdfDocRef.current = pdf;
         clearPageCache();
+        setAnalysis(null);
+        setCursor(null);
+        pageOffsetsRef.current = [];
         autoRef.current = {};
         manualRef.current = {};
         setManualBarsByPage({});
@@ -1176,17 +1214,31 @@ export default function ScoreFollowPage() {
     return L.join("\n") + "\n";
   }, [analysis, numPages, pageNum, pdfName, renderAndAnalyze, bin2txt, embedMetro, buildMetricArr, opt]);
 
-  // save preload.js: 先弹数据 preview(截断 80 行), 确认后再下载/复制
+  // save preload.js: 预览仅显示摘要；完整文本保留供下载/复制。
   const savePreload = useCallback(async () => {
+    previewReturnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const txt = await buildPreloadText();
     if (!txt) return;
     preloadFullRef.current = txt;
     const lines = txt.split("\n");
     const HEAD = 80;
     const bytes = new Blob([txt]).size;
+    const visible: string[] = [];
+    let inPdf = false;
+    for (const line of lines) {
+      if (line.startsWith("pdf_data = ")) {
+        visible.push("pdf_data = [PDF 内容已在预览中折叠；下载与复制包含完整内容];");
+        inPdf = !line.trimEnd().endsWith("];");
+      } else if (inPdf) {
+        if (line.trimEnd().endsWith("];")) inPdf = false;
+      } else {
+        visible.push(line);
+      }
+      if (visible.length >= HEAD) break;
+    }
     setPreloadPreview({
-      head: lines.slice(0, HEAD).join("\n"),
-      truncated: lines.length > HEAD,
+      head: visible.map((line) => line.length > 600 ? line.slice(0, 600) + " … [该行仅在预览中截断]" : line).join("\n"),
+      truncated: lines.length > visible.length || visible.some((line) => line.length > 600),
       lines: lines.length,
       bytes,
     });
@@ -1208,8 +1260,8 @@ export default function ScoreFollowPage() {
     const withPdf = pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0;
     setStatus(`saved preload ${base}.js · ${numPages} pages · ${w.times.length} sync points` +
       (withPdf ? " · 含PDF" : (pdfBytesRef.current ? " · 无PDF(+PDF 已关)" : " · 无PDF(直接打开的?demo)")));
-    setPreloadPreview(null);
-  }, [pdfName, pageNum, numPages, renderPage, opt]);
+    closePreview();
+  }, [pdfName, pageNum, numPages, renderPage, opt, closePreview]);
 
   const copyPreload = useCallback(async () => {
     const txt = preloadFullRef.current;
@@ -1417,20 +1469,32 @@ export default function ScoreFollowPage() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
-      if (e.key.toLowerCase() === "t") { e.preventDefault(); setChromeOpen((v) => !v); return; }
-      if (e.key.toLowerCase() === "f") { e.preventDefault(); setMenuOpen((v) => !v); return; }
-      if (e.key.toLowerCase() === "h") { e.preventDefault(); setHelpOpen((v) => !v); return; }
-      if (e.key.toLowerCase() === "l") { e.preventDefault(); applyAdv("lncsr", opt.lncsr === 1 ? 0 : 1); return; }
-      if (e.key.toLowerCase() === "m") { e.preventDefault(); setAdvOpen((v) => !v); return; }
-      if (e.key.toLowerCase() === "v") { e.preventDefault(); toggleCleanView(); return; }
-      if (e.key === "Escape") { setHelpOpen(false); setMenuOpen(false); setAdvOpen(false); setPie(null); return; }
+      if (e.key === "Escape") {
+        if (preloadPreview) { closePreview(); return; }
+        setHelpOpen(false); setMenuOpen(false); setAdvOpen(false); setPie(null);
+        return;
+      }
+      if (preloadPreview) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "")) return;
+      // 焦点在按钮时保留快捷键；只有空格/回车留给按钮原生激活，避免双触发播放。
+      if (target?.tagName === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) doRedo(); else doUndo();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); doRedo(); return; }
+      if (synbox && e.ctrlKey && (e.key === "," || e.key === ".")) {
+        e.preventDefault(); adjustLast(e.key === "," ? -0.1 : 0.1); return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.toLowerCase() === "t") { e.preventDefault(); setChromeOpen((v) => !v); return; }
+      if (e.key.toLowerCase() === "f") { e.preventDefault(); setMenuOpen((v) => !v); return; }
+      if (e.key.toLowerCase() === "h") { e.preventDefault(); setHelpOpen((v) => !v); return; }
+      if (e.key.toLowerCase() === "l") { e.preventDefault(); applyAdv("lncsr", opt.lncsr === 1 ? 0 : 1); return; }
+      if (e.key.toLowerCase() === "m") { e.preventDefault(); setAdvOpen((v) => !v); return; }
+      if (e.key.toLowerCase() === "v") { e.preventDefault(); toggleCleanView(); return; }
       if (e.key.toLowerCase() === "c") { e.preventDefault(); if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); return; }
       if (correctMode && (e.key === "Delete" || e.key === "Del" || e.key === "Backspace")) { e.preventDefault(); deleteSelectedBar(); setPie(null); return; }
       if (correctMode && selectedBar && (e.key === "s" || e.key === "S")) { e.preventDefault(); splitSelectedMeasure(); return; }
@@ -1477,7 +1541,7 @@ export default function ScoreFollowPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast, correctMode, deleteSelectedBar, doUndo, doRedo, placeCursor, stepSystem, pageNum, numPages, renderPage, applyAdv, toggleCleanView, selectedBar, splitSelectedMeasure, mergeSelectedMeasure]);
+    }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast, correctMode, deleteSelectedBar, doUndo, doRedo, placeCursor, stepSystem, pageNum, numPages, renderPage, applyAdv, toggleCleanView, selectedBar, splitSelectedMeasure, mergeSelectedMeasure, preloadPreview, closePreview]);
 
   useEffect(() => {
     const m = mediaRef.current as any;
@@ -1514,9 +1578,18 @@ export default function ScoreFollowPage() {
     ? analysis.systems.filter((_, i) => (analysis.confidence[i] ?? 1) < 0.6).length
     : 0;
   const isManual = analysis ? manualRef.current[pageNum] != null : false;
+  const correctedPages = Object.keys(manualBarsByPage).length;
+  const onScoreScroll = useCallback(() => {
+    const host = notationRef.current;
+    const stack = stackRef.current;
+    if (!host || !stack || !analysis) return;
+    const y = host.scrollTop * analysis.pageW / Math.max(1, stack.clientWidth);
+    const current = pageOffsetsRef.current.findLast((off) => off.y <= y + 8)?.page ?? 1;
+    if (current !== pageNumRef.current) { pageNumRef.current = current; setPageNum(current); }
+  }, [analysis]);
 
   return (
-    <main className={styles.page} data-fullscreen={fullScreen ? "true" : "false"} data-theme={darkTheme ? "dark" : "light"}>
+    <main className={styles.page} data-fullscreen={fullScreen ? "true" : "false"} data-theme={darkTheme ? "dark" : "light"} data-mode={correctMode ? "correct" : diagnosticMode ? "diagnostic" : "practice"}>
       {!chromeOpen && <button className={styles.showui} onClick={() => setChromeOpen(true)} title="Show toolbar (T)">UI</button>}
       {chromeOpen && <header className={styles.topbar}>
         <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>SMART-METRO</span>
@@ -1530,12 +1603,12 @@ export default function ScoreFollowPage() {
           setMediaKind(f.type.startsWith("video") ? "video" : "audio");
           e.target.value = "";
         }} />
-        <span className={styles.tbTitle}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
+         <span className={styles.tbTitle} title={pdfName}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
         <span className={styles.tbSpacer} />
         <span className={styles.tbMenuWrap}>
           <button className={styles.tbBtn} onClick={toggleLang} title="语言 / Language">{lang === "zh" ? "En" : "中"}</button>
-          <button className={styles.tbBtn} onClick={() => setMenuOpen((v) => !v)} title={`${tx("settings")} (F)`}>⚙ {tx("settings")}</button>
-          {menuOpen && <div className={styles.tbMenu} role="menu" aria-label="设置">
+           <button className={styles.tbBtn} onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen} aria-controls="sf-settings" title={`${tx("settings")} (F)`}>⚙ {tx("settings")}</button>
+           {menuOpen && <div className={styles.tbMenu} id="sf-settings" role="region" aria-label={tx("settings")}>
             <div className={styles.tbMenuRow}>
               <label><input type="checkbox" checked={loopB > loopA} onChange={(e) => {
                 if (e.target.checked) wijzerRef.current.setLoop(loopA || 0, loopB || Math.max(loopA + 4, 4));
@@ -1567,32 +1640,40 @@ export default function ScoreFollowPage() {
             {playing ? tx("pause") : tx("play")}
           </button>
          <span className={styles.practiceDivider} />
-         <button className={styles.practiceBtn} onClick={() => {
+          <button className={styles.practiceBtn} disabled={!analysis || pageNum <= 1} onClick={() => {
            const n = Math.max(1, pageNum - 1); pageNumRef.current = n; setPageNum(n);
            const off = pageOffsetsRef.current.find((o) => o.page === n);
            if (off && notationRef.current && stackRef.current && analysis) notationRef.current.scrollTop = off.y * (stackRef.current.clientWidth / Math.max(1, analysis.pageW));
           }} aria-label={tx("prevPage")}>‹</button>
           <span className={styles.pageIndicator}>{lang === "zh" ? `第 ${pageNum} / ${numPages || 1} 页` : `Page ${pageNum} / ${numPages || 1}`}</span>
-         <button className={styles.practiceBtn} onClick={() => {
+          <button className={styles.practiceBtn} disabled={!analysis || pageNum >= numPages} onClick={() => {
            const n = Math.min(numPages || 1, pageNum + 1); pageNumRef.current = n; setPageNum(n);
            const off = pageOffsetsRef.current.find((o) => o.page === n);
            if (off && notationRef.current && stackRef.current && analysis) notationRef.current.scrollTop = off.y * (stackRef.current.clientWidth / Math.max(1, analysis.pageW));
           }} aria-label={tx("nextPage")}>›</button>
           <span className={styles.practiceDivider} />
           <label className={styles.speedControl}>{tx("speed")}
-           <input type="range" min={0.1} max={4} step={0.05} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+            <input type="range" min={0.1} max={4} step={0.05} value={speed} aria-label={tx("speed")} aria-valuetext={`${speed.toFixed(2)}×`} onChange={(e) => setSpeed(Number(e.target.value))} />
            <b>{speed.toFixed(2)}×</b>
          </label>
-         <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }}>
+          <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} aria-pressed={correctMode} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }}>
             {correctMode ? tx("correcting") : tx("correct")}
           </button>
-          <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} onClick={toggleCleanView}>{tx("cleanView")}</button>
-          <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>
+           <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} aria-pressed={cleanView} onClick={toggleCleanView}>{tx("cleanView")}</button>
+           <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} aria-expanded={advOpen} aria-controls="sf-control-panel" onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>
           <span className={styles.practiceHint}>{analysis ? `${analysis.systems.length} ${tx("sysUnit")} · ${barsTotal} ${tx("barUnit")}${lowConfSystems ? ` · ${lowConfSystems}${tx("lowConf")}` : ""}` : tx("waiting")}</span>
-       </nav>}
+        </nav>}
 
-       {helpOpen && <section className={`${styles.advpanel} ${styles.helpPanel}`} role="dialog" aria-label="help">
-        <strong>Keyboard</strong>
+       {chromeOpen && correctMode && <div className={styles.modebar} role="status">
+         <span className={styles.modeDot} /> <strong>{tx("correcting")}</strong>
+         <span className={styles.modeHint}>{selectedBar ? `${tx("selected")} · p${pageNum} · s${selectedBar.si + 1} · x${Math.round(analysis?.bars[selectedBar.si]?.[selectedBar.bi] ?? 0)}` : tx("correctHint")}</span>
+         <button onClick={doUndo} disabled={!undoRef.current.length}>{tx("pieUndo")}</button>
+         <button onClick={doRedo} disabled={!redoRef.current.length}>{tx("pieRedo")}</button>
+         <button onClick={() => { setCorrectMode(false); setSelectedBar(null); setPie(null); }}>{tx("exitCorrect")}</button>
+       </div>}
+
+       {helpOpen && <section className={`${styles.advpanel} ${styles.helpPanel}`} role="region" aria-label={lang === "zh" ? "快捷键帮助" : "Keyboard help"}>
+         <div className={styles.pcardHead}><strong>{lang === "zh" ? "快捷键与操作" : "Keyboard & controls"}</strong><button onClick={() => setHelpOpen(false)} aria-label={tx("close")}>×</button></div>
         <div>←/→ next or previous measure · ↑/↓ next system · PageUp/PageDown page</div>
         <div>Space play/pause · B sync · Backspace backup · ,/. adjust duration</div>
         <div>F setting · H help · L line cursor · M panel · V clean view · Esc close</div>
@@ -1600,20 +1681,28 @@ export default function ScoreFollowPage() {
         <div>Annotation: enable annot, then long-click/shift-click to add; drag to move.</div>
       </section>}
 
-      {preloadPreview && <section className={`${styles.advpanel} ${styles.helpPanel}`} role="dialog" aria-label="preload preview" style={{ maxWidth: "min(860px, 92vw)" }}>
-        <strong>preload.js preview · {preloadPreview.lines} 行 · {(preloadPreview.bytes / 1024).toFixed(0)} KB{preloadPreview.truncated ? " · 只显示前 80 行" : ""}</strong>
-        <pre style={{ maxHeight: "46vh", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 11, margin: "8px 0", textAlign: "left" }}>{preloadPreview.head}{preloadPreview.truncated ? "\n…(已截断, 下载文件是完整的)" : ""}</pre>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className={styles.practiceBtn} onClick={downloadPreload}>下载 .js</button>
-          <button className={styles.practiceBtn} onClick={() => void copyPreload()}>复制</button>
-          <button className={styles.practiceBtn} onClick={() => setPreloadPreview(null)}>关闭</button>
-        </div>
-      </section>}
+       {preloadPreview && <div className={styles.modalBackdrop} onClick={closePreview}>
+         <section className={styles.exportDialog} role="dialog" aria-modal="true" aria-label={tx("exportPreview")} onClick={(e) => e.stopPropagation()}
+           onKeyDown={(e) => {
+             if (e.key !== "Tab") return;
+             const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("button"));
+             if (e.shiftKey && document.activeElement === buttons[0]) { e.preventDefault(); buttons[buttons.length - 1]?.focus(); }
+             else if (!e.shiftKey && document.activeElement === buttons[buttons.length - 1]) { e.preventDefault(); buttons[0]?.focus(); }
+           }}>
+           <div className={styles.exportHead}><div><h2>{tx("exportPreview")} · preload.js</h2><p>{numPages} {tx("pageUnit")} · {barsTotal} {tx("barUnit")} · {tapCount} sync · {correctedPages} corrected · {(preloadPreview.bytes / 1024).toFixed(0)} KB</p></div>
+             <button ref={previewCloseRef} className={styles.practiceBtn} onClick={closePreview} aria-label={tx("close")}>×</button></div>
+           <pre className={styles.exportCode}>{preloadPreview.head}{preloadPreview.truncated ? "\n…(预览已截断；下载与复制包含完整数据)" : ""}</pre>
+           <div className={styles.exportActions}>
+             <button className={styles.practiceBtn} onClick={() => void copyPreload()}>{lang === "zh" ? "复制完整数据" : "Copy all"}</button>
+             <button className={styles.practicePlay} onClick={downloadPreload}>{lang === "zh" ? "下载 .js" : "Download .js"}</button>
+           </div>
+         </section>
+       </div>}
 
       {/* pie 接管全部纠错操作, 顶部 correctbar 已移除 */}
 
       {chromeOpen && correctMode && pie && selectedBar && (
-        <div className={styles.pie} style={{ left: pie.x, top: pie.y }} role="menu" aria-label={tx("measureOps")}>
+         <div className={styles.pie} style={{ left: pie.x, top: pie.y }} role="group" aria-label={tx("measureOps")}>
           <div className={styles.pieDisc} onClick={() => setPie(null)} />
           {([
             { label: tx("pieSplit"), title: "split: 从中间拆开 (S)", ang: -90, fn: pieAction(splitSelectedMeasure, true) },
@@ -1647,26 +1736,27 @@ export default function ScoreFollowPage() {
 
       <div className={styles.workspace}>
        {chromeOpen && advOpen && (
-         <aside className={`${styles.advpanel} ${styles.controlPanel}`} role="dialog" aria-label="control panel">
-           <div className={styles.pcardHead}><span>Barline Correction</span><button onClick={() => setAdvOpen(false)} aria-label={tx("closePanel")}>×</button></div>
+          <aside id="sf-control-panel" className={`${styles.advpanel} ${styles.controlPanel}`} aria-label={tx("panelBtn")}>
+            <div className={styles.pcardHead}><span>{lang === "zh" ? "练习工作台" : "Practice workspace"}</span><button onClick={() => setAdvOpen(false)} aria-label={tx("closePanel")}>×</button></div>
           <div className={styles.pcard}>
-            <div className={styles.pcardTitle}><span>View</span></div>
+             <div className={styles.pcardTitle}><span>{tx("viewSection")}</span></div>
             <div className={styles.pillRow}>
               {([
-                [showSystems, setShowSystems, "systems"],
-                [showBars, setShowBars, "barlines"],
-                [showCursor, setShowCursor, "cursor"],
-                [showLowConf, setShowLowConf, "low-conf"],
-              ] as [boolean, (v: boolean) => void, string][]).map(([v, set, label]) => (
-                <label key={label} className={`${styles.pill} ${v ? styles.pillOn : ""}`}><input type="checkbox" checked={v} onChange={(e) => set(e.target.checked)} /> {label}</label>
-              ))}
-              <label className={`${styles.pill} ${opt.lncsr === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.lncsr === 1} onChange={(e) => applyAdv("lncsr", e.target.checked ? 1 : 0)} /> line cursor</label>
-              <label className={`${styles.pill} ${cleanView ? styles.pillOn : ""}`}><input type="checkbox" checked={cleanView} onChange={() => toggleCleanView()} /> clean (V)</label>
-              <label className={`${styles.pill} ${correctMode ? styles.pillOn : ""}`}><input type="checkbox" checked={correctMode} onChange={(e) => { setCorrectMode(e.target.checked); setSelectedBar(null); setPie(null); }} /> correct</label>
+                 [showSystems, setShowSystems, "systemOverlay"],
+                 [showBars, setShowBars, "barOverlay"],
+                 [showCursor, setShowCursor, "cursorOverlay"],
+                 [showLowConf, setShowLowConf, "lowOverlay"],
+               ] as [boolean, (v: boolean) => void, string][]).map(([v, set, label]) => (
+                 <label key={label} className={`${styles.pill} ${v ? styles.pillOn : ""}`}><input type="checkbox" checked={v} onChange={(e) => set(e.target.checked)} /> {tx(label)}</label>
+               ))}
+               <label className={`${styles.pill} ${opt.lncsr === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.lncsr === 1} onChange={(e) => applyAdv("lncsr", e.target.checked ? 1 : 0)} /> {tx("lineCursor")}</label>
+               <label className={`${styles.pill} ${cleanView ? styles.pillOn : ""}`}><input type="checkbox" checked={cleanView} onChange={() => toggleCleanView()} /> {tx("cleanView")} (V)</label>
+               <label className={`${styles.pill} ${correctMode ? styles.pillOn : ""}`}><input type="checkbox" checked={correctMode} onChange={(e) => { setCorrectMode(e.target.checked); setSelectedBar(null); setPie(null); }} /> {tx("correct")}</label>
+               <label className={`${styles.pill} ${diagnosticMode ? styles.pillOn : ""}`}><input type="checkbox" checked={diagnosticMode} onChange={(e) => { if (e.target.checked && cleanView) toggleCleanView(); setDiagnosticMode(e.target.checked); }} /> {tx("diagnostics")}</label>
              </div>
            </div>
           <div className={styles.pcard}>
-            <div className={styles.pcardTitle}><span>Mode</span></div>
+             <div className={styles.pcardTitle}><span>{tx("modeSection")}</span></div>
             <div className={styles.pillRow}>
              {(["fast", "balanced", "scan"] as AnalysisProfileName[]).map((name) => (
                 <label key={name} className={`${styles.pill} ${profileName === name ? styles.pillOn : ""}`}><input type="radio" name="profile" checked={profileName === name} onChange={() => applyProfile(name)} /> {name}</label>
@@ -1675,21 +1765,7 @@ export default function ScoreFollowPage() {
             <button className={styles.pfileBtn} onClick={resetAdvDefaults}>{tx("resetDefaults")}</button>
           </div>
           <div className={styles.pcard}>
-            <div className={styles.pcardTitle}><span>Timing</span></div>
-            {(["zwgrens", "drmpl", "drmpl2", "mtdrmpl", "voorna", "dx"] as const).map((k) => (
-              <label key={`${k}-${advNonce}`} className={styles.stepper}>{k}
-                <input
-                  type="number" min={ADV_RANGES[k][0]} max={ADV_RANGES[k][1]} step={ADV_STEPS[k]}
-                  defaultValue={opt[k] as number}
-                  onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) applyAdv(k, v); }}
-                  onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { applyAdv(k, v); e.target.value = String(opt[k] as number); } }}
-                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                />
-              </label>
-            ))}
-          </div>
-          <div className={styles.pcard}>
-            <div className={styles.pcardTitle}><span>Bars</span></div>
+             <div className={styles.pcardTitle}><span>{tx("barsSection")}</span></div>
             <div className={styles.pillRow}>
               <label className={`${styles.pill} ${opt.sysprf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.sysprf ? true : false} onChange={(e) => applyAdv("sysprf", e.target.checked ? 1 : 0)} /> sysprf</label>
               <label className={`${styles.pill} ${opt.onestf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.onestf ? true : false} onChange={(e) => applyAdv("onestf", e.target.checked ? 1 : 0)} /> onestf</label>
@@ -1698,22 +1774,34 @@ export default function ScoreFollowPage() {
             <label className={styles.stepper}>skipn <input type="number" min={0} max={5} value={opt.skipn} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
             <label className={styles.stepper}>seln <input type="number" min={0} max={9} value={opt.seln} onChange={(e) => applyAdv("seln", Number(e.target.value))} /></label>
             <label className={styles.stepper}>cropx <input type="number" min={0} value={opt.cropx} onChange={(e) => applyAdv("cropx", Number(e.target.value))} /></label>
-            <label className={`${styles.pill} ${opt.annot === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.annot === 1} onChange={(e) => applyAdv("annot", e.target.checked ? 1 : 0)} /> annot</label>
+             <label className={`${styles.pill} ${opt.annot === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.annot === 1} onChange={(e) => applyAdv("annot", e.target.checked ? 1 : 0)} /> {tx("annotate")}</label>
           </div>
           <div className={styles.pcard}>
-            <div className={styles.pcardTitle}><span>File</span></div>
-            <button className={styles.pfileBtn} onClick={saveTiming}>save timing</button>
-            <button className={styles.pfileBtn} onClick={() => void savePreload()}>save preload.js</button>
-            <label className={styles.pfileBtn}>load timing <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTiming(f); }} /></label>
-            <label className={styles.pfileBtn}>load preload <input type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); }} /></label>
-            <div className={styles.pillRow}>
-              <label className={`${styles.pill} ${synbox ? styles.pillOn : ""}`}><input type="checkbox" checked={synbox} onChange={(e) => setSynbox(e.target.checked)} /> enable sync</label>
-              <label className={`${styles.pill} ${embedMetro ? styles.pillOn : ""}`}><input type="checkbox" checked={embedMetro} onChange={(e) => setEmbedMetro(e.target.checked)} /> +metro</label>
-              <label className={`${styles.pill} ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? styles.pillOn : ""}`}><input type="checkbox" checked={((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0} onChange={(e) => applyAdv("wpdf", e.target.checked ? 1 : 0)} title="preload.js 是否内嵌 pdf_data base64(关=只存 metric/timing, 体积小)" /> +PDF</label>
-            </div>
+             <div className={styles.pcardTitle}><span>{tx("fileSection")}</span></div>
+            <button className={styles.pfileBtn} onClick={saveTiming}>{tx("saveTiming")}</button>
+            <button className={styles.pfileBtn} onClick={() => void savePreload()}>{tx("savePreload")}</button>
+            <label className={styles.pfileBtn}>{tx("loadTiming")} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTiming(f); }} /></label>
+            <label className={styles.pfileBtn}>{tx("loadPreload")} <input type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); }} /></label>
+             <div className={styles.pillRow}>
+               <label className={`${styles.pill} ${synbox ? styles.pillOn : ""}`}><input type="checkbox" checked={synbox} onChange={(e) => setSynbox(e.target.checked)} /> {tx("enableSync")}</label>
+               <label className={`${styles.pill} ${embedMetro ? styles.pillOn : ""}`}><input type="checkbox" checked={embedMetro} onChange={(e) => setEmbedMetro(e.target.checked)} /> +metro</label>
+               <label className={`${styles.pill} ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? styles.pillOn : ""}`}><input type="checkbox" checked={((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0} onChange={(e) => applyAdv("wpdf", e.target.checked ? 1 : 0)} title="preload.js 是否内嵌 pdf_data base64(关=只存 metric/timing, 体积小)" /> +PDF</label>
+             </div>
+             <p className={styles.expertHint}>{lang === "zh" ? `${numPages} 页 · ${correctedPages} 页校正 · ${tapCount} 个同步点 · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "包含" : "不包含"}` : `${numPages} pages · ${correctedPages} corrected · ${tapCount} sync points · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "included" : "excluded"}`}</p>
           </div>
           <details className={styles.pcard}>
-            <summary className={styles.pcardTitle}><span>Advanced</span><span>›</span></summary>
+             <summary className={styles.pcardTitle}><span>{tx("expertSection")}</span><span>›</span></summary>
+             <p className={styles.expertHint}>{lang === "zh" ? "仅在识别困难时调整；修改后会重新分析谱面。" : "Adjust only when recognition needs tuning; changes rerun analysis."}</p>
+             <div className={styles.pcardTitle}>{tx("timingSection")}</div>
+             {(["zwgrens", "drmpl", "drmpl2", "mtdrmpl", "voorna", "dx"] as const).map((k) => (
+               <label key={`${k}-${advNonce}`} className={styles.stepper}>{k}
+                 <input type="number" min={ADV_RANGES[k][0]} max={ADV_RANGES[k][1]} step={ADV_STEPS[k]}
+                   defaultValue={opt[k] as number}
+                   onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) applyAdv(k, v); }}
+                   onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { applyAdv(k, v); e.target.value = String(opt[k] as number); } }}
+                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+               </label>
+             ))}
             <label className={styles.stepper}>pagewd <input type="number" min={600} max={3000} step={50} value={opt.pagewd} onChange={(e) => applyAdv("pagewd", Number(e.target.value) || 1000)} /></label>
             <label className={styles.stepper}>fixwd <input type="number" min={0} step={100} value={opt.fixwd} onChange={(e) => applyAdv("fixwd", Number(e.target.value) || 0)} /></label>
           </details>
@@ -1728,21 +1816,24 @@ export default function ScoreFollowPage() {
         <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
       )}
 
-      <div
-        id="notation"
-        ref={notationRef}
-        className={styles.notation}
+       <div
+         id="notation"
+         ref={notationRef}
+         className={styles.notation}
+         onScroll={onScoreScroll}
         onClick={onScoreClick}
         onDoubleClick={onScoreDoubleClick}
         onContextMenu={onNotationContextMenu}
         onPointerMove={onNotationPointerMove}
         onPointerUp={onNotationPointerUp}
       >
-        <div ref={stackRef} style={{ position: "relative", width: "100%" }}>
-        <div ref={pagesHostRef} />
-        {analysis && (
-          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: correctMode ? "auto" : "none" }} viewBox={`0 0 ${analysis.pageW} ${analysis.pageH}`}>
-            {showSystems && analysis.systems.flatMap((s, si) => {
+         <div ref={stackRef} style={{ position: "relative", width: "100%" }}>
+         <div ref={pagesHostRef} />
+         {!analysis && <div className={styles.emptyScore}><span aria-hidden="true">♬</span><h1>{tx("noPdfHint")}</h1><p>PDF · Smart-Metro · scorefollow</p><button className={styles.practicePlay} onClick={() => pdfInputRef.current?.click()}>{tx("loadPdf")}</button></div>}
+         {analysis && pageOffsetsRef.current.slice(1).map((off) => <div key={off.page} className={styles.pageBreak} style={{ top: `${off.y / analysis.pageH * 100}%` }} aria-hidden="true">{lang === "zh" ? `第 ${off.page} 页` : `Page ${off.page}`}</div>)}
+         {analysis && (
+           <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: correctMode ? "auto" : "none" }} viewBox={`0 0 ${analysis.pageW} ${analysis.pageH}`}>
+             {(showSystems || diagnosticMode) && !cleanView && analysis.systems.flatMap((s, si) => {
               const low = (analysis.confidence[si] ?? 1) < 0.6;
               const y1 = s.cs[0];
               const y2 = s.cs[s.cs.length - 1];
@@ -1784,7 +1875,7 @@ export default function ScoreFollowPage() {
               );
               return els;
             })}
-            {showBars && (analysis.bars.flatMap((b, si) => {
+             {(showBars || diagnosticMode || correctMode) && (!cleanView || correctMode) && (analysis.bars.flatMap((b, si) => {
               const s = analysis.systems[si];
               if (!s) return [];
               return b.map((x, bi) => {
@@ -1842,10 +1933,18 @@ export default function ScoreFollowPage() {
       </div>
       </div>
 
-      <div className={styles.statusbar}>
-        <span className={styles.statusmsg}>{status}</span>{cursorInfo ? <span className={styles.cursormsg}> · {cursorInfo}</span> : null} · {analysis ? `${analysis.systems.length} systems · ${barsTotal} measures · spatium ${analysis.spatium.toFixed(1)}px · conf ${confRange} · ${analysis.elapsedMs}ms${lowConfSystems ? ` · ${lowConfSystems}低置信度` : ""}${isManual ? " · manual" : ""} · ${tapCount} taps` : "no analysis yet"}
-        keys: space play · ←/→ bar · ↑/↓ system · PgUp/PgDn page · +/− speed{synbox ? " · B tap · ⌫ backup · ,/. adjust" : ""}{correctMode ? " · correct: click/drag · dbl-click add · Delete del · Ctrl+Z/Y" : ""}{opt.annot === 1 ? " · annot: right-click new · drag move · click edit · right-click del" : ""}
-      </div>
+       <footer className={styles.statusbar}>
+         <span className={styles.statusmsg} role="status" aria-live="polite">{status}</span>
+         {analysis && <span className={styles.statusFacts}>
+           <span>{lang === "zh" ? `第 ${pageNum}/${numPages} 页` : `Page ${pageNum}/${numPages}`}</span>
+           <span>{cursorInfo || `${barsTotal} ${tx("barUnit")}`}</span>
+           {lowConfSystems > 0 && <span className={styles.statusWarning}>{lowConfSystems} {tx("lowConf")}</span>}
+           {correctedPages > 0 && <span>{correctedPages} {lang === "zh" ? "页已校正" : "corrected pages"}</span>}
+           {isManual && <span aria-label="manual corrections">✓</span>}
+           <span>{tapCount} sync</span>
+         </span>}
+         {diagnosticMode && analysis && <span className={styles.statusTechnical}>v{ALGO_VERSION} · spatium {analysis.spatium.toFixed(1)}px · conf {confRange} · {analysis.elapsedMs}ms</span>}
+       </footer>
 
     </main>
   );
