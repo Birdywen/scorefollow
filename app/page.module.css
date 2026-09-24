@@ -406,6 +406,13 @@ a.secondary {
 .statusWarning { color: #ad6400; font-weight: 700; }
 .statusTechnical { font-family: ui-monospace, monospace; white-space: nowrap; }
 .modalBackdrop { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10100; padding: 18px; background: rgba(14, 24, 39, .65); }
+.camVideo { width: 100%; max-height: 46vh; border-radius: 10px; background: #000; object-fit: contain; }
+.camWrap { position: relative; }
+.camPlayOverlay { position: absolute; inset: 0; margin: auto; width: max-content; height: max-content; max-width: 80%; padding: 12px 22px; border-radius: 999px; border: none; background: rgba(10, 132, 255, .92); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+.camThumbs { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; }
+.camThumb { position: relative; flex: 0 0 auto; }
+.camThumb img { display: block; height: 84px; border-radius: 6px; border: 1px solid var(--sf-border); }
+.camThumb button { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--sf-border); background: var(--sf-surface); color: var(--sf-ink); cursor: pointer; font-size: 13px; line-height: 1; }
 .exportDialog { width: min(760px, 100%); max-height: min(88vh, 850px); display: flex; flex-direction: column; gap: 16px; padding: 24px; background: var(--sf-surface); color: var(--sf-ink); border: 1px solid var(--sf-border); border-radius: 16px; box-shadow: var(--sf-shadow); }
 .exportHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .exportHead h2 { font-size: 18px; }

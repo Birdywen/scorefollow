@@ -28,7 +28,7 @@ import PerformancePanel from "./PerformancePanel";
 import styles from "./page.module.css";
 
 const DEFAULT_ADV: Record<string, number> = {
-  zwgrens: 0.7, drmpl: 0.4, drmpl2: 2, mtdrmpl: 0.8, voorna: 0.9, dx: 3,
+  zwgrens: 0.7, drmpl: 0.4, drmpl2: 2, mtdrmpl: 0.85, voorna: 0.9, dx: 3,
   sysprf: 0, onestf: 0, eerst: 0, skipn: 0, seln: 0, cropx: 0,
   pagewd: 1000, fixwd: 1000,
 };
@@ -54,6 +54,8 @@ const STR: Record<string, { zh: string; en: string }> = {
   settings: { zh: "设置", en: "Settings" },
   play: { zh: "▶ 播放", en: "▶ Play" },
   pause: { zh: "❚❚ 暂停", en: "❚❚ Pause" },
+  metroPlay: { zh: "▶ 节拍器", en: "▶ Metro" },
+  metroStop: { zh: "■ 停止", en: "■ Stop" },
   prevPage: { zh: "上一页", en: "Previous page" },
   nextPage: { zh: "下一页", en: "Next page" },
   speed: { zh: "速度", en: "Speed" },
@@ -153,6 +155,13 @@ function cropPageMargins(cv: HTMLCanvasElement): number {
 }
 
 /**
+ * 按页独立的分析参数键(skipn 除外: 它是整谱级语义, 见 scoreSkipFor, 保持全局)。
+ * 在某页调参只快照该页, 重分析时各页用自己的快照, 已调好的页不受后调参数影响。
+ */
+const PAGE_ADV_KEYS = ["drmpl", "drmpl2", "seln", "eerst", "sysprf", "onestf",
+  "zwgrens", "voorna", "mtdrmpl", "dx", "fixwd"] as const;
+
+/**
  * 整谱级 skipn 切除页规则(逐页切会吃掉每一页, 多页谱/照片谱全毁):
  * +N 只切第 1 页的头, −N 只切末页的尾, 其余页 skip=0.
  * 首/末页可能是空白扫描页, 主循环后再 walk-back 到真正有系统的页(见 renderAllPages).
@@ -164,11 +173,22 @@ function scoreSkipFor(n: number, total: number, g: number): number {
   return 0;
 }
 
-/** 图片谱解码(EXIF 方向归一化, 供图片/相机输入): 失败抛错由调用方报 status */
-async function decodeScoreImage(f: File): Promise<{ bmp: ImageBitmap; w: number; h: number }> {
+/** 图片谱解码(EXIF 方向归一化, 供图片/相机输入): photo=true 时做拍摄预处理; 失败抛错由调用方报 status */
+async function decodeScoreImage(f: File, photo = false): Promise<{ bmp: ImageBitmap; w: number; h: number }> {
+  const finish = async (bmp: ImageBitmap): Promise<{ bmp: ImageBitmap; w: number; h: number }> => {
+    if (!photo) return { bmp, w: bmp.width, h: bmp.height };
+    const c = document.createElement("canvas");
+    c.width = bmp.width;
+    c.height = bmp.height;
+    c.getContext("2d")!.drawImage(bmp, 0, 0);
+    if (typeof (bmp as ImageBitmap).close === "function") { try { bmp.close(); } catch { /* ignore */ } }
+    try { preprocessPhoto(c); } catch { /* 预处理失败就用原图, 不丢整批 */ }
+    const out = await createImageBitmap(c);
+    return { bmp: out, w: out.width, h: out.height };
+  };
   try {
     const bmp = await createImageBitmap(f, { imageOrientation: "from-image" } as ImageBitmapOptions);
-    return { bmp, w: bmp.width, h: bmp.height };
+    return finish(bmp);
   } catch {
     const url = URL.createObjectURL(f);
     try {
@@ -183,11 +203,178 @@ async function decodeScoreImage(f: File): Promise<{ bmp: ImageBitmap; w: number;
       c.height = img.naturalHeight || 1;
       c.getContext("2d")!.drawImage(img, 0, 0);
       const bmp = await createImageBitmap(c);
-      return { bmp, w: bmp.width, h: bmp.height };
+      return finish(bmp);
     } finally {
       URL.revokeObjectURL(url);
     }
   }
+}
+
+/** 拍照预处理链(原地改 canvas): 限大 → 四边内容裁边 → 纠偏 → 纸面提亮. 步步有保护, 失败就跳过该步 */
+function preprocessPhoto(cv: HTMLCanvasElement): void {
+  downscaleCanvas(cv, 2000);
+  autocropPhoto(cv);
+  deskewPhoto(cv);
+  normalizePhoto(cv);
+}
+
+/** 最长边压到 maxDim 内(拍照 12MP 直接分析又慢又吃内存) */
+function downscaleCanvas(cv: HTMLCanvasElement, maxDim: number): void {
+  const m = Math.max(cv.width, cv.height);
+  if (m <= maxDim || m <= 0) return;
+  const k = maxDim / m;
+  const tmp = document.createElement("canvas");
+  tmp.width = Math.max(1, Math.round(cv.width * k));
+  tmp.height = Math.max(1, Math.round(cv.height * k));
+  tmp.getContext("2d")!.drawImage(cv, 0, 0, tmp.width, tmp.height);
+  cv.width = tmp.width;
+  cv.height = tmp.height;
+  cv.getContext("2d")!.drawImage(tmp, 0, 0);
+}
+
+function photoCtx(cv: HTMLCanvasElement): CanvasRenderingContext2D | null {
+  try { return cv.getContext("2d", { willReadFrequently: true }); } catch { return null; }
+}
+
+const PHOTO_DARK = 200; // 任一通道低于此算内容(谱线/音符), 其余算纸面/桌面
+
+/** 内容包络四边裁边(含 8px 保护边); 内容过小则不动(防把谱裁没) */
+function autocropPhoto(cv: HTMLCanvasElement): boolean {
+  const W = cv.width, H = cv.height;
+  const ctx = photoCtx(cv);
+  if (!ctx || !W || !H) return false;
+  let img: ImageData;
+  try { img = ctx.getImageData(0, 0, W, H); } catch { return false; }
+  const d = img.data;
+  const darkAt = (x: number, y: number): boolean => {
+    const i = (y * W + x) * 4;
+    return d[i] < PHOTO_DARK || d[i + 1] < PHOTO_DARK || d[i + 2] < PHOTO_DARK;
+  };
+  const needX = Math.max(2, Math.floor(H * 0.002));
+  const needY = Math.max(2, Math.floor(W * 0.002));
+  const colHas = (x: number): boolean => {
+    let c = 0;
+    for (let y = 0; y < H; y += 2) { if (darkAt(x, y) && ++c >= needX) return true; }
+    return false;
+  };
+  const rowHas = (y: number): boolean => {
+    let c = 0;
+    for (let x = 0; x < W; x += 2) { if (darkAt(x, y) && ++c >= needY) return true; }
+    return false;
+  };
+  let x1 = 0; while (x1 < W && !colHas(x1)) x1++;
+  if (x1 >= W) return false;
+  let x2 = W - 1; while (x2 > x1 && !colHas(x2)) x2--;
+  let y1 = 0; while (y1 < H && !rowHas(y1)) y1++;
+  let y2 = H - 1; while (y2 > y1 && !rowHas(y2)) y2--;
+  const PAD = 8;
+  x1 = Math.max(0, x1 - PAD); y1 = Math.max(0, y1 - PAD);
+  x2 = Math.min(W - 1, x2 + PAD); y2 = Math.min(H - 1, y2 + PAD);
+  const w = x2 - x1 + 1, h = y2 - y1 + 1;
+  // 内容太小/几乎没裁就不动
+  if (w < 200 || h < 200 || w * h < W * H * 0.3) return false;
+  if (x1 === 0 && y1 === 0 && x2 === W - 1 && y2 === H - 1) return false;
+  const tmp = document.createElement("canvas");
+  tmp.width = w;
+  tmp.height = h;
+  tmp.getContext("2d")!.drawImage(cv, x1, y1, w, h, 0, 0, w, h);
+  cv.width = w;
+  cv.height = h;
+  cv.getContext("2d")!.drawImage(tmp, 0, 0);
+  return true;
+}
+
+/** 纠偏: 小图上试 -4°~4°(步进 0.5°), 取行投影方差最大者; |角度|<0.25° 不动. 返回应用的角度 */
+function deskewPhoto(cv: HTMLCanvasElement): number {
+  const W = cv.width, H = cv.height;
+  if (!W || !H) return 0;
+  const SW = 700;
+  const k = Math.min(1, SW / W);
+  const small = document.createElement("canvas");
+  small.width = Math.max(1, Math.round(W * k));
+  small.height = Math.max(1, Math.round(H * k));
+  const sctx = small.getContext("2d")!;
+  sctx.drawImage(cv, 0, 0, small.width, small.height);
+  let sdata: ImageData;
+  try { sdata = sctx.getImageData(0, 0, small.width, small.height); } catch { return 0; }
+  const sd = sdata.data;
+  const sw = small.width, sh = small.height;
+  // 暗像素掩膜(降采样步进 2)
+  const pts: number[] = [];
+  for (let y = 0; y < sh; y += 2) {
+    for (let x = 0; x < sw; x += 2) {
+      const i = (y * sw + x) * 4;
+      const lum = (sd[i] + sd[i + 1] + sd[i + 2]) / 3;
+      if (lum < 160) pts.push(x, y);
+    }
+  }
+  if (pts.length < 200) return 0;
+  let bestA = 0, bestV = -1;
+  for (let deg = -4; deg <= 4.001; deg += 0.5) {
+    const t = Math.tan((deg * Math.PI) / 180);
+    const bins = new Float64Array(sh);
+    for (let p = 0; p < pts.length; p += 2) {
+      const r = Math.round(pts[p + 1] - pts[p] * t);
+      if (r >= 0 && r < sh) bins[r]++;
+    }
+    let mean = 0;
+    for (let r = 0; r < sh; r++) mean += bins[r];
+    mean /= sh;
+    let v = 0;
+    for (let r = 0; r < sh; r++) { const dd = bins[r] - mean; v += dd * dd; }
+    if (v > bestV) { bestV = v; bestA = deg; }
+  }
+  if (Math.abs(bestA) < 0.25) return 0;
+  // 绕中心旋回 -bestA, 白底, 画布按需放大防切角
+  const rad = (-bestA * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+  const nw = Math.ceil(W * cos + H * sin), nh = Math.ceil(W * sin + H * cos);
+  const tmp = document.createElement("canvas");
+  tmp.width = nw;
+  tmp.height = nh;
+  const tctx = tmp.getContext("2d")!;
+  tctx.fillStyle = "#fff";
+  tctx.fillRect(0, 0, nw, nh);
+  tctx.translate(nw / 2, nh / 2);
+  tctx.rotate(rad);
+  tctx.drawImage(cv, -W / 2, -H / 2);
+  cv.width = nw;
+  cv.height = nh;
+  cv.getContext("2d")!.drawImage(tmp, 0, 0);
+  return bestA;
+}
+
+/** 纸面提亮: 亮度 p5→0、p95→255 等比拉伸(保色相); 纸面本来就白(p5≥160)或近乎空白不动 */
+function normalizePhoto(cv: HTMLCanvasElement): void {
+  const W = cv.width, H = cv.height;
+  const ctx = photoCtx(cv);
+  if (!ctx || !W || !H) return;
+  let img: ImageData;
+  try { img = ctx.getImageData(0, 0, W, H); } catch { return; }
+  const d = img.data;
+  const N = W * H;
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < N; i += 4) {
+    const lum = Math.round((d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3);
+    hist[lum]++;
+  }
+  const cut = N / 4 / 100; // 采样步进 4, 百分位换算
+  let p5 = 0, acc = 0;
+  while (p5 < 255 && acc < cut * 5) { acc += hist[p5]; p5++; }
+  let p95 = 255;
+  acc = 0;
+  while (p95 > 0 && acc < cut * 5) { acc += hist[p95]; p95--; }
+  if (p5 >= 160 || p95 - p5 < 10) return;
+  const gain = 255 / Math.max(1, p95 - p5);
+  const lut = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) lut[v] = Math.max(0, Math.min(255, Math.round((v - p5) * gain)));
+  const data = img.data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = lut[data[i]];
+    data[i + 1] = lut[data[i + 1]];
+    data[i + 2] = lut[data[i + 2]];
+  }
+  ctx.putImageData(img, 0, 0);
 }
 
 export default function ScoreFollowPage() {
@@ -207,6 +394,8 @@ export default function ScoreFollowPage() {
   const clockRef = useRef({ t0: 0, base: 0, running: false });
   const autoRef = useRef<Record<number, PageAnalysis>>({});
   const manualRef = useRef<Record<number, number[][]>>({});
+  // 按页分析参数快照 {页: {键: 值}}: 调参只记当前页, 各页互不影响(见 PAGE_ADV_KEYS)
+  const advsRef = useRef<Record<number, Record<string, number>>>({});
   const undoRef = useRef<Record<number, number[][]>[]>([]);
   const redoRef = useRef<Record<number, number[][]>[]>([]);
   const dragRef = useRef<{ si: number; bi: number; active: boolean }>({ si: -1, bi: -1, active: false });
@@ -230,6 +419,9 @@ export default function ScoreFollowPage() {
   const [mediaKind, setMediaKind] = useState<"audio" | "video">("audio");
   const [speed, setSpeed] = useState(1);
   const [playing, setPlaying] = useState(false);
+  // 节拍器走带状态(引擎 synpdf:metro-state 广播驱动; 无音频时主▶按钮即节拍器开关)
+  const [metroPlaying, setMetroPlaying] = useState(false);
+  const [metroAvail, setMetroAvail] = useState(false);
   const [loopA, setLoopA] = useState(0);
   const [loopB, setLoopB] = useState(0);
   const [tapCount, setTapCount] = useState(0);
@@ -281,6 +473,23 @@ export default function ScoreFollowPage() {
   const imgInputRef = useRef<HTMLInputElement>(null);
   const camInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
+  // 相机连拍(应用内取景多页): 缩略图 URL(state 驱动) + 处理后 canvas(ref 持有)
+  const [camOpen, setCamOpen] = useState(false);
+  const [camShots, setCamShots] = useState<string[]>([]);
+  const [camBusy, setCamBusy] = useState(false);
+  const [camPaused, setCamPaused] = useState(false);
+  const camStreamRef = useRef<MediaStream | null>(null);
+  const camVideoRef = useRef<HTMLVideoElement | null>(null);
+  const camShotsRef = useRef<HTMLCanvasElement[]>([]);
+  // 稳定 ref 回调: 内联箭头每次渲染都会 detach/attach, 导致视频闪烁重启甚至黑屏
+  const attachCamVideo = useCallback((el: HTMLVideoElement | null) => {
+    camVideoRef.current = el;
+    const stream = camStreamRef.current;
+    if (el && stream && el.srcObject !== stream) {
+      el.srcObject = stream;
+      el.play().catch(() => { setCamPaused(true); });
+    }
+  }, []);
 
   const closePreview = useCallback(() => {
     setPreloadPreview(null);
@@ -371,6 +580,18 @@ export default function ScoreFollowPage() {
       // 整谱级 skipn: 本次调用前后恢复全局值, 缓存键自带 skip(见 analyzePage)不串味
       const savedSkip = opt.skipn;
       opt.skipn = skipOverride ?? scoreSkipFor(n, Number(pdf?.numPages) || 1, Math.round(Number(opt.skipn) || 0));
+      // 按页参数: 该页调过的键覆盖全局, 分析完恢复(缓存键自带全部参数不串味)
+      const pageAdv = advsRef.current[n];
+      const savedAdv: Record<string, number> = {};
+      if (pageAdv) {
+        for (const k of PAGE_ADV_KEYS) {
+          savedAdv[k] = (opt as unknown as Record<string, number>)[k];
+          if (pageAdv[k] === undefined) continue;
+          // sysprf 参与分析的是模块内布尔量(见 setSysprf), 必须走 setter 联动
+          if (k === "sysprf") setSysprf(pageAdv[k]);
+          else (opt as unknown as Record<string, number>)[k] = pageAdv[k];
+        }
+      }
       try {
         let proxy: any = null;
         const imgDoc = (pdf as any)?.__sfImage as { images: { bmp: ImageBitmap; w: number; h: number }[] } | undefined;
@@ -397,7 +618,7 @@ export default function ScoreFollowPage() {
         // 无缝拼接: 裁掉纸张上下白边再分析/堆叠, 跨页接缝≈正常行距。
         // 分析坐标跟着 canvas 走(缓存键自带尺寸), 全局合并无需改动。
         cropPageMargins(canvas);
-        const a = analyzePage(canvas, n, opt.seln, docId ?? pdfNameRef.current);
+        const a = analyzePage(canvas, n, pageAdv?.seln ?? opt.seln, docId ?? pdfNameRef.current);
         if (a.systems.length === 0) {
           autoRef.current[n] = null as any;
           return { a: null, proxy };
@@ -406,6 +627,12 @@ export default function ScoreFollowPage() {
         return { a, proxy };
       } finally {
         opt.skipn = savedSkip;
+        if (pageAdv) {
+          for (const k of PAGE_ADV_KEYS) {
+            if (k === "sysprf") setSysprf(savedAdv[k]);
+            else (opt as unknown as Record<string, number>)[k] = savedAdv[k];
+          }
+        }
         renderingRef.current = false;
       }
     },
@@ -442,6 +669,9 @@ export default function ScoreFollowPage() {
       const gen = ++renderGenRef.current;
       const host = pagesHostRef.current;
       if (!pdf || !host) return;
+      // 调参重渲染保持阅读位置: 记下滚动条, 画完恢复(否则每次调参都跳回开头)
+      const scroller = notationRef.current;
+      const savedTop = scroller ? scroller.scrollTop : 0;
       host.innerHTML = "";
       const offsets: { page: number; y: number; h: number; w: number }[] = [];
       let y = 0;
@@ -512,16 +742,22 @@ export default function ScoreFollowPage() {
       setTapCount(wijzerRef.current.times.length);
       setAnalysis(merged);
       setSelectedBar(null);
-      const m0 = wijzerRef.current.measures[0];
-      if (m0) {
-        curMixRef.current = 0;
+      // 光标尽量留在原小节(调参不丢位置); 越界才回 m1
+      const keepMix = curMixRef.current;
+      const mk = wijzerRef.current.measures[keepMix] ?? wijzerRef.current.measures[0];
+      if (mk) {
+        curMixRef.current = wijzerRef.current.measures[keepMix] ? keepMix : 0;
         setCursor(opt.lncsr === 1
-          ? { x: m0.x, y: m0.y, w: Math.max(2, m0.w * 0.06), h: m0.h }
-          : { x: m0.x, y: m0.y, w: m0.w, h: m0.h });
-        setCursorInfo("m1");
+          ? { x: mk.x, y: mk.y, w: Math.max(2, mk.w * 0.06), h: mk.h }
+          : { x: mk.x, y: mk.y, w: mk.w, h: mk.h });
+        setCursorInfo(`m${curMixRef.current + 1}`);
       } else {
         setCursor(null);
         setCursorInfo("");
+      }
+      // 恢复调参前的阅读位置
+      if (scroller && gen === renderGenRef.current) {
+        try { scroller.scrollTop = savedTop; } catch { /* ignore */ }
       }
       const meas = merged.bars.reduce((s, b) => s + Math.max(0, b.length - 1), 0);
       setStatus(`score: ${nPages} pages, ${merged.systems.length} systems, ${meas} measures, spatium ${merged.spatium.toFixed(1)}px, algo v${merged.algoVersion}` +
@@ -572,12 +808,46 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = `${BASE}/metro-engine.js?v=20260924-export`;
+    s.src = `${BASE}/metro-engine.js?v=20260924-metro`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
     document.head.appendChild(s);
   }, [embedMetro, emitMetricRendered]);
+
+  // 节拍器走带状态: 引擎 setPlayBtn 每次变状态都广播(含挂载时, 顺带宣告可用)
+  useEffect(() => {
+    const onState = (ev: Event) => {
+      const d = (ev as CustomEvent).detail as { playing?: boolean } | undefined;
+      setMetroAvail(true);
+      setMetroPlaying(!!d?.playing);
+    };
+    window.addEventListener("synpdf:metro-state", onState);
+    // 引擎若已先挂载(事件错过), 直接读一次
+    try {
+      const mc = (window as unknown as Record<string, unknown>).__sgaMetroControl as
+        { isPlaying?: () => boolean } | undefined;
+      if (mc) { setMetroAvail(true); setMetroPlaying(!!mc.isPlaying?.()); }
+    } catch { /* ignore */ }
+    return () => window.removeEventListener("synpdf:metro-state", onState);
+  }, []);
+
+  // 纠错模式标记供引擎点谱监听读取: 纠错点线条不碰播放头
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__sfCorrectMode = correctMode;
+  }, [correctMode]);
+
+  interface MetroControl {
+    play: (fromM?: number) => boolean;
+    stop: () => boolean;
+    restartAtMeasure: (m: number) => void;
+    isPlaying: () => boolean;
+  }
+  const metroControl = (): MetroControl | null => {
+    try {
+      return ((window as unknown as Record<string, unknown>).__sgaMetroControl ?? null) as MetroControl | null;
+    } catch { return null; }
+  };
 
   // 新谱面: 必须清掉上一份谱的全部状态(缓存/人工校正/timing/undo),
   // 否则同页同尺寸会命中旧缓存、旧小节线盖到新谱上。
@@ -588,6 +858,7 @@ export default function ScoreFollowPage() {
     setTouchPos(null);
     pageOffsetsRef.current = [];
     autoRef.current = {};
+    advsRef.current = {};
     manualRef.current = {};
     setManualBarsByPage({});
     annotsRef.current = {};
@@ -625,15 +896,36 @@ export default function ScoreFollowPage() {
   );
   // 图片/相机谱: 每张图当一页(多选多页), 与 PDF 共用分析/合并/校正链路.
   // 图片无 pdf_data: preload 导出不含 PDF, OMR 仍需 PDF(面板会提示).
+  // 图片谱载入: 当前已是图片谱则追加成多页(保留已有分析/校正, 页号不变, 旧页走缓存),
+  // 否则新建图片谱. preprocess=false 跳过拍摄预处理(相机连拍已在拍摄时处理过).
+  const MAX_IMAGE_PAGES = 24;
   const onImageFile = useCallback(
-    async (files: FileList | File[]) => {
-      const list = [...files].filter((f) => f.type.startsWith("image/")).slice(0, 12);
-      if (!list.length) { setStatus("未选中图片文件"); return; }
-      setStatus(`loading ${list.length} image(s) ...`);
+    async (files: FileList | File[], preprocess = true) => {
+      const picked = [...files].filter((f) => f.type.startsWith("image/"));
+      if (!picked.length) { setStatus("未选中图片文件"); return; }
       setPerformanceOpen(false);
+      const cur = pdfDocRef.current;
       try {
+        if (cur?.__sfImage) {
+          const room = Math.max(0, MAX_IMAGE_PAGES - cur.images.length);
+          const list = picked.slice(0, Math.max(room, 0));
+          if (!list.length) { setStatus(`图片已达 ${MAX_IMAGE_PAGES} 页上限, 请先导出或新建`); return; }
+          setStatus(`appending ${list.length} image(s) ...`);
+          for (const f of list) cur.images.push({ ...(await decodeScoreImage(f as File, preprocess)), name: (f as File).name || `page-${cur.images.length + 1}` });
+          cur.numPages = cur.images.length;
+          setNumPages(cur.images.length);
+          // pdfNameRef 是分析缓存 docId 的一部分: 追加时保持不变, 旧页命中缓存只算新页;
+          // 显示名另加计数后缀
+          const base = pdfNameRef.current;
+          setPdfName(cur.images.length > 1 ? `${base} +${cur.images.length - 1}` : base);
+          // 滚动位置由 renderAllPages 保持
+          await renderPage(cur as any, pageNumRef.current, pdfNameRef.current);
+          return;
+        }
+        const list = picked.slice(0, 12);
+        setStatus(`loading ${list.length} image(s) ...`);
         const images = [];
-        for (const f of list) images.push({ ...(await decodeScoreImage(f)), name: f.name });
+        for (const f of list) images.push({ ...(await decodeScoreImage(f as File, preprocess)), name: (f as File).name });
         const doc = { __sfImage: true, numPages: images.length, images };
         pdfDocRef.current = doc;
         pdfBytesRef.current = null;
@@ -651,6 +943,106 @@ export default function ScoreFollowPage() {
     [renderPage, clearScoreState],
   );
 
+  // ---- 相机连拍 ----
+  const stopCamStream = useCallback(() => {
+    camStreamRef.current?.getTracks().forEach((t) => { try { t.stop(); } catch { /* ignore */ } });
+    camStreamRef.current = null;
+  }, []);
+
+  const discardCamShots = useCallback(() => {
+    camShotsRef.current = [];
+    setCamShots((prev) => {
+      for (const u of prev) { try { URL.revokeObjectURL(u); } catch { /* ignore */ } }
+      return [];
+    });
+  }, []);
+
+  const openCamera = useCallback(async () => {
+    // capture input 在桌面/部分浏览器直接退化成文件选择: 首选应用内取景, 失败才回退
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus("无相机接口, 已回退文件选择");
+      camInputRef.current?.click();
+      return;
+    }
+    setCamOpen(true);
+    setCamBusy(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1280 } },
+        audio: false,
+      });
+      camStreamRef.current = stream;
+      const v = camVideoRef.current;
+      if (v && v.srcObject !== stream) {
+        (v as HTMLVideoElement).srcObject = stream;
+        try { await v.play(); setCamPaused(false); } catch { setCamPaused(true); }
+      }
+    } catch {
+      setCamOpen(false);
+      setStatus("相机不可用, 已回退文件选择");
+      camInputRef.current?.click();
+    } finally {
+      setCamBusy(false);
+    }
+  }, []);
+
+  const closeCamera = useCallback(() => {
+    stopCamStream();
+    discardCamShots();
+    setCamOpen(false);
+  }, [stopCamStream, discardCamShots]);
+
+  const takeShot = useCallback(() => {
+    const v = camVideoRef.current;
+    if (!v || v.readyState < 2 || !v.videoWidth) {
+      setStatus(v && v.paused ? "点一下取景画面启动相机后再拍" : "取景未就绪, 稍候再拍");
+      return;
+    }
+    if (camShotsRef.current.length >= MAX_IMAGE_PAGES) { setStatus(`连拍已达 ${MAX_IMAGE_PAGES} 张上限`); return; }
+    const c = document.createElement("canvas");
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    c.getContext("2d")!.drawImage(v, 0, 0, c.width, c.height);
+    try { preprocessPhoto(c); } catch { /* 预处理失败就用原图, 不丢拍摄 */ }
+    camShotsRef.current.push(c);
+    setCamShots((prev) => [...prev, c.toDataURL("image/jpeg", 0.82)]);
+    setStatus(`已拍 ${camShotsRef.current.length} 页 · 完成后按多页谱合并`);
+  }, []);
+
+  const removeShot = useCallback((i: number) => {
+    const [cv] = camShotsRef.current.splice(i, 1);
+    if (!cv) return;
+    setCamShots((prev) => {
+      const next = prev.slice();
+      const [u] = next.splice(i, 1);
+      if (u) { try { URL.revokeObjectURL(u); } catch { /* ignore */ } }
+      return next;
+    });
+  }, []);
+
+  const finishShots = useCallback(async () => {
+    const shots = camShotsRef.current.splice(0);
+    const thumbs = camShots;
+    setCamShots([]);
+    setCamOpen(false);
+    stopCamStream();
+    if (!shots.length) return;
+    try {
+      const files: File[] = [];
+      for (let i = 0; i < shots.length; i++) {
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          shots[i].toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/jpeg", 0.92);
+        });
+        files.push(new File([blob], `camera-p${i + 1}.jpg`, { type: "image/jpeg" }));
+      }
+      await onImageFile(files, false); // 拍摄时已预处理, 合并时不再重复
+    } catch (err) {
+      setStatus(`连拍合并失败: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      for (const u of thumbs) { try { URL.revokeObjectURL(u); } catch { /* ignore */ } }
+    }
+  }, [camShots, onImageFile, stopCamStream]);
+
   const applyAdv = useCallback(
     (k: string, v: number) => {
       if (!Number.isFinite(v)) return;
@@ -663,9 +1055,18 @@ export default function ScoreFollowPage() {
       if (k === "skipn") { setSkipn(v); opt.skipn = v; }
       else if (k === "sysprf") { setSysprf(v); }
       else (opt as unknown as Record<string, number>)[k] = v;
+      // 按页快照: 在哪页调的就记在哪页(仅分析参数, skipn/lncsr 等显示项不记),
+      // 重分析各页用自己的快照, 后调的参数不影响已调好的页
+      const perPage = (PAGE_ADV_KEYS as readonly string[]).includes(k);
+      const pg = pageNumRef.current;
+      if (perPage && pg >= 1) {
+        const row = { ...(advsRef.current[pg] ?? {}) };
+        row[k] = v;
+        advsRef.current[pg] = row;
+      }
       clearPageCache();
       forceAdv((n) => n + 1);
-      setStatus(`advanced: ${k}=${v} - reanalyzed`);
+      setStatus(`advanced: ${k}=${v}` + (perPage && pg >= 1 ? ` (p${pg} 已存本页)` : "") + ` - reanalyzed`);
       if (pdfDocRef.current) scheduleAdvRender(pdfDocRef.current);
     },
     [scheduleAdvRender],
@@ -710,10 +1111,25 @@ export default function ScoreFollowPage() {
       else if (k === "sysprf") setSysprf(v);
       else (opt as unknown as Record<string, number>)[k] = v;
     }
+    advsRef.current = {};
     clearPageCache();
     forceAdv((n) => n + 1);
-    setStatus("advanced: 已恢复默认值 - reanalyzed");
+    setStatus("advanced: 已恢复默认值(含各页独立参数) - reanalyzed");
     if (pdfDocRef.current) scheduleAdvRender(pdfDocRef.current);
+  }, [scheduleAdvRender]);
+
+  // 清除当前页的独立参数(回退跟随全局), 不碰其它页
+  const clearPageAdv = useCallback(() => {
+    const pg = pageNumRef.current;
+    if (advsRef.current[pg]) {
+      delete advsRef.current[pg];
+      clearPageCache();
+      forceAdv((n) => n + 1);
+      setStatus(`p${pg} 已回退跟随全局参数 - reanalyzed`);
+      if (pdfDocRef.current) scheduleAdvRender(pdfDocRef.current);
+    } else {
+      setStatus(`p${pg} 本来就是全局参数, 无需清除`);
+    }
   }, [scheduleAdvRender]);
 
   // ---- 人工校正层 ----
@@ -1032,8 +1448,8 @@ export default function ScoreFollowPage() {
       const hit = wijzerRef.current.x2time(p.x, p.y);
       if (!hit) return;
       placeCursor(hit.measure, hit.t);
-      // 节拍器播放中: 同步把 metro 播放头跳过去(不停), 未播放时忽略
-      window.dispatchEvent(new CustomEvent("synpdf:metro-jump", { detail: { measure: hit.measure + 1, onlyIfPlaying: true } }));
+      // metro 点小节由引擎 host 监听统一处理(播放中=暖机重起, 未播放=只移动头),
+      // 这里不再另发 metro-jump, 避免双通道重复重起
     },
     [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, pageNum, placeCursor],
   );
@@ -1371,7 +1787,13 @@ export default function ScoreFollowPage() {
     const adv: Record<string, Record<string, number>> = {};
     for (let n = 1; n <= numPages; n++) {
       const row: Record<string, number> = {};
-      for (const k of numKeys) row[k] = 1 * ((opt as unknown as Record<string, number>)[k] ?? 0);
+      const snap = advsRef.current[n];
+      // 该页调过的键用快照(不含 skipn: 整谱级, 全页统一用全局), 其余跟随全局
+      for (const k of numKeys) {
+        row[k] = k === "skipn" || snap?.[k] === undefined
+          ? 1 * ((opt as unknown as Record<string, number>)[k] ?? 0)
+          : 1 * snap[k];
+      }
       adv[String(n)] = row;
     }
     const optSnap: Record<string, number | string> = {};
@@ -1550,6 +1972,23 @@ export default function ScoreFollowPage() {
       }
     };
     applyNums(optAll);
+    // 导入的按页 adv 存为快照(不含 skipn), 后续重分析各页沿用, 不再互相覆盖
+    advsRef.current = {};
+    if (advAll) {
+      for (const [pn, row] of Object.entries(advAll)) {
+        const n = Number(pn);
+        if (!Number.isInteger(n) || n < 1 || !row || typeof row !== "object") continue;
+        const snap: Record<string, number> = {};
+        for (const [k, val] of Object.entries(row as Record<string, unknown>)) {
+          const num = 1 * (val as number);
+          if (!Number.isFinite(num)) continue;
+          if (k === "skipn") continue;
+          if (!(PAGE_ADV_KEYS as readonly string[]).includes(k)) continue;
+          snap[k] = num;
+        }
+        if (Object.keys(snap).length) advsRef.current[n] = snap;
+      }
+    }
     clearPageCache();
     autoRef.current = {};
     annotsRef.current = {};
@@ -1575,8 +2014,7 @@ export default function ScoreFollowPage() {
     const off = document.createElement("canvas");
     const nextManual: Record<number, number[][]> = {};
     for (let n = 1; n <= (pdf.numPages as number); n++) {
-      const advN = (advAll?.[String(n)] ?? advAll?.[n]) as Record<string, unknown> | undefined;
-      if (advN) { applyNums(advN); clearPageCache(); }
+      // 按页快照由 renderAndAnalyze 自动叠加, 无需再逐页改全局
       setStatus(`loading preload: 分析 p${n}/${pdf.numPages} ...`);
       const { a } = await renderAndAnalyze(pdf, n, off);
       if (!a) continue;
@@ -1707,7 +2145,15 @@ export default function ScoreFollowPage() {
       if (correctMode && selectedBar && (e.key === "s" || e.key === "S")) { e.preventDefault(); splitSelectedMeasure(); return; }
       if (correctMode && selectedBar && (e.key === "a" || e.key === "A")) { e.preventDefault(); mergeSelectedMeasure("left"); return; }
       if (correctMode && selectedBar && (e.key === "d" || e.key === "D")) { e.preventDefault(); mergeSelectedMeasure("right"); return; }
-      if (e.key === " ") { e.preventDefault(); playing ? doPause() : doPlay(); }
+      if (e.key === " ") {
+        e.preventDefault();
+        if (!e.repeat) {
+          // 无音频时空格归引擎(面板空格 toggle 播放/停止, 自带 300ms 防连击);
+          // React 这里再调会造成双触发(一按就停), 故让路
+          if (!mediaURL && metroControl()) return;
+          playing ? doPause() : doPlay();
+        }
+      }
       else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
         e.preventDefault();
@@ -1802,7 +2248,7 @@ export default function ScoreFollowPage() {
         <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>SMART-METRO</span>
          <button className={`${styles.tbBtn} ${pdfName ? styles.tbBtnOn : ""}`} onClick={() => pdfInputRef.current?.click()} title={pdfName || tx("loadPdf")}>📄 {pdfName ? (pdfName.length > 16 ? pdfName.slice(0, 14) + "…" : pdfName) : tx("score")}</button>
         <button className={styles.tbBtn} onClick={() => imgInputRef.current?.click()} title={tx("loadImage")}>🖼</button>
-        <button className={styles.tbBtn} onClick={() => camInputRef.current?.click()} title={tx("takePhoto")}>📷</button>
+        <button className={styles.tbBtn} onClick={() => void openCamera()} title={tx("takePhoto")}>📷</button>
         <button className={`${styles.tbBtn} ${mediaURL ? styles.tbBtnOn : ""}`} onClick={() => mediaInputRef.current?.click()} title={mediaName || tx("loadMedia")}>🎵 {mediaName ? (mediaName.length > 16 ? mediaName.slice(0, 14) + "…" : mediaName) : tx("media")}</button>
         <input ref={pdfInputRef} type="file" accept=".pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPdfFile(f); e.target.value = ""; }} />
         <input ref={imgInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
@@ -1847,9 +2293,30 @@ export default function ScoreFollowPage() {
       {/* 分析开关与存取已并入右侧 panel, 状态行见底部 statusbar */}
 
        {chromeOpen && <nav className={styles.practicebar} aria-label={tx("practice")}>
-          <button className={styles.practicePlay} onClick={() => playing ? doPause() : doPlay()}>
-            {playing ? tx("pause") : tx("play")}
-          </button>
+          {!mediaURL ? (
+            <button className={styles.practicePlay} onClick={() => {
+              const mc = metroControl();
+              if (mc) { metroPlaying ? mc.stop() : mc.play(); }
+              else { playing ? doPause() : doPlay(); }
+            }} title={metroAvail
+              ? (lang === "zh" ? "节拍器播放/停止(含预备拍); 播放中点小节=暖机重起" : "Metro play/stop with count-in; tap a measure while playing to restart there")
+              : (lang === "zh" ? "节拍器未加载, 退回静音光标" : "Metro unavailable, silent cursor fallback")}>
+              {metroAvail ? (metroPlaying ? tx("metroStop") : tx("metroPlay")) : (playing ? tx("pause") : tx("play"))}
+            </button>
+          ) : (
+            <>
+              <button className={styles.practicePlay} onClick={() => playing ? doPause() : doPlay()}>
+                {playing ? tx("pause") : tx("play")}
+              </button>
+              {metroAvail && (
+                <button className={`${styles.practiceBtn} ${metroPlaying ? styles.practiceBtnActive : ""}`} aria-pressed={metroPlaying}
+                  onClick={() => { const mc = metroControl(); if (mc) { metroPlaying ? mc.stop() : mc.play(); } }}
+                  title={lang === "zh" ? "节拍器独立播放/停止(含预备拍); 播放中点小节=暖机重起" : "Metro play/stop with count-in; tap a measure while playing to restart there"}>
+                  🥁
+                </button>
+              )}
+            </>
+          )}
          <span className={styles.practiceDivider} />
           <button className={styles.practiceBtn} disabled={!analysis || pageNum <= 1} onClick={() => {
            const n = Math.max(1, pageNum - 1); pageNumRef.current = n; setPageNum(n);
@@ -1888,6 +2355,7 @@ export default function ScoreFollowPage() {
          <div className={styles.pcardHead}><strong>{lang === "zh" ? "快捷键与操作" : "Keyboard & controls"}</strong><button onClick={() => setHelpOpen(false)} aria-label={tx("close")}>×</button></div>
         <div>←/→ next or previous measure · ↑/↓ next system · PageUp/PageDown page</div>
         <div>Space play/pause · B sync · Backspace backup · ,/. adjust duration</div>
+        <div>Tap a measure while metro plays: count-in (follows meter) then restarts there</div>
         <div>F setting · H help · L line cursor · M panel · V clean view · Esc close</div>
         <div>C correction mode · S split · A merge left · D merge right (with selection)</div>
         <div>Annotation: enable annot, then long-click/shift-click to add; drag to move.</div>
@@ -1904,9 +2372,46 @@ export default function ScoreFollowPage() {
            <div className={styles.exportHead}><div><h2>{tx("exportPreview")} · preload.js</h2><p>{numPages} {tx("pageUnit")} · {barsTotal} {tx("barUnit")} · {tapCount} sync · {correctedPages} corrected · {(preloadPreview.bytes / 1024).toFixed(0)} KB</p></div>
              <button ref={previewCloseRef} className={styles.practiceBtn} onClick={closePreview} aria-label={tx("close")}>×</button></div>
            <pre className={styles.exportCode}>{preloadPreview.head}{preloadPreview.truncated ? "\n…(预览已截断；下载与复制包含完整数据)" : ""}</pre>
+            <div className={styles.exportActions}>
+              <button className={styles.practiceBtn} onClick={() => void copyPreload()}>{lang === "zh" ? "复制完整数据" : "Copy all"}</button>
+              <button className={styles.practicePlay} onClick={downloadPreload}>{lang === "zh" ? "下载 .js" : "Download .js"}</button>
+            </div>
+          </section>
+        </div>}
+
+       {/* 相机连拍: 应用内取景, 多张合并为多页谱(拍摄时逐张裁边/纠偏/提亮) */}
+       {camOpen && <div className={styles.modalBackdrop} onClick={closeCamera}>
+         <section className={styles.exportDialog} role="dialog" aria-modal="true" aria-label={lang === "zh" ? "相机连拍" : "Camera capture"} onClick={(e) => e.stopPropagation()}>
+           <div className={styles.exportHead}>
+             <div><h2>📷 {lang === "zh" ? "相机连拍" : "Camera capture"}</h2>
+               <p>{lang === "zh" ? "逐页拍摄, 完成后合并为多页谱(已拍自动裁边/纠偏/提亮)" : "Shoot page by page, combine into a multi-page score on done"}</p></div>
+             <button className={styles.practiceBtn} onClick={closeCamera} aria-label={tx("close")}>×</button>
+           </div>
+           <div className={styles.camWrap}>
+             <video ref={attachCamVideo}
+               playsInline muted autoPlay className={styles.camVideo}
+               onPlaying={() => setCamPaused(false)} onPause={() => setCamPaused(true)}
+               onClick={(e) => { const v = e.target as HTMLVideoElement; v.play().then(() => setCamPaused(false)).catch(() => {}); }} />
+             {camPaused && !camBusy && (
+               <button className={styles.camPlayOverlay}
+                 onClick={() => { const v = camVideoRef.current; if (v) v.play().then(() => setCamPaused(false)).catch(() => setStatus("相机启动失败, 请检查权限")); }}>
+                 ▶ {lang === "zh" ? "点击启动取景" : "Tap to start preview"}
+               </button>
+             )}
+           </div>
+           {camBusy && <p className={styles.expertHint}>{lang === "zh" ? "正在打开相机…" : "Opening camera…"}</p>}
+           {camShots.length > 0 && <div className={styles.camThumbs}>
+             {camShots.map((u, i) => (
+               <span key={`${i}-${u.slice(-8)}`} className={styles.camThumb}>
+                 {/* eslint-disable-next-line @next/next/no-img-element */}
+                 <img src={u} alt={`p${i + 1}`} />
+                 <button onClick={() => removeShot(i)} aria-label={lang === "zh" ? `删除第${i + 1}页` : `Remove page ${i + 1}`}>×</button>
+               </span>
+             ))}
+           </div>}
            <div className={styles.exportActions}>
-             <button className={styles.practiceBtn} onClick={() => void copyPreload()}>{lang === "zh" ? "复制完整数据" : "Copy all"}</button>
-             <button className={styles.practicePlay} onClick={downloadPreload}>{lang === "zh" ? "下载 .js" : "Download .js"}</button>
+             <button className={styles.practiceBtn} onClick={takeShot}>{lang === "zh" ? "拍摄" : "Shoot"}</button>
+             <button className={styles.practicePlay} disabled={!camShots.length} onClick={() => void finishShots()}>{lang === "zh" ? `完成(${camShots.length})` : `Done (${camShots.length})`}</button>
            </div>
          </section>
        </div>}
@@ -1977,8 +2482,16 @@ export default function ScoreFollowPage() {
                 <label key={name} className={`${styles.pill} ${profileName === name ? styles.pillOn : ""}`}><input type="radio" name="profile" checked={profileName === name} onChange={() => applyProfile(name)} /> {name}</label>
               ))}
              </div>
-            <button className={styles.pfileBtn} onClick={resetAdvDefaults}>{tx("resetDefaults")}</button>
-          </div>
+             <button className={styles.pfileBtn} onClick={resetAdvDefaults}>{tx("resetDefaults")}</button>
+             {Object.keys(advsRef.current).length > 0 && (
+               <p className={styles.expertHint}>
+                 {lang === "zh"
+                   ? `p${Object.keys(advsRef.current).sort().join("、p")} 有独立参数(在他页调参不影响这些页) · 当前 p${pageNum}${advsRef.current[pageNum] ? "(本页已调)" : "(跟随全局)"}`
+                   : `p${Object.keys(advsRef.current).sort().join(", p")} have per-page params · current p${pageNum}${advsRef.current[pageNum] ? " (tuned)" : " (global)"}`}
+                 {advsRef.current[pageNum] && <button className={styles.pfileBtn} onClick={clearPageAdv}>{lang === "zh" ? "清除本页参数" : "Clear this page"}</button>}
+               </p>
+             )}
+           </div>
           <div className={styles.pcard}>
              <div className={styles.pcardTitle}><span>{tx("barsSection")}</span></div>
             <div className={styles.pillRow}>
@@ -1997,7 +2510,7 @@ export default function ScoreFollowPage() {
               <label key={`${k}-${advNonce}`} className={styles.stepper}>{tx(label)}({k})
                 <input type="number" min={ADV_RANGES[k][0]} max={ADV_RANGES[k][1]} step={ADV_STEPS[k]}
                   defaultValue={opt[k] as number}
-                  title={lang === "zh" ? "修改后重新分析整份谱" : "Retunes analysis"}
+                  title={lang === "zh" ? "只记当前页, 整谱重分析但各页保留已调参数" : "Saved for current page only; other tuned pages keep theirs"}
                   onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) applyAdv(k, v); }}
                   onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { applyAdv(k, v); e.target.value = String(opt[k] as number); } }}
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />

@@ -32,7 +32,7 @@ export const legacyOpt: SynpdfOpt = {
   speed: 1, no_menu: 0, btns: 1, spdctl: 1, cropx: 0, drmpl: 0.4, pagewd: 1000,
   synbox: 0, wpdf: 1, lncsr: 0, nomed: 0, noplyr: 0, nodash: 0, skipn: 0,
   drmpl2: 2, seln: 0, delay: 0, ipaddr: "", mstr: 0, bpmsr: "4-20-1", loop: 0,
-  annot: 0, zwgrens: 0.7, voorna: 0.9, mtdrmpl: 0.8, dx: 3, fscr: 0, pagenum: 1,
+  annot: 0, zwgrens: 0.7, voorna: 0.9, mtdrmpl: 0.85, dx: 3, fscr: 0, pagenum: 1, // mtdrmpl 原版默认 0.8, 本项目默认 0.85(用户指定)
   playbtn: 0, mmin: "", fixwd: 1000, lastSynced: -2, eerst: 0, sysprf: 0, onestf: 0,
 };
 

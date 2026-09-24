@@ -66,6 +66,8 @@ function boot(){
   function setPlayBtn(playing){
     var b=document.getElementById('sgPlay');
     if(b) b.textContent = playing ? L('stop') : L('play');
+    // 向 React 走带按钮广播播放状态(挂载时也会触发一次, 顺带宣告可用)
+    try{ window.dispatchEvent(new CustomEvent('synpdf:metro-state', { detail: { playing: !!playing } })); }catch(e){}
   }
   function applyLang(){
     var map = {
@@ -353,15 +355,15 @@ function boot(){
   function seqRange(){ var from=st.loopOn?st.loopFrom:1,to=st.loopOn?st.loopTo:B[B.length-1][4];
     return barRangeToIdx(from,to); }
 
-  // ===== count-in: 空打 N 拍后调 cb =====
+  // ===== count-in: 空打 N 拍后调 cb; 重拍跟当前拍号(4/4 打 1+3, 3/4 打 1+2) =====
   function doCountIn(cb){
     var n=st.countIn|0;
     if(n<=0){ cb(); return; }
-    var spb=60/st.bpm, i=0;
+    var spb=60/st.bpm, i=0, BT=Math.max(1, st.meter|0);
     info.textContent='count-in '+n+'...';
     (function tick(){
       if(!st.playing){ setPlayBtn(false); return; }
-      click(i===0);
+      click(i%BT===0);
       i++; info.textContent='count-in '+(n-i+1);
       if(i>=n){ setTimeout(cb, spb*1000); }
       else setTimeout(tick, spb*1000);
@@ -369,12 +371,15 @@ function boot(){
   }
 
   // ===== 播放: 有序列走序列, 否则走 loop/全曲 =====
+  function nowMs(){ return (typeof performance!=='undefined'&&performance.now)?performance.now():Date.now(); }
   function start(){
-    if(st.playing){ stop(); return; }
+    // 启动瞬间 300ms 内的再次触发视为误触/连击直接吞掉, 否则首拍响一声就被自己掐停
+    if(st.playing){ if(nowMs()-(st._startAt||0)<300) return; stop(); return; }
     if(!st.audio) st.audio=new (window.AudioContext||window.webkitAudioContext)();
     if(st.audio.state==='suspended') st.audio.resume();
     if(!B.length){ info.textContent='no data'; return; }
     st.playing=true;
+    st._startAt=nowMs();
     setPlayBtn(true);
     var seq=parseSeq(st.seqText);
     doCountIn(function(){
@@ -457,6 +462,25 @@ function boot(){
   }
 
   function barFirst(i){ var m=B[i][4],j=i; while(j>0&&B[j-1][4]===m)j--; return j; }
+
+  // 点小节暖机重起(触屏练习用): 停→定位→走 count-in→从该位置开播.
+  // _startAt 清零绕过 300ms 防连击窗, 蓄意重起永远生效.
+  // 顶层定义: 控制 API/外部事件/host 点谱共用(面板内 gotoBar 另有作用域).
+  function restartFromIdx(idx){
+    if(!B.length) return;
+    idx=Math.max(0,Math.min(B.length-1,idx));
+    st._startAt=0;
+    if(st.playing) stop();
+    st.iSeq=idx; lastRowY=-1; place(idx);
+    start(); // count-in 本身就是起拍提示, 不再多响一声试音
+  }
+  function restartAtMeasure(m){
+    if(!B.length) return;
+    var mx=Math.max(1,Math.min(maxM,m||1)), idx=-1;
+    for(var i=0;i<B.length;i++){ if(B[i][4]===mx){ idx=barFirst(i); break; } }
+    if(idx<0) idx=0;
+    restartFromIdx(idx);
+  }
 
 
   // ===== Four isolated playback plans: Score + three temporary practice plans =====
@@ -579,7 +603,7 @@ function boot(){
     else if(k==='ArrowLeft'){ var fL=barFirst(st.iSeq); target=(st.iSeq>fL)?fL:((fL>0)?barFirst(fL-1):0); }
     else if(k==='ArrowDown'){ var yD=B[st.iSeq][2]; for(i=st.iSeq+1;i<B.length;i++){ if(B[i][2]>yD+1){ target=barFirst(i); break; } } if(target<0) target=st.iSeq; }
     else if(k==='ArrowUp'){ var yU=B[st.iSeq][2], c=st.iSeq; while(c>0&&Math.abs(B[c-1][2]-yU)<=1) c--; if(c>0){ var yP=B[c-1][2], d=c-1; while(d>0&&Math.abs(B[d-1][2]-yP)<=1) d--; target=barFirst(d); } else target=0; }
-    else if(k===' '||k==='Spacebar'){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); start(); return; }
+    else if(k===' '||k==='Spacebar'){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); if(!ev.repeat) start(); return; }
     else if(k==='h'||k==='H'){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); __toggle(); return; }
     else return;
     ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
@@ -764,8 +788,10 @@ function boot(){
              y: ev.clientY - r.top  + host.scrollTop };
   }
   // Activate the clicked measure without blocking SynPDF's own click handlers.
+  // 纠错模式下点线条不碰播放头; 播放中点小节=暖机重起(预备拍后从该小节开播).
   host.addEventListener('click',function(ev){
     if(ev.button!==0||!B.length) return;
+    try{ if(window.__sfCorrectMode) return; }catch(e){}
     var point=metricPointFromEvent(ev);
     if(!point) return;
     var x=point.x, y=point.y;
@@ -773,7 +799,7 @@ function boot(){
     for(var i=0;i<B.length;i++){
       if(x>=B[i][6]&&x<=B[i][7]&&y>=B[i][2]&&y<=B[i][3]){ measure=B[i][4]; break; }
     }
-    if(measure) setTimeout(function(){ gotoBar(measure); },0);
+    if(measure) setTimeout(function(){ if(st.playing) restartAtMeasure(measure); else gotoBar(measure); },0);
   },false);
 
   document.getElementById('sgStart').onclick=function(){ gotoBar(1); };
@@ -1042,7 +1068,7 @@ function boot(){
   document.addEventListener('webkitfullscreenchange', __fullscreen);
   document.addEventListener('mozfullscreenchange', __fullscreen);
   window.addEventListener('synpdf:metric-rendered', __metricRendered);
-  // 外部点谱跳转(mix 为 1-based 全局小节号): 播放中 jumpTo 不停, 未播放只移动头
+  // 外部点谱跳转(mix 为 1-based 全局小节号): 播放中暖机重起(预备拍后从该小节开播), 未播放只移动头
   window.addEventListener('synpdf:metro-jump', function(ev){
     if(!B.length) return;
     var d=ev&&ev.detail; if(!d||d.measure==null) return;
@@ -1050,7 +1076,7 @@ function boot(){
     var m=+d.measure, idx=-1;
     for(var i=0;i<B.length;i++){ if(B[i][4]>=m){ idx=barFirst(i); break; } }
     if(idx<0) idx=0;
-    if(st.playing) jumpTo(idx);
+    if(st.playing) restartFromIdx(idx);
     else { st.iSeq=idx; lastRowY=-1; place(idx); click(B[idx][5]===1); }
   });
   // ===== PracticeSession bridge: one shared firstBeatAt clock =====
@@ -1091,6 +1117,9 @@ function boot(){
   function __practiceStart(d){
     if(!d||d.firstBeatAt==null) return false;
     if(st.playing) stop();
+    // 无节拍数据直接拒掉: 否则后继 seqRange 取 B 末尾抛错、playing 卡死 true 再也播不响
+    if(!B.length){ info.textContent='no data'; return false; }
+    st._startAt=nowMs();
     __practicePrepare(d);
     __practiceSession=d;
     if(!st.audio){ try{ st.audio=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
@@ -1102,10 +1131,10 @@ function boot(){
     __practiceTickStop();
     setTimeout(function(){
       if(!__practiceSession||__practiceSession!==d||!st.playing) return;
-      var i=0;
+      var i=0, BT=Math.max(1, st.meter|0);
       (function tick(){
         if(!st.playing||__practiceSession!==d) return;
-        click(i===0);
+        click(i%BT===0);
         i++;
         if(i>=countIn){
           var remain=Math.max(0, d.firstBeatAt-performance.now());
@@ -1127,6 +1156,21 @@ function boot(){
     if(st.playing) stop();
     window.dispatchEvent(new CustomEvent('synpdf:practice-stopped', {}));
   }
+  // React 常驻走带按钮用: 与面板播放同一套状态机, idle 点播从当前头起播(含预备拍)
+  window.__sgaMetroControl={
+    play: function(fromM){
+      if(st.playing) return false;
+      if(fromM!=null){
+        if(!B.length) return false;
+        gotoBar(fromM);
+      }
+      start();
+      return st.playing;
+    },
+    stop: function(){ stop(); return true; },
+    restartAtMeasure: restartAtMeasure,
+    isPlaying: function(){ return !!st.playing; }
+  };
   window.__sgaMetroPractice={
     isAvailable: function(){ return B.length>0; },
     prepare: __practicePrepare, start: __practiceStart, stop: __practiceStop,
