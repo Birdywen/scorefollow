@@ -82,6 +82,47 @@ function cloneBars(bars: number[][]): number[][] {
   return bars.map((b) => b.slice());
 }
 
+/**
+ * 无缝拼接: 裁掉渲染页上下纸张白边(内容包络 + 3px 保护边), 返回裁掉的顶部高度。
+ * 空白页/读数失败返回 0(不裁)。调用方直接分析裁后 canvas 即可, 坐标系自洽。
+ */
+function cropPageMargins(cv: HTMLCanvasElement): number {
+  const W = cv.width, H = cv.height;
+  if (!W || !H) return 0;
+  let ctx: CanvasRenderingContext2D | null = null;
+  try { ctx = cv.getContext("2d", { willReadFrequently: true }); } catch { return 0; }
+  if (!ctx) return 0;
+  let img: ImageData;
+  try { img = ctx.getImageData(0, 0, W, H); } catch { return 0; }
+  const d = img.data;
+  const minDark = Math.max(3, Math.floor(W * 0.002));
+  const rowHas = (y: number): boolean => {
+    let c = 0;
+    const off = y * W * 4;
+    for (let x = 0; x < W; x++) {
+      const i = off + x * 4;
+      if (d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) { if (++c >= minDark) return true; }
+    }
+    return false;
+  };
+  let top = 0;
+  while (top < H && !rowHas(top)) top++;
+  if (top >= H) return 0; // 全白页
+  let bot = H - 1;
+  while (bot > top && !rowHas(bot)) bot--;
+  const PAD = 3;
+  top = Math.max(0, top - PAD);
+  bot = Math.min(H - 1, bot + PAD);
+  if (top === 0 && bot === H - 1) return 0;
+  const tmp = document.createElement("canvas");
+  tmp.width = W;
+  tmp.height = bot - top + 1;
+  tmp.getContext("2d")!.drawImage(cv, 0, top, W, tmp.height, 0, 0, W, tmp.height);
+  cv.height = tmp.height; // 重置 canvas(宽度不变)
+  cv.getContext("2d")!.drawImage(tmp, 0, 0);
+  return top;
+}
+
 export default function ScoreFollowPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const notationRef = useRef<HTMLDivElement>(null);
@@ -248,6 +289,9 @@ export default function ScoreFollowPage() {
         canvas.width = Math.floor(vp.width);
         canvas.height = Math.floor(vp.height);
         await proxy.render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
+        // 无缝拼接: 裁掉纸张上下白边再分析/堆叠, 跨页接缝≈正常行距。
+        // 分析坐标跟着 canvas 走(缓存键自带尺寸), 全局合并无需改动。
+        cropPageMargins(canvas);
         const a = analyzePage(canvas, n, opt.seln, docId ?? pdfNameRef.current);
         if (a.systems.length === 0) {
           autoRef.current[n] = null as any;
