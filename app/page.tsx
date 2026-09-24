@@ -24,6 +24,7 @@ import {
   type PageAnalysis,
 } from "@/lib/synpdf-core";
 import { Wijzer, buildMeasures } from "@/lib/synpdf-wijzer";
+import PerformancePanel from "./PerformancePanel";
 import styles from "./page.module.css";
 
 const DEFAULT_ADV: Record<string, number> = {
@@ -47,6 +48,8 @@ const STR: Record<string, { zh: string; en: string }> = {
   media: { zh: "媒体", en: "Media" },
   noScore: { zh: "未载入谱面", en: "No score loaded" },
   loadPdf: { zh: "载入 PDF 谱", en: "Load PDF score" },
+  loadImage: { zh: "载入图片谱", en: "Load image score" },
+  takePhoto: { zh: "拍照录谱", en: "Snap score photo" },
   loadMedia: { zh: "载入音频/视频", en: "Load audio/video" },
   settings: { zh: "设置", en: "Settings" },
   play: { zh: "▶ 播放", en: "▶ Play" },
@@ -77,7 +80,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   pieUndo: { zh: "撤销", en: "Undo" },
   pieMergeL: { zh: "◀左合", en: "◀ Merge" },
   diagnostics: { zh: "诊断视图", en: "Diagnostics" },
-  correctHint: { zh: "点击选中 · 拖动线条 · 双击新增 · Ctrl+Z 撤销", en: "Click to select · drag a line · double-click to add · Ctrl+Z to undo" },
+  correctHint: { zh: "点击选中 · 拖动线条 · 长按/双击新增 · Ctrl+Z 撤销", en: "Click to select · drag a line · long-press/double-click to add · Ctrl+Z to undo" },
   exitCorrect: { zh: "完成校正", en: "Done correcting" },
   noPdfHint: { zh: "加载 PDF 乐谱，开始连续练习", en: "Load a PDF score to begin practicing" },
   exportPreview: { zh: "导出预览", en: "Export preview" },
@@ -93,6 +96,9 @@ const STR: Record<string, { zh: string; en: string }> = {
   cursorOverlay: { zh: "播放光标", en: "Cursor" },
   lowOverlay: { zh: "低置信区域", en: "Low confidence" },
   lineCursor: { zh: "线形光标", en: "Line cursor" },
+  blackThresh: { zh: "黑色阈值", en: "Black thresh" },
+  beforeAfter: { zh: "前后阈值", en: "Before/after" },
+  barlineThresh: { zh: "小节线阈值", en: "Barline thresh" },
   annotate: { zh: "批注", en: "Annotations" },
   enableSync: { zh: "启用同步", en: "Enable sync" },
   saveTiming: { zh: "导出同步数据", en: "Save timing" },
@@ -146,6 +152,44 @@ function cropPageMargins(cv: HTMLCanvasElement): number {
   return top;
 }
 
+/**
+ * 整谱级 skipn 切除页规则(逐页切会吃掉每一页, 多页谱/照片谱全毁):
+ * +N 只切第 1 页的头, −N 只切末页的尾, 其余页 skip=0.
+ * 首/末页可能是空白扫描页, 主循环后再 walk-back 到真正有系统的页(见 renderAllPages).
+ */
+function scoreSkipFor(n: number, total: number, g: number): number {
+  if (!Number.isFinite(g) || g === 0) return 0;
+  if (g > 0 && n === 1) return g;
+  if (g < 0 && n === total) return g;
+  return 0;
+}
+
+/** 图片谱解码(EXIF 方向归一化, 供图片/相机输入): 失败抛错由调用方报 status */
+async function decodeScoreImage(f: File): Promise<{ bmp: ImageBitmap; w: number; h: number }> {
+  try {
+    const bmp = await createImageBitmap(f, { imageOrientation: "from-image" } as ImageBitmapOptions);
+    return { bmp, w: bmp.width, h: bmp.height };
+  } catch {
+    const url = URL.createObjectURL(f);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("image decode failed"));
+        el.src = url;
+      });
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth || 1;
+      c.height = img.naturalHeight || 1;
+      c.getContext("2d")!.drawImage(img, 0, 0);
+      const bmp = await createImageBitmap(c);
+      return { bmp, w: bmp.width, h: bmp.height };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+}
+
 export default function ScoreFollowPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const notationRef = useRef<HTMLDivElement>(null);
@@ -176,6 +220,7 @@ export default function ScoreFollowPage() {
   const [status, setStatus] = useState("scorefollow ready — upload a PDF score");
   const [cursorInfo, setCursorInfo] = useState("");
   const [advOpen, setAdvOpen] = useState(false);
+  const [performanceOpen, setPerformanceOpen] = useState(false);
   const [advNonce, forceAdv] = useState(0);
   const [analysis, setAnalysis] = useState<PageAnalysis | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -205,6 +250,11 @@ export default function ScoreFollowPage() {
   const [selectedBar, setSelectedBar] = useState<{ si: number; bi: number } | null>(null);
   // pie 菜单锚点(视口坐标), 选中由 selectedBar 承载
   const [pie, setPie] = useState<{ x: number; y: number } | null>(null);
+  // 纠错虚拟光标(无 hover 的触屏定位用, 分析坐标系)
+  const [touchPos, setTouchPos] = useState<{ x: number; y: number } | null>(null);
+  // 长按新增小节线(代替双击): 按下 550ms 不动即插入, 随后的一次 click 需吞掉
+  const longPressRef = useRef<{ id: number; cx: number; cy: number; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const suppressClickRef = useRef(false);
   const [profileName, setProfileName] = useState<AnalysisProfileName>("balanced");
   const [embedMetro, setEmbedMetro] = useState(true);
   const [fullScreen, setFullScreen] = useState(false);
@@ -228,6 +278,8 @@ export default function ScoreFollowPage() {
   const [chromeOpen, setChromeOpen] = useState(true);
   const [mediaName, setMediaName] = useState("");
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const camInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
 
   const closePreview = useCallback(() => {
@@ -314,16 +366,34 @@ export default function ScoreFollowPage() {
 
   // 渲染+分析单页(后台页用离屏 canvas, 不碰可见状态)
   const renderAndAnalyze = useCallback(
-    async (pdf: any, n: number, canvas: HTMLCanvasElement, docId?: string) => {
+    async (pdf: any, n: number, canvas: HTMLCanvasElement, docId?: string, skipOverride?: number) => {
       renderingRef.current = true;
+      // 整谱级 skipn: 本次调用前后恢复全局值, 缓存键自带 skip(见 analyzePage)不串味
+      const savedSkip = opt.skipn;
+      opt.skipn = skipOverride ?? scoreSkipFor(n, Number(pdf?.numPages) || 1, Math.round(Number(opt.skipn) || 0));
       try {
-        const proxy = await pdf.getPage(n);
-        const v0 = proxy.getViewport({ scale: 1 });
-        const scale = (opt.pagewd || 1000) / v0.width;
-        const vp = proxy.getViewport({ scale });
-        canvas.width = Math.floor(vp.width);
-        canvas.height = Math.floor(vp.height);
-        await proxy.render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
+        let proxy: any = null;
+        const imgDoc = (pdf as any)?.__sfImage as { images: { bmp: ImageBitmap; w: number; h: number }[] } | undefined;
+        if (imgDoc) {
+          // 图片谱: 白底重绘到目标宽度(照片可能带透明/EXIF 方向, 解码时已归一化)
+          const im = imgDoc.images[n - 1];
+          if (!im) { autoRef.current[n] = null as any; return { a: null, proxy }; }
+          const scale = (opt.pagewd || 1000) / Math.max(1, im.w);
+          canvas.width = Math.max(1, Math.floor(im.w * scale));
+          canvas.height = Math.max(1, Math.floor(im.h * scale));
+          const ctx = canvas.getContext("2d")!;
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(im.bmp, 0, 0, canvas.width, canvas.height);
+        } else {
+          proxy = await pdf.getPage(n);
+          const v0 = proxy.getViewport({ scale: 1 });
+          const scale = (opt.pagewd || 1000) / v0.width;
+          const vp = proxy.getViewport({ scale });
+          canvas.width = Math.floor(vp.width);
+          canvas.height = Math.floor(vp.height);
+          await proxy.render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
+        }
         // 无缝拼接: 裁掉纸张上下白边再分析/堆叠, 跨页接缝≈正常行距。
         // 分析坐标跟着 canvas 走(缓存键自带尺寸), 全局合并无需改动。
         cropPageMargins(canvas);
@@ -335,6 +405,7 @@ export default function ScoreFollowPage() {
         autoRef.current[n] = a;
         return { a, proxy };
       } finally {
+        opt.skipn = savedSkip;
         renderingRef.current = false;
       }
     },
@@ -351,7 +422,10 @@ export default function ScoreFollowPage() {
     for (const off of pageOffsetsRef.current) {
       const a = autoRef.current[off.page];
       if (!a) continue;
-      const pageBars = manualRef.current[off.page] ?? a.bars;
+      // 人工校正行数与重分析后的系统数对不上(改过 skipn/阈值)就回退自动值,
+      // 否则旧小节线会盖到新系统上; 校正数据保留, 几何恢复一致时自动重新生效
+      const manual = manualRef.current[off.page];
+      const pageBars = manual && manual.length === a.systems.length ? manual : a.bars;
       a.systems.forEach((s, i) => {
         systems.push({ cs: s.cs.map((y) => y + off.y), xs: { x1: s.xs.x1, x2: s.xs.x2 } });
         bars.push((pageBars[i] ?? []).slice());
@@ -392,9 +466,45 @@ export default function ScoreFollowPage() {
         y += canvas.height;
       }
       if (gen !== renderGenRef.current) return;
+      // 整谱级 skipn walk-back: 首/末页是空白扫描页时, 切除落到真正有系统的页.
+      // 切除不改变像素(只过滤系统), 离屏重算一页即可, offsets 无需重建.
+      const gSkip = Math.round(Number(opt.skipn) || 0);
+      if (gSkip !== 0) {
+        const withSystems = offsets
+          .map((o) => o.page)
+          .filter((p) => (autoRef.current[p]?.systems?.length ?? 0) > 0);
+        if (withSystems.length) {
+          const target = gSkip > 0 ? Math.min(...withSystems) : Math.max(...withSystems);
+          const ruled = gSkip > 0 ? 1 : nPages;
+          if (target !== ruled) {
+            const off = document.createElement("canvas");
+            // ruled 页切完是空的: 用 skip=0 对照确认它是原本空白(扫描白页)才转移目标
+            await renderAndAnalyze(pdf, ruled, off, docId, 0);
+            if (gen !== renderGenRef.current) return; // 被更新一轮取代
+            if ((autoRef.current[ruled]?.systems?.length ?? 0) === 0) {
+              await renderAndAnalyze(pdf, target, off, docId, gSkip);
+              if (gen !== renderGenRef.current) return;
+            } else {
+              // 被本次切空的内容页(如末页整个是 demo): 保持切除, 该页合并时跳过
+              autoRef.current[ruled] = null as any;
+            }
+          }
+        }
+      }
       pageOffsetsRef.current = offsets;
       const merged = mergeFromPages();
-      if (!merged) return;
+      if (!merged) {
+        // 整谱无系统(切多了或空白谱): 清掉旧分析, 不让旧小节线残留在新画布上
+        setAnalysis(null);
+        setCursor(null);
+        setCursorInfo("");
+        setSelectedBar(null);
+        setPie(null);
+        setStatus(gSkip !== 0
+          ? `skipn=${gSkip} 切掉了全部系统, 请调小绝对值后重试`
+          : "未检测到谱表系统, 请检查谱面或调参后重试");
+        return;
+      }
       const savedTimes = wijzerRef.current.times.slice();
       wijzerRef.current.reset(merged);
       const { kept, dropped } = wijzerRef.current.retainTimes(savedTimes);
@@ -471,30 +581,36 @@ export default function ScoreFollowPage() {
 
   // 新谱面: 必须清掉上一份谱的全部状态(缓存/人工校正/timing/undo),
   // 否则同页同尺寸会命中旧缓存、旧小节线盖到新谱上。
+  const clearScoreState = useCallback(() => {
+    clearPageCache();
+    setAnalysis(null);
+    setCursor(null);
+    setTouchPos(null);
+    pageOffsetsRef.current = [];
+    autoRef.current = {};
+    manualRef.current = {};
+    setManualBarsByPage({});
+    annotsRef.current = {};
+    setAnnotsByPage({});
+    undoRef.current = [];
+    redoRef.current = [];
+    wijzerRef.current.loadTimes([]);
+    wijzerRef.current.setLoop(0, 0);
+    setTapCount(0);
+    setSelectedBar(null);
+    setPie(null);
+  }, []);
   const onPdfFile = useCallback(
     async (f: File) => {
       setStatus(`loading ${f.name} ...`);
+      setPerformanceOpen(false);
       try {
         const pdfjs: any = await import("pdfjs-dist");
         const buf = await f.arrayBuffer();
         pdfBytesRef.current = buf.slice(0);
         const pdf = await pdfjs.getDocument({ data: buf, wasmUrl: `${BASE}/wasm/` }).promise;
         pdfDocRef.current = pdf;
-        clearPageCache();
-        setAnalysis(null);
-        setCursor(null);
-        pageOffsetsRef.current = [];
-        autoRef.current = {};
-        manualRef.current = {};
-        setManualBarsByPage({});
-        annotsRef.current = {};
-        setAnnotsByPage({});
-        undoRef.current = [];
-        redoRef.current = [];
-        wijzerRef.current.loadTimes([]);
-        wijzerRef.current.setLoop(0, 0);
-        setTapCount(0);
-        setSelectedBar(null);
+        clearScoreState();
         pdfNameRef.current = f.name;
         setPdfName(f.name);
         setNumPages(pdf.numPages);
@@ -505,7 +621,34 @@ export default function ScoreFollowPage() {
         setStatus(`载入失败 ${f.name}: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [renderPage],
+    [renderPage, clearScoreState],
+  );
+  // 图片/相机谱: 每张图当一页(多选多页), 与 PDF 共用分析/合并/校正链路.
+  // 图片无 pdf_data: preload 导出不含 PDF, OMR 仍需 PDF(面板会提示).
+  const onImageFile = useCallback(
+    async (files: FileList | File[]) => {
+      const list = [...files].filter((f) => f.type.startsWith("image/")).slice(0, 12);
+      if (!list.length) { setStatus("未选中图片文件"); return; }
+      setStatus(`loading ${list.length} image(s) ...`);
+      setPerformanceOpen(false);
+      try {
+        const images = [];
+        for (const f of list) images.push({ ...(await decodeScoreImage(f)), name: f.name });
+        const doc = { __sfImage: true, numPages: images.length, images };
+        pdfDocRef.current = doc;
+        pdfBytesRef.current = null;
+        clearScoreState();
+        pdfNameRef.current = list[0].name;
+        setPdfName(list.length > 1 ? `${list[0].name} +${list.length - 1}` : list[0].name);
+        setNumPages(images.length);
+        pageNumRef.current = 1;
+        setPageNum(1);
+        await renderPage(doc as any, 1, list[0].name);
+      } catch (err) {
+        setStatus(`图片载入失败: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [renderPage, clearScoreState],
   );
 
   const applyAdv = useCallback(
@@ -515,6 +658,8 @@ export default function ScoreFollowPage() {
       const range = ADV_RANGES[k];
       if (range) v = Math.min(range[1], Math.max(range[0], v));
       if (k === "dx") v = Math.round(v);
+      if (k === "skipn") v = Math.max(-5, Math.min(5, Math.round(v)));
+      else if (k === "seln") v = Math.max(0, Math.min(9, Math.round(v)));
       if (k === "skipn") { setSkipn(v); opt.skipn = v; }
       else if (k === "sysprf") { setSysprf(v); }
       else (opt as unknown as Record<string, number>)[k] = v;
@@ -537,8 +682,9 @@ export default function ScoreFollowPage() {
     [scheduleAdvRender],
   );
 
-  // V: 干净视图开关. 开=存当前状态后全隐(含 line cursor, 走 applyAdv 会触发一次重分析);
-  // 关=恢复之前的状态, 没动过的开关保持原值, 只调一次 applyAdv
+  // V: 干净视图开关 = 四覆盖层(Systems/Barlines/Cursor/Low confidence)的总闸.
+  // 开=四开关全灭(含 line cursor, 走 applyAdv 会触发一次重分析);
+  // 关=四开关全开, line cursor 恢复进干净前的值. 简单可预测, 不再恢复旧勾选.
   const toggleCleanView = useCallback(() => {
     if (!cleanView) {
       cleanSavedRef.current = {
@@ -548,15 +694,13 @@ export default function ScoreFollowPage() {
       setShowSystems(false); setShowBars(false); setShowCursor(false); setShowLowConf(false);
       if (((opt as unknown as Record<string, number>).lncsr ?? 1) === 1) applyAdv("lncsr", 0);
       setCleanView(true);
-      setStatus("clean view: 覆盖层已隐藏 (V 恢复)");
+      setStatus("clean view: 四覆盖层已隐藏 (V 全开)");
     } else {
       const s = cleanSavedRef.current;
-      if (s) {
-        setShowSystems(s.sys); setShowBars(s.bars); setShowCursor(s.cur); setShowLowConf(s.low);
-        if (s.lncsr === 1 && ((opt as unknown as Record<string, number>).lncsr ?? 0) === 0) applyAdv("lncsr", 1);
-      } else { setShowSystems(true); setShowBars(true); setShowCursor(true); setShowLowConf(true); }
+      setShowSystems(true); setShowBars(true); setShowCursor(true); setShowLowConf(true);
+      if (s && s.lncsr === 1 && ((opt as unknown as Record<string, number>).lncsr ?? 0) === 0) applyAdv("lncsr", 1);
       setCleanView(false);
-      setStatus("clean view: 已恢复覆盖层");
+      setStatus("clean view: 四覆盖层已全开 (V 隐藏)");
     }
   }, [cleanView, showSystems, showBars, showCursor, showLowConf, applyAdv]);
 
@@ -581,21 +725,27 @@ export default function ScoreFollowPage() {
     redoRef.current = [];
   }, []);
 
+  // 整谱 bars 按页拆分写入人工层(commit/拖动共用, 不碰 undo):
+  // analysis.bars 是整谱合并态, 绝不能整体塞进单个页的键下, 否则 undo/合并时行数错位
+  const writeManualBars = useCallback((nextBars: number[][]) => {
+    let i = 0;
+    const nextManual: Record<number, number[][]> = { ...manualRef.current };
+    for (const off of pageOffsetsRef.current) {
+      const a = autoRef.current[off.page];
+      if (!a) continue;
+      const nsys = a.systems.length;
+      nextManual[off.page] = cloneBars(nextBars.slice(i, i + nsys));
+      i += nsys;
+    }
+    manualRef.current = nextManual;
+    setManualBarsByPage(nextManual);
+  }, []);
+
   const commitBars = useCallback(
     (nextBars: number[][], label: string) => {
       if (!analysis) return;
       pushUndo();
-      let i = 0;
-      const nextManual: Record<number, number[][]> = { ...manualRef.current };
-      for (const off of pageOffsetsRef.current) {
-        const a = autoRef.current[off.page];
-        if (!a) continue;
-        const nsys = a.systems.length;
-        nextManual[off.page] = cloneBars(nextBars.slice(i, i + nsys));
-        i += nsys;
-      }
-      manualRef.current = nextManual;
-      setManualBarsByPage(nextManual);
+      writeManualBars(nextBars);
       wijzerRef.current.measures = buildMeasures({ ...analysis, bars: nextBars });
       wijzerRef.current.fillDummyTimes();
       const before = wijzerRef.current.times.length;
@@ -608,7 +758,7 @@ export default function ScoreFollowPage() {
       setStatus(`${label} · ${eff.bars.reduce((s, b) => s + Math.max(0, b.length - 1), 0)} measures` + (dropped ? ` · timing截断${dropped}个` : ""));
       emitMetricRendered();
     },
-    [analysis, pushUndo, emitMetricRendered],
+    [analysis, pushUndo, emitMetricRendered, writeManualBars],
   );
 
   const resetPageCorrections = useCallback(() => {
@@ -631,14 +781,45 @@ export default function ScoreFollowPage() {
 
   const copyCorrectionsToAll = useCallback(() => {
     if (!analysis || !numPages) return;
-    const cur = manualRef.current[pageNum] ?? analysis.bars;
+    // analysis.bars 是整谱合并态: 先切出当前页部分, 再只复制到系统数相同的页,
+    // 行数不同的页硬塞会导致合并错位(由行数门限回退为自动, 等于没复制还污染 undo)
+    const autoCur = autoRef.current[pageNum];
+    const whole = manualRef.current[pageNum] ?? analysis.bars;
+    const cur = manualRef.current[pageNum] ?? whole.slice(0, autoCur?.systems.length ?? whole.length);
     pushUndo();
     const next: Record<number, number[][]> = {};
-    for (let n = 1; n <= numPages; n++) next[n] = cloneBars(cur);
+    let skipped = 0;
+    for (let n = 1; n <= numPages; n++) {
+      if ((autoRef.current[n]?.systems.length ?? -1) === cur.length) next[n] = cloneBars(cur);
+      else skipped++;
+    }
     manualRef.current = next;
     setManualBarsByPage(next);
-    setStatus(`已将 p${pageNum} 校正复制到 ${numPages} 页(几何可能不同, 请逐页复核)`);
+    setStatus(`已将 p${pageNum} 校正复制到 ${Object.keys(next).length} 页` + (skipped ? ` · ${skipped} 页系统数不同已跳过` : ""));
   }, [analysis, numPages, pageNum, pushUndo]);
+
+  // undo/redo 恢复: 人工层整份换回后必须经 mergeFromPages 重建整谱 analysis.
+  // analysis 是整谱合并态, 绝不能只拼单页(旧代码错位即 chaos 来源); 时序走 reset+retain
+  const restoreManual = useCallback((next: Record<number, number[][]>, label: string) => {
+    manualRef.current = next;
+    setManualBarsByPage({ ...next });
+    const merged = mergeFromPages();
+    if (!merged) {
+      setAnalysis(null);
+      setSelectedBar(null);
+      setStatus(`${label} · 谱面为空`);
+      return;
+    }
+    const saved = wijzerRef.current.times.slice();
+    wijzerRef.current.reset(merged);
+    const { dropped } = wijzerRef.current.retainTimes(saved);
+    wijzerRef.current.fillDummyTimes();
+    setTapCount(wijzerRef.current.times.length);
+    setAnalysis(merged);
+    setSelectedBar(null);
+    setStatus(label + (dropped ? ` · timing截断${dropped}个` : ""));
+    emitMetricRendered();
+  }, [mergeFromPages, emitMetricRendered]);
 
   const doUndo = useCallback(() => {
     const prev = undoRef.current.pop();
@@ -646,19 +827,8 @@ export default function ScoreFollowPage() {
     const snap: Record<number, number[][]> = {};
     for (const [k, v] of Object.entries(manualRef.current)) snap[Number(k)] = cloneBars(v);
     redoRef.current.push(snap);
-    manualRef.current = prev;
-    setManualBarsByPage({ ...prev });
-    const auto = autoRef.current[pageNum];
-    const effBars = prev[pageNum] ?? auto?.bars;
-    if (auto && effBars) {
-      const eff = { ...auto, bars: cloneBars(effBars) };
-      wijzerRef.current.measures = buildMeasures(eff);
-      wijzerRef.current.times = wijzerRef.current.times.filter((t) => t.mix < wijzerRef.current.measures.length);
-      setTapCount(wijzerRef.current.times.length);
-      setAnalysis(eff);
-    }
-    setStatus("已撤销上一步校正");
-  }, [pageNum]);
+    restoreManual(prev, "已撤销上一步校正");
+  }, [restoreManual]);
 
   const doRedo = useCallback(() => {
     const nxt = redoRef.current.pop();
@@ -666,19 +836,8 @@ export default function ScoreFollowPage() {
     const snap: Record<number, number[][]> = {};
     for (const [k, v] of Object.entries(manualRef.current)) snap[Number(k)] = cloneBars(v);
     undoRef.current.push(snap);
-    manualRef.current = nxt;
-    setManualBarsByPage({ ...nxt });
-    const auto = autoRef.current[pageNum];
-    const effBars = nxt[pageNum] ?? auto?.bars;
-    if (auto && effBars) {
-      const eff = { ...auto, bars: cloneBars(effBars) };
-      wijzerRef.current.measures = buildMeasures(eff);
-      wijzerRef.current.times = wijzerRef.current.times.filter((t) => t.mix < wijzerRef.current.measures.length);
-      setTapCount(wijzerRef.current.times.length);
-      setAnalysis(eff);
-    }
-    setStatus("已重做校正");
-  }, [pageNum]);
+    restoreManual(nxt, "已重做校正");
+  }, [restoreManual]);
 
   const canvasCoords = useCallback((clientX: number, clientY: number) => {
     const stack = stackRef.current;
@@ -839,6 +998,7 @@ export default function ScoreFollowPage() {
 
   const onScoreClick = useCallback(
     (ev: React.MouseEvent) => {
+      if (suppressClickRef.current) { suppressClickRef.current = false; return; } // 长按新增后的抬手 click
       const p = canvasCoords(ev.clientX, ev.clientY);
       if (!p) return;
       if (correctMode) {
@@ -878,10 +1038,11 @@ export default function ScoreFollowPage() {
     [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, pageNum, placeCursor],
   );
 
-  const onScoreDoubleClick = useCallback(
-    (ev: React.MouseEvent) => {
-      if (!correctMode || !analysis) return;
-      const p = canvasCoords(ev.clientX, ev.clientY);
+  // 纠错新增小节线(长按/双击共用): 点位须落在某系统行内
+  const insertBarAt = useCallback(
+    (cx: number, cy: number, via: string) => {
+      if (!analysis) return;
+      const p = canvasCoords(cx, cy);
       if (!p) return;
       let targetSi = -1;
       analysis.systems.forEach((s, si) => {
@@ -889,14 +1050,46 @@ export default function ScoreFollowPage() {
         const y2 = s.cs[s.cs.length - 1];
         if (p.y >= y1 - analysis.spatium && p.y <= y2 + analysis.spatium) targetSi = si;
       });
-      if (targetSi < 0) { setStatus("双击位置不在任何系统内, 未新增"); return; }
+      if (targetSi < 0) { setStatus(`${via}位置不在任何系统内, 未新增`); return; }
       const bars = cloneBars(analysis.bars);
       bars[targetSi] = [...(bars[targetSi] ?? []), Math.round(p.x)].sort((a, b) => a - b);
       const bi = bars[targetSi].indexOf(Math.round(p.x));
       setSelectedBar({ si: targetSi, bi });
       commitBars(bars, `新增 p${pageNum} s${targetSi + 1} x=${Math.round(p.x)}`);
     },
-    [analysis, canvasCoords, commitBars, correctMode, pageNum],
+    [analysis, canvasCoords, commitBars, pageNum],
+  );
+
+  const onScoreDoubleClick = useCallback(
+    (ev: React.MouseEvent) => {
+      if (!correctMode || !analysis) return;
+      insertBarAt(ev.clientX, ev.clientY, "双击");
+    },
+    [analysis, correctMode, insertBarAt],
+  );
+
+  // 长按 550ms 不动即新增(触屏/鼠标左键, 拖线条不触发: 线条 pointerdown 已 stopPropagation)
+  const cancelLongPress = useCallback(() => {
+    if (longPressRef.current) { clearTimeout(longPressRef.current.timer); longPressRef.current = null; }
+  }, []);
+  const onNotationPointerDown = useCallback(
+    (ev: React.PointerEvent) => {
+      if (!correctMode || !analysis) return;
+      if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      const p = canvasCoords(ev.clientX, ev.clientY);
+      if (p) setTouchPos({ x: p.x, y: p.y });
+      cancelLongPress();
+      const cx = ev.clientX, cy = ev.clientY;
+      longPressRef.current = {
+        id: ev.pointerId, cx, cy,
+        timer: setTimeout(() => {
+          longPressRef.current = null;
+          suppressClickRef.current = true; // 吞掉抬手后的一次 click(不弹 pie/不跳光标)
+          insertBarAt(cx, cy, "长按");
+        }, 550),
+      };
+    },
+    [analysis, canvasCoords, cancelLongPress, correctMode, insertBarAt],
   );
 
   const onBarPointerDown = useCallback(
@@ -914,6 +1107,14 @@ export default function ScoreFollowPage() {
 
   const onNotationPointerMove = useCallback(
     (ev: React.PointerEvent) => {
+      // 长按滑动超 12px 取消新增; 纠错下虚拟光标跟随(触屏常显, 鼠标仅按住时)
+      const lp = longPressRef.current;
+      if (lp && lp.id === ev.pointerId
+        && Math.hypot(ev.clientX - lp.cx, ev.clientY - lp.cy) > 12) cancelLongPress();
+      if (correctMode && analysis && (ev.pointerType !== "mouse" || ev.buttons > 0)) {
+        const tp = canvasCoords(ev.clientX, ev.clientY);
+        if (tp) setTouchPos({ x: tp.x, y: tp.y });
+      }
       const drag = dragRef.current;
       if (!drag.active || !analysis) return;
       const p = canvasCoords(ev.clientX, ev.clientY);
@@ -928,16 +1129,15 @@ export default function ScoreFollowPage() {
       // 拖动时保持行内有序(端点除外, 避免交叉)
       if (drag.bi > 0 && row[drag.bi] < row[drag.bi - 1] + 1) row[drag.bi] = row[drag.bi - 1] + 1;
       if (drag.bi < row.length - 1 && row[drag.bi] > row[drag.bi + 1] - 1) row[drag.bi] = row[drag.bi + 1] - 1;
-      const nextManual = { ...manualRef.current, [pageNum]: bars };
-      manualRef.current = nextManual;
-      setManualBarsByPage(nextManual);
+      writeManualBars(bars);
       wijzerRef.current.measures = buildMeasures({ ...analysis, bars });
       setAnalysis({ ...analysis, bars });
     },
-    [analysis, canvasCoords, pageNum],
+    [analysis, canvasCoords, writeManualBars],
   );
 
   const onNotationPointerUp = useCallback(() => {
+    cancelLongPress(); // 提前抬手: 长按不触发(抬手后的 click 正常走选中)
     const drag = dragRef.current;
     if (!drag.active) return;
     drag.active = false;
@@ -946,7 +1146,12 @@ export default function ScoreFollowPage() {
       const x = analysis.bars[drag.si]?.[drag.bi];
       setStatus(`校正 p${pageNum} s${drag.si + 1} → x=${Math.round(x ?? 0)}`);
     }
-  }, [analysis, pageNum]);
+  }, [analysis, cancelLongPress, pageNum]);
+
+  // 退出纠错清掉虚拟光标/挂起的长按
+  useEffect(() => {
+    if (!correctMode) { setTouchPos(null); cancelLongPress(); suppressClickRef.current = false; }
+  }, [correctMode, cancelLongPress]);
 
   // ---- 批注(原版 annots 语义): annot 模式下右键新建, 拖动移动, 单击编辑, 右键删除 ----
   const commitAnnots = useCallback((next: Annot[]) => {
@@ -956,6 +1161,7 @@ export default function ScoreFollowPage() {
   }, [pageNum]);
 
   const onNotationContextMenu = useCallback((ev: React.MouseEvent) => {
+    if (correctMode) { ev.preventDefault(); return; } // 纠错长按不弹系统菜单/放大镜
     if (opt.annot !== 1 || !analysis) return;
     ev.preventDefault();
     const p = canvasCoords(ev.clientX, ev.clientY);
@@ -966,7 +1172,7 @@ export default function ScoreFollowPage() {
       w: analysis.pageW, c: 1 * opt.cropx, t: "click to edit this text", d: 0,
     }]);
     setStatus(`批注 p${pageNum} #${cur.length + 1} 已新建`);
-  }, [analysis, canvasCoords, commitAnnots, pageNum]);
+  }, [analysis, canvasCoords, commitAnnots, correctMode, pageNum]);
 
   const onAnnotPointerDown = useCallback((idx: number) => (ev: React.PointerEvent) => {
     if (opt.annot !== 1) return;
@@ -1279,6 +1485,7 @@ export default function ScoreFollowPage() {
 
   // preload.js 载入(原版兼容): pdf_data 内嵌PDF + 全页 metric 配对 + times + 逐页 adv
   const loadPreload = useCallback(async (f: File) => {
+    setPerformanceOpen(false);
     const txt = await f.text();
     if (!txt.includes("//# This page")) { setStatus("not a preload file(缺 //# This page 标记)"); return; }
     const matchBalanced = (open: string, close: string, from: number): string | null => {
@@ -1594,8 +1801,12 @@ export default function ScoreFollowPage() {
       {chromeOpen && <header className={styles.topbar}>
         <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>SMART-METRO</span>
          <button className={`${styles.tbBtn} ${pdfName ? styles.tbBtnOn : ""}`} onClick={() => pdfInputRef.current?.click()} title={pdfName || tx("loadPdf")}>📄 {pdfName ? (pdfName.length > 16 ? pdfName.slice(0, 14) + "…" : pdfName) : tx("score")}</button>
+        <button className={styles.tbBtn} onClick={() => imgInputRef.current?.click()} title={tx("loadImage")}>🖼</button>
+        <button className={styles.tbBtn} onClick={() => camInputRef.current?.click()} title={tx("takePhoto")}>📷</button>
         <button className={`${styles.tbBtn} ${mediaURL ? styles.tbBtnOn : ""}`} onClick={() => mediaInputRef.current?.click()} title={mediaName || tx("loadMedia")}>🎵 {mediaName ? (mediaName.length > 16 ? mediaName.slice(0, 14) + "…" : mediaName) : tx("media")}</button>
         <input ref={pdfInputRef} type="file" accept=".pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPdfFile(f); e.target.value = ""; }} />
+        <input ref={imgInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
+        <input ref={camInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
         <input ref={mediaInputRef} type="file" accept="audio/*,video/*" hidden onChange={(e) => {
           const f = e.target.files?.[0]; if (!f) return;
           setMediaURL(URL.createObjectURL(f));
@@ -1661,6 +1872,7 @@ export default function ScoreFollowPage() {
           </button>
            <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} aria-pressed={cleanView} onClick={toggleCleanView}>{tx("cleanView")}</button>
            <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} aria-expanded={advOpen} aria-controls="sf-control-panel" onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>
+           <button className={`${styles.practiceBtn} ${performanceOpen ? styles.practiceBtnActive : ""}`} aria-expanded={performanceOpen} onClick={() => { setPerformanceOpen((v) => !v); setAdvOpen(false); }}>{lang === "zh" ? "演奏分析" : "Analyze"}</button>
           <span className={styles.practiceHint}>{analysis ? `${analysis.systems.length} ${tx("sysUnit")} · ${barsTotal} ${tx("barUnit")}${lowConfSystems ? ` · ${lowConfSystems}${tx("lowConf")}` : ""}` : tx("waiting")}</span>
         </nav>}
 
@@ -1734,8 +1946,10 @@ export default function ScoreFollowPage() {
         </div>
       )}
 
-      <div className={styles.workspace}>
-       {chromeOpen && advOpen && (
+       <div className={styles.workspace}>
+       {performanceOpen && <PerformancePanel lang={lang} pdfMeasures={barsTotal} pdfName={pdfName} pdfBytes={() => pdfBytesRef.current}
+         onJump={(measure) => placeCursor(measure - 1)} onClose={() => setPerformanceOpen(false)} />}
+        {chromeOpen && advOpen && (
           <aside id="sf-control-panel" className={`${styles.advpanel} ${styles.controlPanel}`} aria-label={tx("panelBtn")}>
             <div className={styles.pcardHead}><span>{lang === "zh" ? "练习工作台" : "Practice workspace"}</span><button onClick={() => setAdvOpen(false)} aria-label={tx("closePanel")}>×</button></div>
           <div className={styles.pcard}>
@@ -1752,9 +1966,10 @@ export default function ScoreFollowPage() {
                <label className={`${styles.pill} ${opt.lncsr === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.lncsr === 1} onChange={(e) => applyAdv("lncsr", e.target.checked ? 1 : 0)} /> {tx("lineCursor")}</label>
                <label className={`${styles.pill} ${cleanView ? styles.pillOn : ""}`}><input type="checkbox" checked={cleanView} onChange={() => toggleCleanView()} /> {tx("cleanView")} (V)</label>
                <label className={`${styles.pill} ${correctMode ? styles.pillOn : ""}`}><input type="checkbox" checked={correctMode} onChange={(e) => { setCorrectMode(e.target.checked); setSelectedBar(null); setPie(null); }} /> {tx("correct")}</label>
-               <label className={`${styles.pill} ${diagnosticMode ? styles.pillOn : ""}`}><input type="checkbox" checked={diagnosticMode} onChange={(e) => { if (e.target.checked && cleanView) toggleCleanView(); setDiagnosticMode(e.target.checked); }} /> {tx("diagnostics")}</label>
-             </div>
-           </div>
+              <label className={`${styles.pill} ${diagnosticMode ? styles.pillOn : ""}`}><input type="checkbox" checked={diagnosticMode} onChange={(e) => { const on = e.target.checked; if (on && cleanView) toggleCleanView(); if (on) { setShowSystems(true); setShowBars(true); setShowCursor(true); setShowLowConf(true); } setDiagnosticMode(on); }} /> {tx("diagnostics")}</label>
+              </div>
+              <p className={styles.expertHint}>{lang === "zh" ? "诊断视图 = 全开上方四个覆盖层 + 底栏技术信息(版本/谱距/置信/耗时); 覆盖层只跟四个勾选走" : "Diagnostics = all four overlays above on + technical footer; overlays follow only the four checkboxes"}</p>
+            </div>
           <div className={styles.pcard}>
              <div className={styles.pcardTitle}><span>{tx("modeSection")}</span></div>
             <div className={styles.pillRow}>
@@ -1771,8 +1986,23 @@ export default function ScoreFollowPage() {
               <label className={`${styles.pill} ${opt.onestf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.onestf ? true : false} onChange={(e) => applyAdv("onestf", e.target.checked ? 1 : 0)} /> onestf</label>
               <label className={`${styles.pill} ${opt.eerst ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.eerst ? true : false} onChange={(e) => applyAdv("eerst", e.target.checked ? 1 : 0)} /> eerst</label>
             </div>
-            <label className={styles.stepper}>skipn <input type="number" min={0} max={5} value={opt.skipn} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
+            <label className={styles.stepper}>skipn <input type="number" min={-5} max={5} step={1} value={opt.skipn} title={lang === "zh" ? ">0 去掉整谱开头 N 个系统(封面/标题, 只动首个有系统页); <0 去掉整谱末尾 |N| 个系统(它曲/demo, 只动末个有系统页)" : "score-level: positive drops first N systems of first content page; negative drops last |N| of last content page"} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
             <label className={styles.stepper}>seln <input type="number" min={0} max={9} value={opt.seln} onChange={(e) => applyAdv("seln", Number(e.target.value))} /></label>
+            <div className={styles.pcardTitle}><span>{lang === "zh" ? "阈值(原版三阈值)" : "Thresholds"}</span></div>
+            {([
+              ["zwgrens", "blackThresh"],
+              ["voorna", "beforeAfter"],
+              ["mtdrmpl", "barlineThresh"],
+            ] as const).map(([k, label]) => (
+              <label key={`${k}-${advNonce}`} className={styles.stepper}>{tx(label)}({k})
+                <input type="number" min={ADV_RANGES[k][0]} max={ADV_RANGES[k][1]} step={ADV_STEPS[k]}
+                  defaultValue={opt[k] as number}
+                  title={lang === "zh" ? "修改后重新分析整份谱" : "Retunes analysis"}
+                  onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) applyAdv(k, v); }}
+                  onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { applyAdv(k, v); e.target.value = String(opt[k] as number); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+              </label>
+            ))}
             <label className={styles.stepper}>cropx <input type="number" min={0} value={opt.cropx} onChange={(e) => applyAdv("cropx", Number(e.target.value))} /></label>
              <label className={`${styles.pill} ${opt.annot === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.annot === 1} onChange={(e) => applyAdv("annot", e.target.checked ? 1 : 0)} /> {tx("annotate")}</label>
           </div>
@@ -1793,7 +2023,7 @@ export default function ScoreFollowPage() {
              <summary className={styles.pcardTitle}><span>{tx("expertSection")}</span><span>›</span></summary>
              <p className={styles.expertHint}>{lang === "zh" ? "仅在识别困难时调整；修改后会重新分析谱面。" : "Adjust only when recognition needs tuning; changes rerun analysis."}</p>
              <div className={styles.pcardTitle}>{tx("timingSection")}</div>
-             {(["zwgrens", "drmpl", "drmpl2", "mtdrmpl", "voorna", "dx"] as const).map((k) => (
+             {(["drmpl", "drmpl2", "dx"] as const).map((k) => (
                <label key={`${k}-${advNonce}`} className={styles.stepper}>{k}
                  <input type="number" min={ADV_RANGES[k][0]} max={ADV_RANGES[k][1]} step={ADV_STEPS[k]}
                    defaultValue={opt[k] as number}
@@ -1816,7 +2046,7 @@ export default function ScoreFollowPage() {
         <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
       )}
 
-       <div
+        <div
          id="notation"
          ref={notationRef}
          className={styles.notation}
@@ -1824,16 +2054,31 @@ export default function ScoreFollowPage() {
         onClick={onScoreClick}
         onDoubleClick={onScoreDoubleClick}
         onContextMenu={onNotationContextMenu}
+        onPointerDown={onNotationPointerDown}
         onPointerMove={onNotationPointerMove}
         onPointerUp={onNotationPointerUp}
+        onPointerCancel={cancelLongPress}
+        style={correctMode ? { WebkitTouchCallout: "none", userSelect: "none" } : undefined}
       >
          <div ref={stackRef} style={{ position: "relative", width: "100%" }}>
          <div ref={pagesHostRef} />
-         {!analysis && <div className={styles.emptyScore}><span aria-hidden="true">♬</span><h1>{tx("noPdfHint")}</h1><p>PDF · Smart-Metro · scorefollow</p><button className={styles.practicePlay} onClick={() => pdfInputRef.current?.click()}>{tx("loadPdf")}</button></div>}
+         {correctMode && touchPos && analysis && (
+           <div aria-hidden="true" style={{
+             position: "absolute", pointerEvents: "none", zIndex: 5,
+             left: `${(touchPos.x / (analysis.pageW || 1)) * 100}%`,
+             top: `${(touchPos.y / (analysis.pageH || 1)) * 100}%`,
+             width: 34, height: 34, transform: "translate(-50%, -50%)",
+           }}>
+             <div style={{ position: "absolute", left: 16, top: 2, width: 2, height: 30, background: "rgba(0,120,255,0.9)" }} />
+             <div style={{ position: "absolute", left: 2, top: 16, width: 30, height: 2, background: "rgba(0,120,255,0.9)" }} />
+             <div style={{ position: "absolute", left: 7, top: 7, width: 20, height: 20, borderRadius: "50%", border: "2px solid rgba(0,120,255,0.9)" }} />
+           </div>
+         )}
+          {!analysis && <div className={styles.emptyScore}><span aria-hidden="true">♬</span><h1>{tx("noPdfHint")}</h1><p>PDF · Smart-Metro · scorefollow</p><button className={styles.practicePlay} onClick={() => pdfInputRef.current?.click()}>{tx("loadPdf")}</button><button className={styles.practicePlay} onClick={() => imgInputRef.current?.click()}>{tx("loadImage")}</button></div>}
          {analysis && pageOffsetsRef.current.slice(1).map((off) => <div key={off.page} className={styles.pageBreak} style={{ top: `${off.y / analysis.pageH * 100}%` }} aria-hidden="true">{lang === "zh" ? `第 ${off.page} 页` : `Page ${off.page}`}</div>)}
          {analysis && (
            <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: correctMode ? "auto" : "none" }} viewBox={`0 0 ${analysis.pageW} ${analysis.pageH}`}>
-             {(showSystems || diagnosticMode) && !cleanView && analysis.systems.flatMap((s, si) => {
+             {showSystems && !cleanView && analysis.systems.flatMap((s, si) => {
               const low = (analysis.confidence[si] ?? 1) < 0.6;
               const y1 = s.cs[0];
               const y2 = s.cs[s.cs.length - 1];
@@ -1875,7 +2120,7 @@ export default function ScoreFollowPage() {
               );
               return els;
             })}
-             {(showBars || diagnosticMode || correctMode) && (!cleanView || correctMode) && (analysis.bars.flatMap((b, si) => {
+             {(showBars || correctMode) && (!cleanView || correctMode) && (analysis.bars.flatMap((b, si) => {
               const s = analysis.systems[si];
               if (!s) return [];
               return b.map((x, bi) => {

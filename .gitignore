@@ -39,6 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+__pycache__/
+*.pyc
 
 # homr benchmark bulky artifacts (regenerable via scripts/homr-data.py);
 # keep meta.json / homr.json / ours.json / adjudicated.json as committed fixtures

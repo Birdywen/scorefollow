@@ -1053,6 +1053,87 @@ function boot(){
     if(st.playing) jumpTo(idx);
     else { st.iSeq=idx; lastRowY=-1; place(idx); click(B[idx][5]===1); }
   });
+  // ===== PracticeSession bridge: one shared firstBeatAt clock =====
+  // React owns the session (startMeasure/bpm/count-in/firstBeatAt). Metro only
+  // renders clicks + highlight on that clock and emits tick events for the
+  // PDF cursor. Recording itself stays a mic-only MediaRecorder in React.
+  var __practiceTicker=null, __practiceSession=null;
+  function __practiceTickStop(){ if(__practiceTicker){ clearInterval(__practiceTicker); __practiceTicker=null; } }
+  function __practiceEmit(firstBeatAt, startMeasure, bpm, beatsPerMeasure){
+    var now=performance.now(), elapsed=(now-firstBeatAt)/1000, beatDur=60/bpm;
+    var total=Math.max(0, Math.floor(elapsed/beatDur));
+    window.dispatchEvent(new CustomEvent('synpdf:practice-tick', { detail: {
+      startMeasure: startMeasure, bpm: bpm, beatsPerMeasure: beatsPerMeasure,
+      elapsedSec: elapsed, totalBeats: total,
+      measure: startMeasure + Math.floor(total/beatsPerMeasure),
+      beat: (total%beatsPerMeasure)+1, now: now, firstBeatAt: firstBeatAt } }));
+  }
+  function __practicePrepare(d){
+    if(!d) return false;
+    if(d.bpm) st.bpm=Math.min(300, Math.max(20, +d.bpm||st.bpm));
+    if(d.beatsPerMeasure) st.meter=Math.min(12, Math.max(2, +d.beatsPerMeasure||st.meter));
+    st.countIn=Math.max(0, Math.min(8, +d.countInBeats||0));
+    if(B.length && d.startMeasure!=null){
+      var m=+d.startMeasure, idx=-1;
+      for(var i=0;i<B.length;i++){ if(B[i][4]>=m){ idx=barFirst(i); break; } }
+      if(idx<0) idx=0;
+      if(st.playing) jumpTo(idx);
+      else { st.iSeq=idx; lastRowY=-1; place(idx); }
+      try{
+        var bpmEl=document.getElementById('sgBpm'); if(bpmEl) bpmEl.value=st.bpm;
+        var bpmV=document.getElementById('sgBpmV'); if(bpmV) bpmV.textContent=st.bpm;
+        var meterEl=document.getElementById('sgMeter'); if(meterEl) meterEl.value=String(st.meter);
+        var cntEl=document.getElementById('sgCnt'); if(cntEl) cntEl.value=String(st.countIn);
+      }catch(e){}
+    }
+    return true;
+  }
+  function __practiceStart(d){
+    if(!d||d.firstBeatAt==null) return false;
+    if(st.playing) stop();
+    __practicePrepare(d);
+    __practiceSession=d;
+    if(!st.audio){ try{ st.audio=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+    try{ if(st.audio&&st.audio.state==='suspended') st.audio.resume(); }catch(e){}
+    var spb=60/st.bpm, countIn=Math.max(0, +d.countInBeats||0);
+    var countStart=d.firstBeatAt-countIn*spb*1000;
+    var wait=Math.max(0, countStart-performance.now());
+    st.playing=true; setPlayBtn(true);
+    __practiceTickStop();
+    setTimeout(function(){
+      if(!__practiceSession||__practiceSession!==d||!st.playing) return;
+      var i=0;
+      (function tick(){
+        if(!st.playing||__practiceSession!==d) return;
+        click(i===0);
+        i++;
+        if(i>=countIn){
+          var remain=Math.max(0, d.firstBeatAt-performance.now());
+          setTimeout(function(){
+            if(!st.playing||__practiceSession!==d) return;
+            var seq=parseSeq(st.seqText);
+            window.dispatchEvent(new CustomEvent('synpdf:practice-first-beat', { detail: d }));
+            if(st.loopOn){ st._seq=null; playLoop(); } else if(seq){ playSequence(seq); } else { st._seq=null; playLoop(); }
+            __practiceEmit(d.firstBeatAt, d.startMeasure, st.bpm, st.meter||d.beatsPerMeasure||4);
+            __practiceTicker=setInterval(function(){ __practiceEmit(d.firstBeatAt, d.startMeasure, st.bpm, st.meter||d.beatsPerMeasure||4); }, 100);
+          }, remain);
+        } else setTimeout(tick, spb*1000);
+      })();
+    }, wait);
+    return true;
+  }
+  function __practiceStop(){
+    __practiceSession=null; __practiceTickStop();
+    if(st.playing) stop();
+    window.dispatchEvent(new CustomEvent('synpdf:practice-stopped', {}));
+  }
+  window.__sgaMetroPractice={
+    isAvailable: function(){ return B.length>0; },
+    prepare: __practicePrepare, start: __practiceStart, stop: __practiceStop,
+    getState: function(){ return { playing: !!st.playing, bpm: st.bpm, meter: st.meter, countIn: st.countIn }; }
+  };
+  window.addEventListener('synpdf:practice-start', function(ev){ if(ev&&ev.detail) __practiceStart(ev.detail); });
+  window.addEventListener('synpdf:practice-stop', function(){ __practiceStop(); });
   if(window.visualViewport) window.visualViewport.addEventListener('resize', __visualResize);
   st.viewportWidth=viewportWidth();
   st.refreshLayout=function(){ requestResponsiveLayout('manual'); };
