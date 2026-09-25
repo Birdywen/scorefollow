@@ -14,6 +14,8 @@ import {
   setSysprf,
   getSpatium,
   getAnnotFontPx,
+  deskewCanvasInPlace,
+  estimateSkewAngle,
   ALGO_VERSION,
   lastBarDiagnostics,
   lastSystemConfidence,
@@ -32,6 +34,8 @@ export {
   setSysprf,
   getSpatium,
   getAnnotFontPx,
+  deskewCanvasInPlace,
+  estimateSkewAngle,
   ALGO_VERSION,
 };
 
@@ -151,7 +155,7 @@ export function analyzePage(
     [legacyOpt.seln, legacyOpt.skipn, legacyOpt.zwgrens, legacyOpt.drmpl,
       legacyOpt.drmpl2, legacyOpt.mtdrmpl, legacyOpt.voorna, legacyOpt.dx,
       legacyOpt.sysprf, legacyOpt.onestf, legacyOpt.eerst,
-      legacyOpt.cropx, legacyOpt.pagewd].join(",");
+      legacyOpt.cropx, legacyOpt.pagewd, legacyOpt.hd, legacyOpt.deskew].join(",");
   const hit = pageCache.get(key);
   if (hit) return hit;
 

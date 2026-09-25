@@ -21,6 +21,7 @@ export interface SynpdfOpt {
   loop: number; annot: number; zwgrens: number; voorna: number; mtdrmpl: number;
   dx: number; fscr: number; pagenum: number; playbtn: number; mmin: string;
   fixwd: number; lastSynced: number; eerst: number; sysprf: number; onestf: number;
+  hd: number; deskew: number;
 }
 
 export interface SysXs { x1: number; x2: number; }
@@ -34,6 +35,7 @@ export const legacyOpt: SynpdfOpt = {
   drmpl2: 2, seln: 0, delay: 0, ipaddr: "", mstr: 0, bpmsr: "4-20-1", loop: 0,
   annot: 0, zwgrens: 0.7, voorna: 0.9, mtdrmpl: 0.85, dx: 3, fscr: 0, pagenum: 1, // mtdrmpl 原版默认 0.8, 本项目默认 0.85(用户指定)
   playbtn: 0, mmin: "", fixwd: 1000, lastSynced: -2, eerst: 0, sysprf: 0, onestf: 0,
+  hd: 1, deskew: 1, // hd: 显示高清渲染(分析仍用 pagewd); deskew: 扫描偏斜自动转正
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
@@ -76,6 +78,95 @@ function drawRes(a: any, b: any, c: any): any {
   function d(a: any, b: any): any { for (var c: any, d: any; 5 < a.length;)if (c = a.length - 1, d = a[1] - a[0], c = a[c] - a[c - 1], d > b + 1 || d < b - 1)a.shift(); else if (c > b + 1 || c < b - 1)a.pop(); else break; a[a.length - 1] - a[0] < 2 * b && (a = []); return a } a = function (a: any): any { var b: any, c = a[0], d = 0, e = 0, f = 0, h = 0, m: any[] = []; a.push(a[a.length - 1] - 2); for (b = 0; b < a.length; b++) { var u = a[b]; var q = u - c; 1 > q && -1 < q || (0 < q ? q > d && (d = q, f = b) : (0 == d && q < e && (e = q, h = b), 0 < d && (-e > d && (d = -e), m.push({ y: f, t: d, d: f - h }), d = 0, e = q, f = h = b)), c = u) } return m }(a); if (!a.length) { spatium = 8; annotFontPx = 32; return []; } var e = a.map(function (a: any) { return a.t }).sort(function (a: any, b: any) { return b - a }).slice(0, 10).reduce(function (a: any, b: any) { return a + b }, 0) / 10 * legacyOpt.drmpl; a = a.filter(function (a: any) { return a.t >= e }); if (!a.length) { spatium = 8; annotFontPx = 32; return []; } b = function (a: any, b: any): any { var c = 0, d: any = {}; for (b = 0; b < a.length; ++b) { var e = a[b].y; c = e - c; d[c] = (d[c] || 0) + 1; c = e } a = Object.keys(d).sort(function (a: any, b: any) { return d[b] - d[a] }); return parseInt(a[0]) }(a, b); annotFontPx = 4 * b; spatium = b; b = function (a: any, b: any): any { if (!a || !a.length) return []; var c = 4, e: any, f = a[0].y, g: any[] = [], h = [f]; for (e = 1; e < a.length; ++e) { var m = a[e].y; if (m - f <= c * b + 2) switch (h.push(m), h.length) { case 1: break; case 2: c = 3; break; case 3: c = 2; break; default: c = 1 } else h = d(h, b), h.length && g.push(h), c = 3, h = [m]; f = m } h = d(h, b); h.length && g.push(d(h, b)); return g }(a, b); b.map(function (a: any) { return a.reduce(function (a: any, b: any) { return a + b }) / a.length }); return b }
 
 export function countPix(a: any, b: number): CountPixResult { const w: any = a.width; const hgt: any = a.height; const data = a.getContext("2d").getImageData(0, 0, w, hgt).data; return countPixFromBuffer(w, hgt, data, b) }
+
+/**
+ * 偏斜估计(扫描 PDF/照片摆不正): 代理小图逐角度旋转 + 水平投影方差,
+ * 方差最大即谱线摆正. 返回内容倾角(度, 顺时针为正, 校正时反向旋转),
+ * |角| < 0.15° 或近空白页视为摆正返回 0. 识别算法本身不动, 只转正输入.
+ */
+export function estimateSkewAngle(src: HTMLCanvasElement): number {
+  const W = 360;
+  const H = Math.max(1, Math.round((W * src.height) / Math.max(1, src.width)));
+  const pc = document.createElement("canvas");
+  pc.width = W; pc.height = H;
+  const pctx = pc.getContext("2d", { willReadFrequently: true });
+  if (!pctx) return 0;
+  pctx.fillStyle = "#fff"; pctx.fillRect(0, 0, W, H);
+  pctx.drawImage(src, 0, 0, W, H);
+  let data: ImageData;
+  try { data = pctx.getImageData(0, 0, W, H); } catch { return 0; }
+  const d = data.data;
+  const gray = new Float32Array(W * H);
+  let darkSum = 0;
+  for (let i = 0; i < W * H; i++) {
+    const o = i * 4;
+    const g = 255 - (d[o] * 0.299 + d[o + 1] * 0.587 + d[o + 2] * 0.114);
+    gray[i] = g; darkSum += g;
+  }
+  if (darkSum < W * H * 1.0) return 0; // 近空白页, 无可估方向
+  void gray;
+  const rc = document.createElement("canvas");
+  rc.width = W; rc.height = H;
+  const rctx = rc.getContext("2d", { willReadFrequently: true });
+  if (!rctx) return 0;
+  const y0 = Math.floor(H * 0.15), y1 = Math.ceil(H * 0.85);
+  const rows = Math.max(1, y1 - y0);
+  const rm = new Float32Array(rows);
+  let bestA = 0, bestV = -1;
+  for (let a = -5; a <= 5.001; a += 0.25) {
+    rctx.fillStyle = "#fff"; rctx.fillRect(0, 0, W, H);
+    rctx.save();
+    rctx.translate(W / 2, H / 2);
+    rctx.rotate((-a * Math.PI) / 180);
+    rctx.translate(-W / 2, -H / 2);
+    rctx.drawImage(pc, 0, 0);
+    rctx.restore();
+    let rd: ImageData;
+    try { rd = rctx.getImageData(0, 0, W, H); } catch { continue; }
+    const dd = rd.data;
+    let mean = 0;
+    for (let y = y0; y < y1; y++) {
+      let s = 0;
+      const off = y * W * 4;
+      for (let x = 0; x < W; x++) {
+        const o = off + x * 4;
+        s += 255 - (dd[o] * 0.299 + dd[o + 1] * 0.587 + dd[o + 2] * 0.114);
+      }
+      rm[y - y0] = s / W; mean += s / W;
+    }
+    mean /= rows;
+    let v = 0;
+    for (let k = 0; k < rows; k++) { const e = rm[k] - mean; v += e * e; }
+    if (v > bestV) { bestV = v; bestA = a; }
+  }
+  return Math.abs(bestA) < 0.15 ? 0 : bestA;
+}
+
+/**
+ * 白底旋转画布(原地): 偏斜扫描页转正, 尺寸按包络扩大. 返回施加的角度, 0 表示未动.
+ * @param maxDeg 钳制范围, 超出视为误检不转
+ */
+export function deskewCanvasInPlace(cv: HTMLCanvasElement, maxDeg = 5): number {
+  const ang = estimateSkewAngle(cv);
+  if (!ang || Math.abs(ang) > maxDeg) return 0;
+  // ang 是内容倾角(顺时针为正), 校正反向转
+  const rad = (-ang * Math.PI) / 180;
+  const w = cv.width, h = cv.height;
+  if (!w || !h) return 0;
+  const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+  const nw = Math.ceil(w * cos + h * sin), nh = Math.ceil(w * sin + h * cos);
+  const tmp = document.createElement("canvas");
+  tmp.width = nw; tmp.height = nh;
+  const ctx = tmp.getContext("2d");
+  if (!ctx) return 0;
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, nw, nh);
+  ctx.translate(nw / 2, nh / 2); ctx.rotate(rad); ctx.drawImage(cv, -w / 2, -h / 2);
+  cv.width = nw; cv.height = nh;
+  const c2 = cv.getContext("2d");
+  if (!c2) return 0;
+  c2.drawImage(tmp, 0, 0);
+  return ang;
+}
 
 /**
  * 无头像素输入: 与 countPix 同一流水线(drawRes→countVsys→findBarLines),

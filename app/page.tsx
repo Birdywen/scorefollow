@@ -16,6 +16,7 @@ import {
   opt,
   setSkipn,
   setSysprf,
+  deskewCanvasInPlace,
   applyAnalysisProfile,
   buildTimingPayload,
   validateTimingPayload,
@@ -30,7 +31,7 @@ import styles from "./page.module.css";
 const DEFAULT_ADV: Record<string, number> = {
   zwgrens: 0.7, drmpl: 0.4, drmpl2: 2, mtdrmpl: 0.85, voorna: 0.9, dx: 3,
   sysprf: 0, onestf: 0, eerst: 0, skipn: 0, seln: 0, cropx: 0,
-  pagewd: 1000, fixwd: 1000,
+  pagewd: 1000, fixwd: 1000, hd: 1, deskew: 1,
 };
 // stepper 合法范围(与原版 synpdf.html 输入框 min/max 一致)
 const ADV_RANGES: Record<string, [number, number]> = {
@@ -394,10 +395,18 @@ export default function ScoreFollowPage() {
   const clockRef = useRef({ t0: 0, base: 0, running: false });
   const autoRef = useRef<Record<number, PageAnalysis>>({});
   const manualRef = useRef<Record<number, number[][]>>({});
+  // skipn 对齐三件套: 每页实际生效 skip / 切除前系统数 / 人工行当前对齐的几何.
+  // 改 skipn 只从端部切除系统, 保留端的人工行按偏移对齐后继续生效, 不再整页回退自动值.
+  const pageSkipRef = useRef<Record<number, number>>({});
+  const pageFullRef = useRef<Record<number, number>>({});
+  const manualAlignRef = useRef<Record<number, { skip: number; full: number }>>({});
+  // deskew 备注(本轮渲染各页转正角度, 汇总进最终 status)
+  const deskewNotesRef = useRef<string[]>([]);
   // 按页分析参数快照 {页: {键: 值}}: 调参只记当前页, 各页互不影响(见 PAGE_ADV_KEYS)
   const advsRef = useRef<Record<number, Record<string, number>>>({});
-  const undoRef = useRef<Record<number, number[][]>[]>([]);
-  const redoRef = useRef<Record<number, number[][]>[]>([]);
+  type ManualSnap = { bars: Record<number, number[][]>; align: Record<number, { skip: number; full: number }> };
+  const undoRef = useRef<ManualSnap[]>([]);
+  const redoRef = useRef<ManualSnap[]>([]);
   const dragRef = useRef<{ si: number; bi: number; active: boolean }>({ si: -1, bi: -1, active: false });
   const curMixRef = useRef(0);
   // 批注(原版 annots): {x,y:画布像素, w:创建时页宽, c:cropx, t:文本, d:删除标记} + p:页(超集字段, 原版忽略)
@@ -554,7 +563,7 @@ export default function ScoreFollowPage() {
       const a = autoRef.current[n];
       if (!a) { out.push(null); continue; }
       const k = pageW / a.pageW;
-      const bars = manualRef.current[n] ?? a.bars;
+      const bars = pageBarsFor(n, a);
       out.push({
         cxs: a.systems.map((s) => ({
           cs: s.cs.map((y) => Math.round(y * k * 1000) / 1000),
@@ -580,7 +589,8 @@ export default function ScoreFollowPage() {
       renderingRef.current = true;
       // 整谱级 skipn: 本次调用前后恢复全局值, 缓存键自带 skip(见 analyzePage)不串味
       const savedSkip = opt.skipn;
-      opt.skipn = skipOverride ?? scoreSkipFor(n, Number(pdf?.numPages) || 1, Math.round(Number(opt.skipn) || 0));
+      const skipUsed = skipOverride ?? scoreSkipFor(n, Number(pdf?.numPages) || 1, Math.round(Number(opt.skipn) || 0));
+      opt.skipn = skipUsed;
       // 按页参数: 该页调过的键覆盖全局, 分析完恢复(缓存键自带全部参数不串味)
       const pageAdv = advsRef.current[n];
       const savedAdv: Record<string, number> = {};
@@ -596,35 +606,65 @@ export default function ScoreFollowPage() {
       try {
         let proxy: any = null;
         const imgDoc = (pdf as any)?.__sfImage as { images: { bmp: ImageBitmap; w: number; h: number }[] } | undefined;
+        const anaW = opt.pagewd || 1000; // 分析宽度: 识别像素与原来一致, 显示另走高清
+        let anaCanvas: HTMLCanvasElement;
         if (imgDoc) {
-          // 图片谱: 白底重绘到目标宽度(照片可能带透明/EXIF 方向, 解码时已归一化)
+          // 图片谱: 白底重绘(照片已在解码时归一化/纠偏; 扫描图在这里统一 deskew),
+          // 显示用原分辨率(照片本身够清), 分析沿用原分辨率(行为不变)
           const im = imgDoc.images[n - 1];
           if (!im) { autoRef.current[n] = null as any; return { a: null, proxy }; }
-          const scale = (opt.pagewd || 1000) / Math.max(1, im.w);
+          const scale = anaW / Math.max(1, im.w);
           canvas.width = Math.max(1, Math.floor(im.w * scale));
           canvas.height = Math.max(1, Math.floor(im.h * scale));
           const ctx = canvas.getContext("2d")!;
           ctx.fillStyle = "#fff";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(im.bmp, 0, 0, canvas.width, canvas.height);
+          if ((opt.deskew ?? 1) !== 0) {
+            const ang = deskewCanvasInPlace(canvas);
+            if (ang) deskewNotesRef.current.push(`p${n} ${ang > 0 ? "+" : ""}${ang.toFixed(1)}°`);
+          }
+          // 无缝拼接: 裁掉纸张上下白边再分析/堆叠, 跨页接缝≈正常行距。
+          // 分析坐标跟着 canvas 走(缓存键自带尺寸), 全局合并无需改动。
+          cropPageMargins(canvas);
+          anaCanvas = canvas;
         } else {
           proxy = await pdf.getPage(n);
           const v0 = proxy.getViewport({ scale: 1 });
-          const scale = (opt.pagewd || 1000) / v0.width;
-          const vp = proxy.getViewport({ scale });
+          // HD: 显示画布固定 2 倍超采样(确定性: 同一谱面在任何设备上分析像素一致),
+          // 解决 1000px 底图在高分屏/宽屏上放大的模糊; 分析仍用 pagewd, 识别不变.
+          // 超大页按 14MP 等比降档(同样确定性).
+          let R = 1;
+          if ((opt.hd ?? 1) !== 0) {
+            R = 2;
+            const area = (anaW * R) * ((anaW * R * v0.height) / Math.max(1, v0.width));
+            if (area > 14e6) R *= Math.sqrt(14e6 / area);
+          }
+          const vp = proxy.getViewport({ scale: (anaW / v0.width) * R });
           canvas.width = Math.floor(vp.width);
           canvas.height = Math.floor(vp.height);
           await proxy.render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
+          if ((opt.deskew ?? 1) !== 0) {
+            const ang = deskewCanvasInPlace(canvas);
+            if (ang) deskewNotesRef.current.push(`p${n} ${ang > 0 ? "+" : ""}${ang.toFixed(1)}°`);
+          }
+          // 无缝拼接: 裁掉纸张上下白边(高清显示同样无缝), 分析用等比缩小副本
+          cropPageMargins(canvas);
+          const ac = document.createElement("canvas");
+          ac.width = anaW;
+          ac.height = Math.max(1, Math.round((anaW * canvas.height) / Math.max(1, canvas.width)));
+          ac.getContext("2d")!.drawImage(canvas, 0, 0, ac.width, ac.height);
+          anaCanvas = ac;
         }
-        // 无缝拼接: 裁掉纸张上下白边再分析/堆叠, 跨页接缝≈正常行距。
-        // 分析坐标跟着 canvas 走(缓存键自带尺寸), 全局合并无需改动。
-        cropPageMargins(canvas);
-        const a = analyzePage(canvas, n, pageAdv?.seln ?? opt.seln, docId ?? pdfNameRef.current);
+        const a = analyzePage(anaCanvas, n, pageAdv?.seln ?? opt.seln, docId ?? pdfNameRef.current);
         if (a.systems.length === 0) {
           autoRef.current[n] = null as any;
           return { a: null, proxy };
         }
         autoRef.current[n] = a;
+        // skipn 对齐用: 本页实际切除数 + 切除前系统数(非空页切除数恒等于 |skip|)
+        pageSkipRef.current[n] = skipUsed;
+        pageFullRef.current[n] = a.systems.length + Math.abs(skipUsed);
         return { a, proxy };
       } finally {
         opt.skipn = savedSkip;
@@ -640,6 +680,26 @@ export default function ScoreFollowPage() {
     [],
   );
 
+  // 单页人工/自动小节线对齐(merge/导出共用):
+  // 人工行是在某套几何(skip 切除位置 + 切除前系统数)下校的; 只要切除前系统数一致,
+  // 就按端部偏移对齐, 缺的行用自动值补 —— 改 skipn 不再整页丢校正.
+  const pageBarsFor = (n: number, a: PageAnalysis): number[][] => {
+    const manual = manualRef.current[n];
+    if (!manual || !manual.length) return a.bars;
+    const al = manualAlignRef.current[n];
+    const sk = pageSkipRef.current[n] ?? 0;
+    const full = pageFullRef.current[n] ?? a.systems.length;
+    if (al && al.full === full) {
+      const off = sk - al.skip;
+      return a.bars.map((row, i) => {
+        const j = i + off;
+        return (j >= 0 && j < manual.length ? manual[j] : row).slice();
+      });
+    }
+    if (manual.length === a.systems.length) return manual;
+    return a.bars;
+  };
+
   const mergeFromPages = useCallback((): PageAnalysis | null => {
     const first = autoRef.current[1];
     if (!first) return null;
@@ -650,10 +710,9 @@ export default function ScoreFollowPage() {
     for (const off of pageOffsetsRef.current) {
       const a = autoRef.current[off.page];
       if (!a) continue;
-      // 人工校正行数与重分析后的系统数对不上(改过 skipn/阈值)就回退自动值,
-      // 否则旧小节线会盖到新系统上; 校正数据保留, 几何恢复一致时自动重新生效
-      const manual = manualRef.current[off.page];
-      const pageBars = manual && manual.length === a.systems.length ? manual : a.bars;
+      // 人工校正行数与重分析后的系统数对不上(改过 skipn/阈值): 同一批检测结果就按端对齐,
+      // 阈值动过(切除前系统数变了)才回退自动值; 校正数据保留, 几何恢复一致时自动重新生效
+      const pageBars = pageBarsFor(off.page, a);
       a.systems.forEach((s, i) => {
         systems.push({ cs: s.cs.map((y) => y + off.y), xs: { x1: s.xs.x1, x2: s.xs.x2 } });
         bars.push((pageBars[i] ?? []).slice());
@@ -673,6 +732,7 @@ export default function ScoreFollowPage() {
       // 调参重渲染保持阅读位置: 记下滚动条, 画完恢复(否则每次调参都跳回开头)
       const scroller = notationRef.current;
       const savedTop = scroller ? scroller.scrollTop : 0;
+      deskewNotesRef.current = [];
       host.innerHTML = "";
       const offsets: { page: number; y: number; h: number; w: number }[] = [];
       let y = 0;
@@ -761,8 +821,10 @@ export default function ScoreFollowPage() {
         try { scroller.scrollTop = savedTop; } catch { /* ignore */ }
       }
       const meas = merged.bars.reduce((s, b) => s + Math.max(0, b.length - 1), 0);
+      const dk = deskewNotesRef.current;
       setStatus(`score: ${nPages} pages, ${merged.systems.length} systems, ${meas} measures, spatium ${merged.spatium.toFixed(1)}px, algo v${merged.algoVersion}` +
-        (dropped ? ` · timing截断 ${kept}保留/${dropped}越界` : ""));
+        (dropped ? ` · timing截断 ${kept}保留/${dropped}越界` : "") +
+        (dk.length ? ` · deskew ${dk.join(" ")}` : ""));
       emitMetricRendered();
     },
     [describeAnalysis, emitMetricRendered, mergeFromPages, renderAndAnalyze],
@@ -1135,8 +1197,9 @@ export default function ScoreFollowPage() {
 
   // ---- 人工校正层 ----
   const pushUndo = useCallback(() => {
-    const snap: Record<number, number[][]> = {};
-    for (const [k, v] of Object.entries(manualRef.current)) snap[Number(k)] = cloneBars(v);
+    const snap: ManualSnap = { bars: {}, align: {} };
+    for (const [k, v] of Object.entries(manualRef.current)) snap.bars[Number(k)] = cloneBars(v);
+    for (const [k, v] of Object.entries(manualAlignRef.current)) snap.align[Number(k)] = { ...v };
     undoRef.current.push(snap);
     if (undoRef.current.length > 50) undoRef.current.shift();
     redoRef.current = [];
@@ -1147,14 +1210,21 @@ export default function ScoreFollowPage() {
   const writeManualBars = useCallback((nextBars: number[][]) => {
     let i = 0;
     const nextManual: Record<number, number[][]> = { ...manualRef.current };
+    const nextAlign: Record<number, { skip: number; full: number }> = { ...manualAlignRef.current };
     for (const off of pageOffsetsRef.current) {
       const a = autoRef.current[off.page];
       if (!a) continue;
       const nsys = a.systems.length;
       nextManual[off.page] = cloneBars(nextBars.slice(i, i + nsys));
+      // 本次写入基于当前分析几何: 记下对齐快照, 后续改 skipn 按端偏移对齐
+      nextAlign[off.page] = {
+        skip: pageSkipRef.current[off.page] ?? 0,
+        full: pageFullRef.current[off.page] ?? a.systems.length,
+      };
       i += nsys;
     }
     manualRef.current = nextManual;
+    manualAlignRef.current = nextAlign;
     setManualBarsByPage(nextManual);
   }, []);
 
@@ -1182,6 +1252,7 @@ export default function ScoreFollowPage() {
     if (!autoRef.current[1]) { setStatus("无自动识别结果可恢复"); return; }
     pushUndo();
     manualRef.current = {};
+    manualAlignRef.current = {};
     setManualBarsByPage({});
     const merged = mergeFromPages();
     if (!merged) return;
@@ -1205,20 +1276,31 @@ export default function ScoreFollowPage() {
     const cur = manualRef.current[pageNum] ?? whole.slice(0, autoCur?.systems.length ?? whole.length);
     pushUndo();
     const next: Record<number, number[][]> = {};
+    const nextAlign: Record<number, { skip: number; full: number }> = {};
+    const srcAl = manualAlignRef.current[pageNum];
     let skipped = 0;
     for (let n = 1; n <= numPages; n++) {
-      if ((autoRef.current[n]?.systems.length ?? -1) === cur.length) next[n] = cloneBars(cur);
+      if ((autoRef.current[n]?.systems.length ?? -1) === cur.length) {
+        next[n] = cloneBars(cur);
+        // 目标页几何与源页一致才带对齐信息, 否则沿用旧逻辑(行数一致即用)
+        const tSkip = pageSkipRef.current[n] ?? 0;
+        const tFull = pageFullRef.current[n] ?? cur.length;
+        if (srcAl && tSkip === srcAl.skip && tFull === srcAl.full) nextAlign[n] = { ...srcAl };
+      }
       else skipped++;
     }
     manualRef.current = next;
+    manualAlignRef.current = nextAlign;
     setManualBarsByPage(next);
     setStatus(`已将 p${pageNum} 校正复制到 ${Object.keys(next).length} 页` + (skipped ? ` · ${skipped} 页系统数不同已跳过` : ""));
   }, [analysis, numPages, pageNum, pushUndo]);
 
   // undo/redo 恢复: 人工层整份换回后必须经 mergeFromPages 重建整谱 analysis.
   // analysis 是整谱合并态, 绝不能只拼单页(旧代码错位即 chaos 来源); 时序走 reset+retain
-  const restoreManual = useCallback((next: Record<number, number[][]>, label: string) => {
+  const restoreManual = useCallback((snap: ManualSnap, label: string) => {
+    const next = snap.bars;
     manualRef.current = next;
+    manualAlignRef.current = { ...snap.align };
     setManualBarsByPage({ ...next });
     const merged = mergeFromPages();
     if (!merged) {
@@ -1241,8 +1323,9 @@ export default function ScoreFollowPage() {
   const doUndo = useCallback(() => {
     const prev = undoRef.current.pop();
     if (!prev) { setStatus("没有可撤销的校正"); return; }
-    const snap: Record<number, number[][]> = {};
-    for (const [k, v] of Object.entries(manualRef.current)) snap[Number(k)] = cloneBars(v);
+    const snap: ManualSnap = { bars: {}, align: {} };
+    for (const [k, v] of Object.entries(manualRef.current)) snap.bars[Number(k)] = cloneBars(v);
+    for (const [k, v] of Object.entries(manualAlignRef.current)) snap.align[Number(k)] = { ...v };
     redoRef.current.push(snap);
     restoreManual(prev, "已撤销上一步校正");
   }, [restoreManual]);
@@ -1250,8 +1333,9 @@ export default function ScoreFollowPage() {
   const doRedo = useCallback(() => {
     const nxt = redoRef.current.pop();
     if (!nxt) { setStatus("没有可重做的校正"); return; }
-    const snap: Record<number, number[][]> = {};
-    for (const [k, v] of Object.entries(manualRef.current)) snap[Number(k)] = cloneBars(v);
+    const snap: ManualSnap = { bars: {}, align: {} };
+    for (const [k, v] of Object.entries(manualRef.current)) snap.bars[Number(k)] = cloneBars(v);
+    for (const [k, v] of Object.entries(manualAlignRef.current)) snap.align[Number(k)] = { ...v };
     undoRef.current.push(snap);
     restoreManual(nxt, "已重做校正");
   }, [restoreManual]);
@@ -2077,6 +2161,16 @@ export default function ScoreFollowPage() {
     }
     manualRef.current = nextManual;
     setManualBarsByPage(nextManual);
+    // 刚按新几何配对的人工行: 对齐快照记当前 skip/full, 后续改 skipn 照常对齐
+    const nextAlign: Record<number, { skip: number; full: number }> = {};
+    for (const n of Object.keys(nextManual).map(Number)) {
+      const a = autoRef.current[n];
+      if (a) nextAlign[n] = {
+        skip: pageSkipRef.current[n] ?? 0,
+        full: pageFullRef.current[n] ?? a.systems.length,
+      };
+    }
+    manualAlignRef.current = nextAlign;
     const annotArr = getArr("annots");
     // 旧文件(面板导出)无 sga_config 独立行: 从 annot loader 的 window.sga_config={...} 里抠
     let sgaCfg: Record<string, unknown> | null =
@@ -2660,6 +2754,8 @@ export default function ScoreFollowPage() {
               <label className={`${styles.pill} ${opt.sysprf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.sysprf ? true : false} onChange={(e) => applyAdv("sysprf", e.target.checked ? 1 : 0)} /> sysprf</label>
               <label className={`${styles.pill} ${opt.onestf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.onestf ? true : false} onChange={(e) => applyAdv("onestf", e.target.checked ? 1 : 0)} /> onestf</label>
               <label className={`${styles.pill} ${opt.eerst ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.eerst ? true : false} onChange={(e) => applyAdv("eerst", e.target.checked ? 1 : 0)} /> eerst</label>
+              <label className={`${styles.pill} ${(opt.hd ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.hd ?? 1) ? true : false} onChange={(e) => applyAdv("hd", e.target.checked ? 1 : 0)} title={lang === "zh" ? "高清渲染: 显示按屏幕超采样, 分析分辨率不变" : "HiDPI render: display upsampled, analysis unchanged"} /> hd</label>
+              <label className={`${styles.pill} ${(opt.deskew ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.deskew ?? 1) ? true : false} onChange={(e) => applyAdv("deskew", e.target.checked ? 1 : 0)} title={lang === "zh" ? "偏斜校正: 扫描摆不正自动转正" : "Deskew: auto-straighten tilted scans"} /> deskew</label>
             </div>
             <label className={styles.stepper}>skipn <input type="number" min={-5} max={5} step={1} value={opt.skipn} title={lang === "zh" ? ">0 去掉整谱开头 N 个系统(封面/标题, 只动首个有系统页); <0 去掉整谱末尾 |N| 个系统(它曲/demo, 只动末个有系统页)" : "score-level: positive drops first N systems of first content page; negative drops last |N| of last content page"} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
             <label className={styles.stepper}>seln <input type="number" min={0} max={9} value={opt.seln} onChange={(e) => applyAdv("seln", Number(e.target.value))} /></label>
