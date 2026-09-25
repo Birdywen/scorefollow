@@ -211,6 +211,56 @@ function countVsys(a: any, b: any, c: any): any { var d: any, e: any, f: any, g:
     else g.push({ cs: a[fi], xs: l[fi] });
   }
   g.push({ cs: a[a.length - 1], xs: l[a.length - 1] });
+  // 并带兜底: 相邻单谱表之间若有笔画纵贯纵向 gap(小节线/起奏花括号同时穿过
+  // 上下两行的夹缝), 即为误拆的大谱表, 直接合并。只认物理连接, 不依赖
+  // sysprf/drmpl2 聚类(双带单 gap 时聚类恒为 merge=false, sysprf 勾选也无用,
+  // Passacaglia 末页即此类: 高音底 117→低音顶 195, gap 78px≈9.75sp 被 byV
+  // 的 8sp 设防拦住, 高/低音被顺延编号成两个系统)。纯空白 gap 的相邻单谱表
+  // (人声谱/独奏谱)无纵贯笔画, 不受影响; onestf=1 强制单谱表时跳过。
+  if (!legacyOpt.onestf && g.length >= 2) {
+    const fsp = Math.max(1, spatium);
+    const fstride = b as number, fpix: any = c, fW = Math.max(1, Math.floor(fstride / 4));
+    const gapLinked = (top: number[], bot: number[], x1: number, x2: number): boolean => {
+      const gt = top[top.length - 1] + 1, gb = bot[0] - 1;
+      const gh = gb - gt + 1;
+      if (gh < fsp || gh > 20 * fsp) return false;
+      const xa = Math.max(0, Math.min(x1, x2)), xb = Math.min(fW - 1, Math.max(x1, x2));
+      if (xb - xa < 10 * fsp) return false;
+      let sum = 0, n = 0;
+      for (let x = xa; x <= xb; x += 4) for (let y = gt; y <= gb; y += 4) {
+        const o = (y * fW + x) * 4;
+        sum += fpix[o] + fpix[o + 1] + fpix[o + 2]; n++;
+      }
+      if (!n) return false;
+      const thr = (sum / n) * 0.7;
+      let linked = 0;
+      for (let x = xa; x <= xb; x++) {
+        let dark = 0;
+        for (let y = gt; y <= gb; y++) {
+          const o = (y * fW + x) * 4;
+          if (fpix[o] + fpix[o + 1] + fpix[o + 2] < thr) dark++;
+        }
+        if (dark >= gh * 0.7 && ++linked >= 2) return true;
+      }
+      return false;
+    };
+    const isSingle = (cs: number[]): boolean => cs.length >= 4 && cs.length <= 9;
+    const joined: any[] = [];
+    let cur = g[0];
+    let curChain = isSingle(cur.cs as number[]);
+    for (let mi = 1; mi < g.length; mi++) {
+      const nx = g[mi];
+      const nxSingle = isSingle(nx.cs as number[]);
+      const x1ok = Math.abs(cur.xs.x1 - nx.xs.x1) <= 3 * fsp;
+      const x2ok = Math.abs(cur.xs.x2 - nx.xs.x2) <= 6 * fsp;
+      if (nxSingle && curChain && x1ok && x2ok &&
+        gapLinked(cur.cs as number[], nx.cs as number[], Math.max(cur.xs.x1, nx.xs.x1), Math.min(cur.xs.x2, nx.xs.x2))) {
+        cur = { cs: (cur.cs as any[]).concat(nx.cs), xs: { x1: Math.min(cur.xs.x1, nx.xs.x1), x2: Math.max(cur.xs.x2, nx.xs.x2) } };
+      } else { joined.push(cur); cur = nx; curChain = nxSingle; }
+    }
+    joined.push(cur);
+    g = joined;
+  }
   return g }
 
 /**

@@ -65,6 +65,20 @@ const SUITES = [
       { yTop: 160, bars: [250, 500, 700, 708], stems: [375] },
     ],
   },
+  {
+    // 大谱表误拆回归: 上下单谱表被纵贯小节线连住 → 必须并成 1 个系统。
+    // (Passacaglia 末页: 高/低音行 gap 无空白, 小节线穿缝而过。)
+    name: "grand-staff-linked",
+    h: 330,
+    systems: [
+      { yTop: 60, bars: [], stems: [275, 525] },
+      { yTop: 190, bars: [], stems: [375] },
+    ],
+    link: { bars: [150, 400, 650] },
+    wantSystems: 1,
+    wantFrame: [60, 230],
+    wantBars: [150, 400, 650],
+  },
 ];
 
 function renderSuite(suite) {
@@ -73,6 +87,12 @@ function renderSuite(suite) {
     system(buf, s.yTop);
     for (const bx of s.bars) vline(buf, bx, s.yTop, s.yTop + sysHeight());
     for (const sx of s.stems) vline(buf, sx, s.yTop, s.yTop + 25);
+  }
+  if (suite.link) {
+    // 纵贯笔画: 小节线穿过上下谱表之间的 gap(大谱表的物理连接证据)
+    const y1 = suite.systems[0].yTop;
+    const y2 = suite.systems[suite.systems.length - 1].yTop + sysHeight();
+    for (const bx of suite.link.bars) vline(buf, bx, y1, y2);
   }
   return buf;
 }
@@ -91,10 +111,44 @@ for (const suite of SUITES) {
   const tol = Math.max(2, 0.2 * spatium);
   console.log(`--- ${suite.name}: systems=${r.cxs.length} spatium=${spatium} tol=${tol.toFixed(1)}`);
 
-  check(`${suite.name}/system-count`, r.cxs.length === suite.systems.length,
-    `got ${r.cxs.length}, want ${suite.systems.length}`);
+  check(`${suite.name}/system-count`, r.cxs.length === (suite.wantSystems ?? suite.systems.length),
+    `got ${r.cxs.length}, want ${suite.wantSystems ?? suite.systems.length}`);
   check(`${suite.name}/spatium-sane`, spatium >= 8 && spatium <= 12, `spatium=${spatium}`);
 
+  if (suite.link) {
+    // 并带期望: 多个单谱表合成一个系统
+    const tag = `${suite.name}/merged`;
+    const sys = r.cxs[0];
+    const det = r.bxs[0] ?? [];
+    if (!sys || !det.length) { check(`${tag}/detected`, false, "no bars"); }
+    else {
+      check(`${tag}/frame-y`, Math.abs(sys.cs[0] - suite.wantFrame[0]) <= 3 &&
+        Math.abs(sys.cs[sys.cs.length - 1] - suite.wantFrame[1]) <= 3,
+        `cs=[${sys.cs[0]},${sys.cs[sys.cs.length - 1]}] want [${suite.wantFrame}]`);
+      check(`${tag}/endpoints`, Math.abs(det[0] - STAFF_X1) <= 4 && Math.abs(det[det.length - 1] - STAFF_X2) <= 4,
+        `ends=[${det[0]},${det[det.length - 1]}]`);
+      const internal = det.slice(1, -1).sort((a, b) => a - b);
+      const want = suite.wantBars.slice().sort((a, b) => a - b);
+      const used = new Array(internal.length).fill(false);
+      let tp = 0; let devSum = 0;
+      for (const w of want) {
+        let bi = -1; let bd = Infinity;
+        internal.forEach((d, i) => {
+          if (used[i]) return;
+          const dd = Math.abs(d - w);
+          if (dd <= tol && dd < bd) { bd = dd; bi = i; }
+        });
+        if (bi >= 0) { used[bi] = true; tp++; devSum += bd; }
+      }
+      const fp = used.filter((u) => !u).length;
+      console.log(`    want=[${want}] got=[${internal}] tp=${tp} fp=${fp} fn=${want.length - tp}`);
+      check(`${tag}/recall-100`, tp === want.length, `tp=${tp}`);
+      check(`${tag}/precision-100`, fp === 0, `fp=${fp}`);
+      const allStems = suite.systems.flatMap((s) => s.stems);
+      const nearStem = internal.filter((d) => allStems.some((sx) => Math.abs(d - sx) <= 10 || Math.abs(d - (sx + 1)) <= 10));
+      check(`${tag}/no-stem-false-positive`, nearStem.length === 0, `near-stem=${nearStem}`);
+    }
+  } else {
   suite.systems.forEach((s, si) => {
     const det = r.bxs[si] ?? [];
     const sys = r.cxs[si];
@@ -133,6 +187,7 @@ for (const suite of SUITES) {
     const nearStem = internal.filter((d) => s.stems.some((sx) => Math.abs(d - sx) <= 10 || Math.abs(d - (sx + 1)) <= 10));
     check(`${tag}/no-stem-false-positive`, nearStem.length === 0, `near-stem=${nearStem}`);
   });
+  }
 }
 
 if (failures) { console.error(`${failures} synth check(s) failed`); process.exit(1); }
