@@ -283,6 +283,20 @@ function boot(){
     centerOn(e[2]);
     info.textContent='m'+e[4]+' beat'+e[5];
   }
+  // 只摆 shade 不滚屏: metric 刷新(纠错加线/合并/调参/重载)时几何跟新, 阅读位置不动.
+  // 滚屏只归 place()(播放跟随/点谱跳转)管.
+  function positionShade(idx){
+    var e=B[idx]; if(!e) return;
+    ensureShadeMounted();
+    var pad=4;
+    shade.style.transition='none';
+    shade.style.left=(e[6]-pad)+'px'; shade.style.top=(e[2]-pad)+'px';
+    shade.style.width=(e[7]-e[6]+pad*2)+'px'; shade.style.height=(e[3]-e[2]+pad*2)+'px';
+    shade.style.display='block';
+    lastShadeTop=e[2]-pad;
+    void shade.offsetWidth;
+    requestAnimationFrame(function(){ shade.style.transition=SHADE_TR; });
+  }
 
   // ===== 布局重算: 画布尺寸/位置变化后 B 表与叠层必须一起刷新 =====
   var __relayoutT=null;
@@ -291,18 +305,7 @@ function boot(){
     B=buildB(MA);
     lastRowY=-1; lastShadeTop=null;
     if(typeof renderBarnums==='function') renderBarnums();
-    var idx=st.iSeq;
-    if(B.length&&idx>=0&&B[idx]){
-      ensureShadeMounted();
-      var e=B[idx], pad=4;
-      shade.style.transition='none';
-      shade.style.left=(e[6]-pad)+'px'; shade.style.top=(e[2]-pad)+'px';
-      shade.style.width=(e[7]-e[6]+pad*2)+'px'; shade.style.height=(e[3]-e[2]+pad*2)+'px';
-      shade.style.display='block';
-      lastShadeTop=e[2]-pad;
-      void shade.offsetWidth;
-      requestAnimationFrame(function(){ shade.style.transition=SHADE_TR; });
-    }
+    positionShade(st.iSeq);
   }
   function scheduleRelayout(){ clearTimeout(__relayoutT); __relayoutT=setTimeout(relayout,120); }
   if(typeof ResizeObserver!=='undefined'){ try{ new ResizeObserver(scheduleRelayout).observe(host); }catch(e){} }
@@ -996,7 +999,7 @@ function boot(){
     st.loopTo=Math.min(st.loopTo||maxM,maxM)||maxM;
     renderBarnums();
     if(st.iSeq>=B.length) st.iSeq=0;
-    lastRowY=-1; place(st.iSeq);
+    lastRowY=-1; positionShade(st.iSeq); // 只跟新几何, 不滚屏(纠错加线/合并不再跳回开头)
     info.textContent=L('ready')+' - '+maxM+' bars';
   }
   // 加载即读 metric_arr 铺 shade(手动点 load metro 时 metric_arr 已校好)
