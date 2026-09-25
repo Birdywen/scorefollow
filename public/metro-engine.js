@@ -963,9 +963,9 @@ function boot(){
     });
   }
 
-  // ===== 启动读 SGA_CONFIG 恢复上次导出的偏好 =====
-  (function(){
-    var c = window.sga_config; if(!c) return;
+  // ===== 应用 SGA_CONFIG(启动恢复 + 外部导入恢复共用): 只设值+刷新面板, 不碰播放头/滚屏 =====
+  function applySgaConfig(c){
+    if(!c) return;
     function setV(id,v){ var el=document.getElementById(id); if(el!=null&&v!=null) el.value=v; }
     if(c.bpm!=null){ st.bpm=c.bpm; setV('sgBpm',c.bpm); var bv=document.getElementById('sgBpmV'); if(bv)bv.textContent=c.bpm; if(typeof renderTempo==='function'){ try{ renderTempo(); }catch(e){} } }
     if(c.meter!=null){ st.meter=c.meter; var ms=document.getElementById('sgMeter'); if(ms){ms.value=c.meter;} }
@@ -984,6 +984,11 @@ function boot(){
     if(c.showBarnums!=null){ st.showBarnums=c.showBarnums; var bnEl=document.getElementById('sgBarnum'); if(bnEl)bnEl.checked=!!c.showBarnums; if(typeof applyBarnumStyle==='function')applyBarnumStyle(); }
     if(c.lang!=null){ st.lang=c.lang; if(typeof applyLang==='function')applyLang(); }
     if(typeof applyShadeStyle==='function') applyShadeStyle();
+  }
+  // ===== 启动读 SGA_CONFIG 恢复上次导出的偏好 =====
+  (function(){
+    var c = window.sga_config; if(!c) return;
+    applySgaConfig(c);
   })();
 
 
@@ -1172,6 +1177,7 @@ function boot(){
     },
     stop: function(){ stop(); return true; },
     restartAtMeasure: restartAtMeasure,
+    applyConfig: applySgaConfig,
     isPlaying: function(){ return !!st.playing; }
   };
   window.__sgaMetroPractice={

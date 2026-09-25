@@ -473,6 +473,7 @@ export default function ScoreFollowPage() {
   const imgInputRef = useRef<HTMLInputElement>(null);
   const camInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
+  const preloadInputRef = useRef<HTMLInputElement>(null);
   // 相机连拍(应用内取景多页): 缩略图 URL(state 驱动) + 处理后 canvas(ref 持有)
   const [camOpen, setCamOpen] = useState(false);
   const [camShots, setCamShots] = useState<string[]>([]);
@@ -808,7 +809,7 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = `${BASE}/metro-engine.js?v=20260925-noscroll`;
+    s.src = `${BASE}/metro-engine.js?v=20260925-cfg`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
@@ -1768,6 +1769,21 @@ export default function ScoreFollowPage() {
   }, []);
 
   // preload.js 文本组装(原版 synpdf.html 兼容: 全页 metric + pdf_data + 全局 timing + 逐页 adv)
+  // 读活节拍器预设(面板导出与 File 卡导出统一写 sga_config, 导入时恢复)
+  const readMetroCfg = useCallback((): Record<string, unknown> | null => {
+    try {
+      const st = (window as unknown as Record<string, unknown>).__sgaMetro as Record<string, unknown> | undefined;
+      if (!st || typeof st.bpm !== "number") return null;
+      const cfg: Record<string, unknown> = {};
+      for (const k of ["bpm", "meter", "color", "opacity", "countIn", "seqText", "meterMap",
+        "skipBars", "loopOn", "loopFrom", "loopTo", "loopN", "sound", "showBarnums", "followY", "lang"]) {
+        const v = st[k];
+        if (v !== undefined && v !== null) cfg[k] = v;
+      }
+      return cfg;
+    } catch { return null; }
+  }, []);
+
   // 供 File 卡预览/下载 + 节拍器面板 ⤓ Export(经 window.__sfPreloadText)共用
   const buildPreloadText = useCallback(async (): Promise<string | null> => {
     const pdf = pdfDocRef.current;
@@ -1813,10 +1829,21 @@ export default function ScoreFollowPage() {
     if (pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0) {
       L.push(`pdf_data = ${bin2txt(pdfBytesRef.current)};`);
     }
-    L.push(`media_file = "";`);
+    L.push(`media_file = ${JSON.stringify(mediaName || "")};`);
     L.push(`msc_tracks = "";`);
     L.push(`offset_js = 0.00;`);
     L.push(`opt = ${JSON.stringify(optSnap)};`);
+    // 节拍器预设独立行(面板导出经 annot loader 注入同样内容; 导入时恢复活引擎)
+    const metroCfg = readMetroCfg();
+    if (metroCfg) L.push(`sga_config = ${JSON.stringify(metroCfg)};`);
+    // 界面预设独立行(原版忽略不认识的行, 兼容)
+    L.push(`ui_state = ${JSON.stringify({
+      fullScreen: fullScreen || Boolean(document.fullscreenElement),
+      hideUI: !chromeOpen,
+      cleanView, darkTheme, lang,
+      showSystems, showBars, showCursor, showLowConf, diagnosticMode,
+      speed, profileName, loopA, loopB, synbox, embedMetro, pageNum,
+    })};`);
     const annotAll: { x: number; y: number; w: number; c: number; t: string; d: number; p?: number }[] = [];
     for (const [pn, arr] of Object.entries(annotsRef.current)) {
       for (const a of arr) annotAll.push({ x: a.x, y: a.y, w: a.w, c: a.c, t: a.t, d: 0, p: Number(pn) });
@@ -1826,7 +1853,8 @@ export default function ScoreFollowPage() {
       t.includes("__sgaBoot") || t.includes("metro-engine.js") || t.includes("sga_config");
     if (embedMetro) {
       const engineURL = window.location.origin + `${BASE}/metro-engine.js`;
-      const loader = '<scr' + 'ipt>window.sga_config={};(function(){if(window.__sgaBoot)return;window.__sgaBoot=1;' +
+      const cfgJson = JSON.stringify(metroCfg ?? {});
+      const loader = '<scr' + 'ipt>window.sga_config=' + cfgJson + ';(function(){if(window.__sgaBoot)return;window.__sgaBoot=1;' +
         'var s=document.createElement("script");s.src="' + engineURL + '";s.async=true;' +
         '(document.head||document.documentElement).appendChild(s);})();</scr' + 'ipt>';
       const pageW = Number(metric[0]) || 1000;
@@ -1840,7 +1868,10 @@ export default function ScoreFollowPage() {
     L.push(`metric_arr = ${JSON.stringify(metric)};`);
     L.push(`adv_settings = ${JSON.stringify(adv)};`);
     return L.join("\n") + "\n";
-  }, [analysis, numPages, pageNum, pdfName, renderAndAnalyze, bin2txt, embedMetro, buildMetricArr, opt]);
+  }, [analysis, numPages, pageNum, pdfName, renderAndAnalyze, bin2txt, embedMetro, buildMetricArr, opt,
+    readMetroCfg, fullScreen, chromeOpen, cleanView, darkTheme, lang,
+    showSystems, showBars, showCursor, showLowConf, diagnosticMode,
+    speed, profileName, loopA, loopB, synbox, mediaName]);
 
   // save preload.js: 预览仅显示摘要；完整文本保留供下载/复制。
   const savePreload = useCallback(async () => {
@@ -1906,9 +1937,9 @@ export default function ScoreFollowPage() {
   }, [buildPreloadText]);
 
   // preload.js 载入(原版兼容): pdf_data 内嵌PDF + 全页 metric 配对 + times + 逐页 adv
-  const loadPreload = useCallback(async (f: File) => {
+  // + sga_config(节拍器预设→活引擎) + ui_state(界面预设, 含全屏/隐藏UI)
+  const loadPreloadText = useCallback(async (txt: string, name: string) => {
     setPerformanceOpen(false);
-    const txt = await f.text();
     if (!txt.includes("//# This page")) { setStatus("not a preload file(缺 //# This page 标记)"); return; }
     const matchBalanced = (open: string, close: string, from: number): string | null => {
       let depth = 0; let instr = false; let start = -1;
@@ -1956,11 +1987,14 @@ export default function ScoreFollowPage() {
       const want = getStr("pdf_file");
       setStatus(`preload 无内嵌PDF${want ? `, 请先载入 ${want}` : ""} 后再导入(只恢复 timing/小节线)`);
     }
-    // 2) metric / times / opt / adv 解析
+    // 2) metric / times / opt / adv / 预设解析
     const metric = getArr("metric_arr");
     const times = getArr("times_arr");
     const advAll = getObj("adv_settings");
     const optAll = getObj("opt");
+    const sgaOwn = getObj("sga_config");
+    const uiState = getObj("ui_state");
+    const mediaWant = getStr("media_file");
     const applyNums = (o: Record<string, unknown> | null) => {
       if (!o) return;
       for (const [k, val] of Object.entries(o)) {
@@ -2004,7 +2038,7 @@ export default function ScoreFollowPage() {
       pdf = await pdfjs.getDocument({ data: pdfBytes, wasmUrl: `${BASE}/wasm/` }).promise;
       pdfDocRef.current = pdf;
       const want = getStr("pdf_file");
-      pdfNameRef.current = want || f.name.replace(/\.js$/i, ".pdf");
+      pdfNameRef.current = want || name.replace(/\.js$/i, ".pdf");
       setPdfName(pdfNameRef.current);
       setNumPages(pdf.numPages);
     } else if (!pdf) { setStatus("无PDF可载入"); return; }
@@ -2044,6 +2078,30 @@ export default function ScoreFollowPage() {
     manualRef.current = nextManual;
     setManualBarsByPage(nextManual);
     const annotArr = getArr("annots");
+    // 旧文件(面板导出)无 sga_config 独立行: 从 annot loader 的 window.sga_config={...} 里抠
+    let sgaCfg: Record<string, unknown> | null =
+      sgaOwn && typeof sgaOwn === "object" ? (sgaOwn as Record<string, unknown>) : null;
+    if (!sgaCfg && Array.isArray(annotArr)) {
+      for (const a of annotArr as { t?: unknown }[]) {
+        const t = String(a?.t ?? "");
+        const k = t.indexOf("window.sga_config");
+        if (k < 0) continue;
+        const b = t.indexOf("{", k);
+        if (b < 0) continue;
+        let depth = 0; let instr = false;
+        for (let j = b; j < t.length; j++) {
+          const ch = t[j];
+          if (instr) { if (ch === '"') instr = false; continue; }
+          if (ch === '"') { instr = true; continue; }
+          if (ch === "{") depth++;
+          else if (ch === "}") {
+            depth--;
+            if (depth === 0) { try { sgaCfg = JSON.parse(t.slice(b, j + 1)); } catch { sgaCfg = null; } break; }
+          }
+        }
+        if (sgaCfg) break;
+      }
+    }
     if (Array.isArray(annotArr)) {
       const grouped: Record<number, Annot[]> = {};
       for (const a of annotArr as { x?: number; y?: number; w?: number; c?: number; t?: string; d?: number; p?: number }[]) {
@@ -2064,13 +2122,79 @@ export default function ScoreFollowPage() {
       setTapCount(wijzerRef.current.times.length);
     }
     forceAdv((n) => n + 1);
-    pageNumRef.current = 1;
-    setPageNum(1);
     await renderPage(pdf, 1);
+    // 5) 预设恢复: 节拍器 sga_config → 活引擎; ui_state → 界面(含全屏/隐藏UI)
+    const restored: string[] = [];
+    try {
+      const mc = (window as unknown as Record<string, unknown>).__sgaMetroControl as
+        { applyConfig?: (c: Record<string, unknown>) => void } | undefined;
+      if (sgaCfg && mc?.applyConfig) { mc.applyConfig(sgaCfg); restored.push("metro"); }
+    } catch { /* 引擎未加载时跳过 */ }
+    if (uiState && typeof uiState === "object") {
+      const u = uiState as Record<string, unknown>;
+      const num = (v: unknown): number | undefined => {
+        const n = 1 * (v as number);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      if (typeof u.showSystems === "boolean") setShowSystems(u.showSystems);
+      if (typeof u.showBars === "boolean") setShowBars(u.showBars);
+      if (typeof u.showCursor === "boolean") setShowCursor(u.showCursor);
+      if (typeof u.showLowConf === "boolean") setShowLowConf(u.showLowConf);
+      if (typeof u.cleanView === "boolean") setCleanView(u.cleanView);
+      if (typeof u.diagnosticMode === "boolean") setDiagnosticMode(u.diagnosticMode);
+      if (typeof u.darkTheme === "boolean") setDarkTheme(u.darkTheme);
+      if (u.lang === "zh" || u.lang === "en") {
+        setLang(u.lang);
+        try { localStorage.setItem("sf-lang", u.lang); } catch { /* ignore */ }
+      }
+      const sp = num(u.speed);
+      if (sp !== undefined) setSpeed(Math.min(4, Math.max(0.1, sp)));
+      if (u.profileName === "fast" || u.profileName === "balanced" || u.profileName === "scan") {
+        setProfileName(u.profileName); // 只记名, opt 已由文件恢复, 不重跑分析
+      }
+      const la = num(u.loopA); const lb = num(u.loopB);
+      if (la !== undefined) setLoopA(la);
+      if (lb !== undefined) setLoopB(lb);
+      if (la !== undefined || lb !== undefined) {
+        wijzerRef.current.setLoop(la ?? 0, lb ?? Math.max((la ?? 0) + 4, 4));
+      }
+      if (typeof u.synbox === "boolean") setSynbox(u.synbox);
+      if (typeof u.embedMetro === "boolean") setEmbedMetro(u.embedMetro);
+      if (typeof u.hideUI === "boolean") setChromeOpen(!u.hideUI);
+      const pg = num(u.pageNum);
+      if (pg !== undefined) {
+        const target = Math.min(Math.max(1, Math.round(pg)), (pdf.numPages as number) || 1);
+        pageNumRef.current = target;
+        setPageNum(target);
+        const off = pageOffsetsRef.current.find((o) => o.page === target);
+        const notn = notationRef.current;
+        const stack = stackRef.current;
+        const a0 = autoRef.current[target];
+        if (off && notn && stack && a0) {
+          notn.scrollTop = off.y * (stack.clientWidth / Math.max(1, a0.pageW));
+        }
+      }
+      if (u.fullScreen === true && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.()?.catch?.(() => {
+          setStatus("preload 要求全屏: 浏览器拒绝了自动全屏, 请手动点 full screen");
+        });
+      }
+      restored.push("界面");
+    }
+    if (!uiState || typeof uiState !== "object" || (uiState as Record<string, unknown>).pageNum === undefined) {
+      pageNumRef.current = 1;
+      setPageNum(1);
+    }
     const adopted = Object.keys(nextManual).length;
-    setStatus(`loaded preload ${f.name} · ${adopted} 页小节线已采用 · ${wijzerRef.current.times.length} sync points` +
-      (pdfBytes ? " · PDF内嵌" : ""));
-  }, [renderPage]);
+    setStatus(`loaded preload ${name} · ${adopted} 页小节线已采用 · ${wijzerRef.current.times.length} sync points` +
+      (pdfBytes ? " · PDF内嵌" : "") +
+      (restored.length ? ` · 预设已恢复(${restored.join("+")})` : "") +
+      (mediaWant && !mediaURL ? ` · 请载入音频 ${mediaWant}` : ""));
+  }, [renderPage, mediaURL]);
+
+  const loadPreload = useCallback((f: File) => {
+    f.text().then((txt) => void loadPreloadText(txt, f.name)).catch(() => setStatus("preload 文件读取失败"));
+  }, [loadPreloadText]);
 
   const loadTiming = useCallback((f: File) => {
     f.text().then((txt) => {
@@ -2202,10 +2326,46 @@ export default function ScoreFollowPage() {
     if (!mediaURL) clockRef.current.running = playing;
   }, [speed, mediaURL, playing]);
 
-  // demo 模式: ?demo=1 自动载入内置谱 (免上传即测)
+  // URL 直载 preload(原版风格): ?曲名.js(裸文件名, 相对本站目录) 或 ?preload=曲名.js
+  // 例: /scorefollow/?mytune.js / /scorefollow/?preload=mytune.js
+  // 原版 synpdf.html?preload_file.js 同约定(同目录相对路径, 也支持 ../ 上级)
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!new URLSearchParams(window.location.search).has("demo")) return;
+    const q = window.location.search.replace(/^\?/, "");
+    if (!q) return;
+    const params = new URLSearchParams(window.location.search);
+    let name = params.get("preload") || "";
+    if (!name && !q.includes("=") && /\.js$/i.test(q)) name = q; // 原版裸文件名风格
+    if (!name) return;
+    // 只允许本站相对路径, 拒绝绝对 URL/反斜杠(防 open-fetch)
+    if (/^[a-z][a-z0-9+.-]*:/i.test(name) || name.startsWith("//") || name.includes("\\")) {
+      setStatus("URL preload 只允许本站相对路径");
+      return;
+    }
+    name = name.split("#")[0];
+    let dead = false;
+    (async () => {
+      try {
+        setStatus(`URL preload 载入中: ${name} ...`);
+        const r = await fetch(`${BASE}/${name.replace(/^\/+/, "")}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const txt = await r.text();
+        if (dead) return;
+        await loadPreloadText(txt, name.split("/").pop() || "url-preload.js");
+      } catch {
+        if (!dead) setStatus(`URL preload 载入失败: ${name}(文件须与本站同源可访问; file:// 下浏览器会拦截)`);
+      }
+    })();
+    return () => { dead = true; };
+  }, [loadPreloadText]);
+
+  // demo 模式: ?demo=1 自动载入内置谱 (免上传即测); 有 URL preload 参数时让位
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("demo")) return;
+    const q = window.location.search.replace(/^\?/, "");
+    if ((params.get("preload") || (!q.includes("=") && /\.js$/i.test(q) ? q : ""))) return;
     let dead = false;
     (async () => {
       try {
@@ -2250,6 +2410,7 @@ export default function ScoreFollowPage() {
         <button className={styles.tbBtn} onClick={() => imgInputRef.current?.click()} title={tx("loadImage")}>🖼</button>
         <button className={styles.tbBtn} onClick={() => void openCamera()} title={tx("takePhoto")}>📷</button>
         <button className={`${styles.tbBtn} ${mediaURL ? styles.tbBtnOn : ""}`} onClick={() => mediaInputRef.current?.click()} title={mediaName || tx("loadMedia")}>🎵 {mediaName ? (mediaName.length > 16 ? mediaName.slice(0, 14) + "…" : mediaName) : tx("media")}</button>
+        <button className={styles.tbBtn} onClick={() => preloadInputRef.current?.click()} title={tx("loadPreload")}>📥</button>
         <input ref={pdfInputRef} type="file" accept=".pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPdfFile(f); e.target.value = ""; }} />
         <input ref={imgInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
         <input ref={camInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
@@ -2260,6 +2421,7 @@ export default function ScoreFollowPage() {
           setMediaKind(f.type.startsWith("video") ? "video" : "audio");
           e.target.value = "";
         }} />
+        <input ref={preloadInputRef} type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); e.target.value = ""; }} />
          <span className={styles.tbTitle} title={pdfName}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
         <span className={styles.tbSpacer} />
         <span className={styles.tbMenuWrap}>
