@@ -745,16 +745,24 @@ export default function ScoreFollowPage() {
         canvas.style.display = "block";
         canvas.style.width = "100%";
         canvas.dataset.page = String(n);
+        let pageAna: { pageW: number; pageH: number } | null = null;
         try {
-          await renderAndAnalyze(pdf, n, canvas, docId);
+          const rr = (await renderAndAnalyze(pdf, n, canvas, docId)) as { a: { pageW: number; pageH: number } | null };
+          pageAna = rr ? rr.a : null;
         } catch (err) {
           autoRef.current[n] = null as any;
           setStatus(`page ${n} analysis skipped: ${err instanceof Error ? err.message : String(err)}`);
         }
         if (gen !== renderGenRef.current) return; // 丢弃过期结果
         host.appendChild(canvas);
-        offsets.push({ page: n, y, h: canvas.height, w: canvas.width });
-        y += canvas.height;
+        // offsets 必须记分析坐标(HD 显示画布 backing 是 2 倍, 直接记 canvas.height
+        // 会把 pageH/系统 y 全部放大 R 倍, 四覆盖层被纵向压扁错位; HDScale 回归)。
+        // 有分析结果用 a.pageH(精确); 空白页(无系统)按显示画布纵横比折算。
+        const anaW = opt.pagewd || 1000;
+        const ah = pageAna && pageAna.pageH > 0 ? pageAna.pageH
+          : Math.max(1, Math.round((anaW * canvas.height) / Math.max(1, canvas.width)));
+        offsets.push({ page: n, y, h: ah, w: anaW });
+        y += ah;
       }
       if (gen !== renderGenRef.current) return;
       // 整谱级 skipn walk-back: 首/末页是空白扫描页时, 切除落到真正有系统的页.
