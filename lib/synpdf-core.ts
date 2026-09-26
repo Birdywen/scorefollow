@@ -18,6 +18,7 @@ import {
   estimateSkewAngle,
   ALGO_VERSION,
   lastBarDiagnostics,
+  lastMaskStats,
   lastSystemConfidence,
   type BarDiagnostic,
 } from "./synpdf-legacy";
@@ -37,6 +38,8 @@ export {
   deskewCanvasInPlace,
   estimateSkewAngle,
   ALGO_VERSION,
+  lastBarDiagnostics,
+  lastMaskStats,
 };
 
 export interface PageAnalysis {
@@ -155,7 +158,8 @@ export function analyzePage(
     [legacyOpt.seln, legacyOpt.skipn, legacyOpt.zwgrens, legacyOpt.drmpl,
       legacyOpt.drmpl2, legacyOpt.mtdrmpl, legacyOpt.voorna, legacyOpt.dx,
       legacyOpt.sysprf, legacyOpt.onestf, legacyOpt.eerst,
-      legacyOpt.cropx, legacyOpt.pagewd, legacyOpt.hd, legacyOpt.deskew].join(",");
+      legacyOpt.cropx, legacyOpt.pagewd, legacyOpt.hd, legacyOpt.deskew,
+      legacyOpt.notemask, legacyOpt.widrescue].join(",");
   const hit = pageCache.get(key);
   if (hit) return hit;
 

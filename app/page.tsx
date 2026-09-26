@@ -17,6 +17,7 @@ import {
   setSkipn,
   setSysprf,
   deskewCanvasInPlace,
+  lastMaskStats,
   applyAnalysisProfile,
   buildTimingPayload,
   validateTimingPayload,
@@ -402,6 +403,7 @@ export default function ScoreFollowPage() {
   const manualAlignRef = useRef<Record<number, { skip: number; full: number }>>({});
   // deskew 备注(本轮渲染各页转正角度, 汇总进最终 status)
   const deskewNotesRef = useRef<string[]>([]);
+  const maskHeadsRef = useRef(0);
   // 按页分析参数快照 {页: {键: 值}}: 调参只记当前页, 各页互不影响(见 PAGE_ADV_KEYS)
   const advsRef = useRef<Record<number, Record<string, number>>>({});
   type ManualSnap = { bars: Record<number, number[][]>; align: Record<number, { skip: number; full: number }> };
@@ -657,6 +659,7 @@ export default function ScoreFollowPage() {
           anaCanvas = ac;
         }
         const a = analyzePage(anaCanvas, n, pageAdv?.seln ?? opt.seln, docId ?? pdfNameRef.current);
+        if ((opt.notemask ?? 0) !== 0) maskHeadsRef.current += lastMaskStats.heads;
         if (a.systems.length === 0) {
           autoRef.current[n] = null as any;
           return { a: null, proxy };
@@ -733,6 +736,7 @@ export default function ScoreFollowPage() {
       const scroller = notationRef.current;
       const savedTop = scroller ? scroller.scrollTop : 0;
       deskewNotesRef.current = [];
+      maskHeadsRef.current = 0;
       host.innerHTML = "";
       const offsets: { page: number; y: number; h: number; w: number }[] = [];
       let y = 0;
@@ -830,9 +834,11 @@ export default function ScoreFollowPage() {
       }
       const meas = merged.bars.reduce((s, b) => s + Math.max(0, b.length - 1), 0);
       const dk = deskewNotesRef.current;
+      const mh = maskHeadsRef.current;
       setStatus(`score: ${nPages} pages, ${merged.systems.length} systems, ${meas} measures, spatium ${merged.spatium.toFixed(1)}px, algo v${merged.algoVersion}` +
         (dropped ? ` · timing截断 ${kept}保留/${dropped}越界` : "") +
-        (dk.length ? ` · deskew ${dk.join(" ")}` : ""));
+        (dk.length ? ` · deskew ${dk.join(" ")}` : "") +
+        (mh > 0 ? ` · notemask ${mh}heads` : ""));
       emitMetricRendered();
     },
     [describeAnalysis, emitMetricRendered, mergeFromPages, renderAndAnalyze],
@@ -2764,6 +2770,8 @@ export default function ScoreFollowPage() {
               <label className={`${styles.pill} ${opt.eerst ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.eerst ? true : false} onChange={(e) => applyAdv("eerst", e.target.checked ? 1 : 0)} /> eerst</label>
               <label className={`${styles.pill} ${(opt.hd ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.hd ?? 1) ? true : false} onChange={(e) => applyAdv("hd", e.target.checked ? 1 : 0)} title={lang === "zh" ? "高清渲染: 显示按屏幕超采样, 分析分辨率不变" : "HiDPI render: display upsampled, analysis unchanged"} /> hd</label>
               <label className={`${styles.pill} ${(opt.deskew ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.deskew ?? 1) ? true : false} onChange={(e) => applyAdv("deskew", e.target.checked ? 1 : 0)} title={lang === "zh" ? "偏斜校正: 扫描摆不正自动转正" : "Deskew: auto-straighten tilted scans"} /> deskew</label>
+              <label className={`${styles.pill} ${(opt.notemask ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.notemask ?? 0) ? true : false} onChange={(e) => applyAdv("notemask", e.target.checked ? 1 : 0)} title={lang === "zh" ? "音符优先: 先抠符头符干再认小节线(实验)" : "Notes first: mask noteheads/stems before bar detection (experimental)"} /> notemask</label>
+              <label className={`${styles.pill} ${(opt.widrescue ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.widrescue ?? 0) ? true : false} onChange={(e) => applyAdv("widrescue", e.target.checked ? 1 : 0)} title={lang === "zh" ? "宽度先验: 过宽小节低阈抢救淡线(实验)" : "Width prior: rescue faint bars in wide gaps (experimental)"} /> widrescue</label>
             </div>
             <label className={styles.stepper}>skipn <input type="number" min={-5} max={5} step={1} value={opt.skipn} title={lang === "zh" ? ">0 去掉整谱开头 N 个系统(封面/标题, 只动首个有系统页); <0 去掉整谱末尾 |N| 个系统(它曲/demo, 只动末个有系统页)" : "score-level: positive drops first N systems of first content page; negative drops last |N| of last content page"} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
             <label className={styles.stepper}>seln <input type="number" min={0} max={9} value={opt.seln} onChange={(e) => applyAdv("seln", Number(e.target.value))} /></label>

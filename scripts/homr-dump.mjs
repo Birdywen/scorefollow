@@ -13,6 +13,11 @@ execSync(
 );
 const { pathToFileURL } = await import("node:url");
 const legacy = await import(pathToFileURL(join(tmp, "synpdf-legacy.js")).href);
+// A/B: SF_FLAGS='{"notemask":1,"widrescue":1}' 测逆向路线开关组合
+if (process.env.SF_FLAGS) {
+  Object.assign(legacy.legacyOpt, JSON.parse(process.env.SF_FLAGS));
+  console.log("SF_FLAGS", process.env.SF_FLAGS);
+}
 
 const benchRoot = process.env.SF_BENCH_ROOT ?? join(root, "benchmarks", "homr");
 const names = process.argv[2] ? [process.argv[2]]

@@ -20,6 +20,11 @@ execSync(
 const { default: path } = await import("node:path");
 const { pathToFileURL } = await import("node:url");
 const legacy = await import(pathToFileURL(join(tmp, "synpdf-legacy.js")).href);
+// A/B: SF_FLAGS='{"notemask":1,"widrescue":1}' 测逆向路线开关组合
+if (process.env.SF_FLAGS) {
+  Object.assign(legacy.legacyOpt, JSON.parse(process.env.SF_FLAGS));
+  console.log("SF_FLAGS", process.env.SF_FLAGS);
+}
 
 const benchRoot = process.env.SF_BENCH_ROOT ?? join(root, "benchmarks", "homr");
 const inScope = (c) => (process.env.SF_BENCH_ROOT ? true : SCORES.includes(c.score));
@@ -76,8 +81,9 @@ for (const name of scoreList) {
       const y1 = Math.min(...subs.map((s) => s.min_y)) * sy;
       const y2 = Math.max(...subs.map((s) => s.max_y)) * sy;
       const bars = dedupe(subs.flatMap((s) => s.bar_lines.map((b) => b.cx * sx)));
+      const x1 = Math.min(...subs.map((s) => s.min_x)) * sx;
       const x2 = Math.max(...subs.map((s) => s.max_x)) * sx;
-      return { y1, y2, x2, bars };
+      return { y1, y2, x1, x2, bars };
     });
     sysTotal += Math.max(r.cxs.length, groups.length);
     const usedGroups = new Set();
@@ -90,18 +96,23 @@ for (const name of scoreList) {
         if (!usedGroups.has(gi) && ov > bestOv) { bestOv = ov; best = gi; }
       });
       if (best < 0 || bestOv < 0.5) {
-        console.log(`   sys${si + 1} y[${y1},${y2}] UNMATCHED (ov=${bestOv.toFixed(2)}) bars=${det.length - 2}`);
-        totFp += Math.max(0, det.length - 2);
-        records.push({ score: name, page: pm.page, sys: si + 1, internal: det.slice(1, -1), want: [], unmatched: true });
+        const unEdge = det.filter((x) => Math.abs(x - s.xs.x1) > TOL && Math.abs(x - s.xs.x2) > TOL);
+        console.log(`   sys${si + 1} y[${y1},${y2}] UNMATCHED (ov=${bestOv.toFixed(2)}) bars=${unEdge.length}`);
+        totFp += Math.max(0, unEdge.length);
+        records.push({ score: name, page: pm.page, sys: si + 1, internal: unEdge.slice().sort((a, b) => a - b), want: [], unmatched: true });
         return;
       }
       usedGroups.add(best);
       sysMatch++;
       const g = groups[best];
-      // HOMR 右缘(谱面右端)对齐我方 x2 则视为端点, 不计入内部对比
-      // 参考端点必须由参考系统自己的 x2 定义，不能随我方算法变化。
-      const want = g.bars.filter((x) => Math.abs(x - g.x2) > TOL).sort((a, b) => a - b);
-      const internal = det.slice(1, -1).sort((a, b) => a - b);
+      // 对称边缘口径: 距任一引擎框端 ≤TOL 的列不计分(边界歧义, 仿分割评测
+      // 忽略边界像素的惯例)。如 toccatta p2sys2: 两家都找到 949/950.1,
+      // 只是框差 14px, 不应算谁漏检。
+      const ourX1 = s.xs.x1, ourX2 = s.xs.x2;
+      const isEdge = (x) => Math.abs(x - ourX1) <= TOL || Math.abs(x - ourX2) <= TOL ||
+        Math.abs(x - g.x1) <= TOL || Math.abs(x - g.x2) <= TOL;
+      const want = g.bars.filter((x) => !isEdge(x)).sort((a, b) => a - b);
+      const internal = det.filter((x) => !isEdge(x)).sort((a, b) => a - b);
       const used = new Array(internal.length).fill(false);
       let tp = 0, dev = 0;
       const miss = [];

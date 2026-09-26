@@ -48,6 +48,21 @@ function vline(buf, x, y1, y2, th = TH) {
 function system(buf, yTop, sp = SP) {
   for (let i = 0; i < 5; i++) hline(buf, yTop + i * sp);
 }
+/** 实心符头(椭圆) */
+function head(buf, cx, cy, rx = 4, ry = 5) {
+  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
+    for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+      const dx = (x - cx) / rx, dy = (y - cy) / ry;
+      if (dx * dx + dy * dy <= 1 && x >= 0 && y >= 0 && x < W) px(buf, x, y);
+    }
+}
+/** 上行符干(右上)/下行符干(左下), len 35 = 3.5sp */
+function stemUp(buf, hx, hyTop, len = 35) { vline(buf, hx + 3, hyTop - len, hyTop, 2); }
+function stemDown(buf, hx, hyBot, len = 35) { vline(buf, hx - 4, hyBot, hyBot + len, 2); }
+/** 淡线: 只印上部 65%(下部褪色, rel≈0.65, 弱峰 0.7 抓不住) */
+function faintBar(buf, x, yTop) { vline(buf, x, yTop, yTop + Math.round(sysHeight() * 0.65)); }
+/** 多小节休止符横杠(粗横线, 纵贯检测看不见它) */
+function restBar(buf, x1, x2, y) { hline(buf, y, x1, x2, 4); }
 function sysHeight() { return 4 * SP; }
 
 /** 套件定义: 真值小节线(内部)/符干干扰/系统顶 */
@@ -79,14 +94,70 @@ const SUITES = [
     wantFrame: [60, 230],
     wantBars: [150, 400, 650],
   },
+  {
+    // 逆向路线 Phase1: 音符风暴(16 分音符跑句 + 符梁), notemask 抠掉符头符干。
+    name: "note-storm",
+    h: 280,
+    flags: { notemask: 1 },
+    systems: [{
+      yTop: 100, bars: [200, 400, 600, 800], stems: [],
+      notes: [
+        { x: 240, dy: 0, up: true }, { x: 275, dy: 10, up: true },
+        { x: 320, dy: 20, up: false }, { x: 355, dy: 30, up: false },
+        { x: 440, dy: 5, up: true }, { x: 475, dy: 15, up: true },
+        { x: 520, dy: 25, up: false }, { x: 555, dy: 35, up: false },
+        { x: 640, dy: 0, up: true }, { x: 675, dy: 20, up: true },
+        { x: 720, dy: 10, up: false }, { x: 755, dy: 30, up: false },
+      ],
+    }],
+  },
+  {
+    // 逆向路线 Phase2: 淡线抢救(600 只印上部 65%, rel≈0.65 < 弱峰 0.7)。
+    name: "faint-bar",
+    h: 240,
+    flags: { notemask: 1, widrescue: 1 },
+    systems: [{
+      yTop: 100, bars: [200, 400, 600, 800], faint: [600], stems: [],
+      notes: [{ x: 250, dy: 10, up: true }, { x: 700, dy: 30, up: false }],
+    }],
+  },
+  {
+    // Phase2 护栏: 宽 gap 里有孤立竖线伪影(无符头)会被抢救(诚实记录代价)。
+    name: "artifact-rescued",
+    h: 240,
+    flags: { notemask: 1, widrescue: 1 },
+    systems: [{ yTop: 100, bars: [200, 400, 800], want: [200, 400, 600, 800], stems: [], artifacts: [600] }],
+  },
+  {
+    // Phase2 护栏: 宽 gap + 多休止横杠 → 整 gap 跳过, 不幻觉。
+    // (注: 光杆竖线在 base 即 veto-proof(midWidth halo 读 3px), 真实谱面不存在,
+    // 这里只放横杠, 测"不硬造"的契约; 抢救灵敏度由 artifact-rescued 刻画。)
+    name: "multirest-quiet",
+    h: 240,
+    flags: { notemask: 1, widrescue: 1 },
+    systems: [{ yTop: 100, bars: [200, 400, 900], stems: [], restbars: [[500, 800]] }],
+  },
 ];
 
 function renderSuite(suite) {
   const buf = makeBuf(suite.h);
   for (const s of suite.systems) {
     system(buf, s.yTop);
-    for (const bx of s.bars) vline(buf, bx, s.yTop, s.yTop + sysHeight());
+    for (const bx of s.bars) if (!((s.faint ?? []).includes(bx))) vline(buf, bx, s.yTop, s.yTop + sysHeight());
     for (const sx of s.stems) vline(buf, sx, s.yTop, s.yTop + 25);
+    for (const nt of (s.notes ?? [])) {
+      head(buf, nt.x, s.yTop + nt.dy);
+      if (nt.up) stemUp(buf, nt.x, s.yTop + nt.dy - 5);
+      else stemDown(buf, nt.x, s.yTop + nt.dy + 5);
+    }
+    for (const fx of (s.faint ?? [])) faintBar(buf, fx, s.yTop);
+    for (const rb of (s.restbars ?? [])) restBar(buf, rb[0], rb[1], s.yTop + Math.round(sysHeight() / 2));
+    for (const ax of (s.artifacts ?? [])) vline(buf, ax, s.yTop + 5, s.yTop + 35);
+  }
+  if (suite.beam) {
+    // 符梁: 连两根上行符干的顶端
+    const s = suite.systems[0];
+    hline(buf, suite.beam.y, suite.beam.x1, suite.beam.x2, 4);
   }
   if (suite.link) {
     // 纵贯笔画: 小节线穿过上下谱表之间的 gap(大谱表的物理连接证据)
@@ -106,7 +177,10 @@ function check(name, cond, detail = "") {
 
 for (const suite of SUITES) {
   const buf = renderSuite(suite);
+  const savedFlags = { notemask: legacy.legacyOpt.notemask, widrescue: legacy.legacyOpt.widrescue };
+  if (suite.flags) Object.assign(legacy.legacyOpt, suite.flags);
   const r = legacy.countPixFromBuffer(W, suite.h, buf, 0);
+  Object.assign(legacy.legacyOpt, savedFlags);
   const spatium = legacy.getSpatium();
   const tol = Math.max(2, 0.2 * spatium);
   console.log(`--- ${suite.name}: systems=${r.cxs.length} spatium=${spatium} tol=${tol.toFixed(1)}`);
@@ -160,9 +234,9 @@ for (const suite of SUITES) {
     // 端点≈谱面左右边
     check(`${tag}/endpoints`, Math.abs(det[0] - STAFF_X1) <= 4 && Math.abs(det[det.length - 1] - STAFF_X2) <= 4,
       `ends=[${det[0]},${det[det.length - 1]}]`);
-    // 内部小节线贪心匹配
+    // 内部小节线贪心匹配(want 覆盖 bars: 抢救类用例的真值含被救线)
     const internal = det.slice(1, -1).sort((a, b) => a - b);
-    const want = s.bars.slice().sort((a, b) => a - b);
+    const want = (s.want ?? s.bars).slice().sort((a, b) => a - b);
     const used = new Array(internal.length).fill(false);
     let tp = 0; let devSum = 0;
     for (const w of want) {
