@@ -2904,9 +2904,10 @@ export default function ScoreFollowPage() {
             <input type="range" min={0.1} max={4} step={0.05} value={speed} aria-label={tx("speed")} aria-valuetext={`${speed.toFixed(2)}×`} onChange={(e) => setSpeed(Number(e.target.value))} />
            <b>{speed.toFixed(2)}×</b>
          </label>
-          <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} aria-pressed={correctMode} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }}>
-            {correctMode ? tx("correcting") : tx("correct")}
-          </button>
+           <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} aria-pressed={correctMode} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }}>
+             {correctMode ? tx("correcting") : tx("correct")}
+           </button>
+           <button className={styles.practiceBtn} onClick={() => { setReportOpen(true); setReportMsg(""); }} title={tx("reportTitle")}>{tx("reportIssue")}</button>
            <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} aria-pressed={cleanView} onClick={toggleCleanView}>{tx("cleanView")}</button>
            <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} aria-expanded={advOpen} aria-controls="sf-control-panel" onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>
            <button className={`${styles.practiceBtn} ${performanceOpen ? styles.practiceBtnActive : ""}`} aria-expanded={performanceOpen} onClick={() => { setPerformanceOpen((v) => !v); setAdvOpen(false); }}>{lang === "zh" ? "演奏分析" : "Analyze"}</button>
