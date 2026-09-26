@@ -17,8 +17,9 @@ import {
   setSkipn,
   setSysprf,
   setHomrGate,
-  deskewCanvasInPlace,
-  lastMaskStats,
+  estimateSkewAngle,
+  rotateCanvasInPlace,
+  getPageCacheStats,
   applyAnalysisProfile,
   buildTimingPayload,
   validateTimingPayload,
@@ -140,17 +141,34 @@ function bufToB64(buf: ArrayBuffer): string {
 }
 
 /**
- * 无缝拼接: 裁掉渲染页上下纸张白边(内容包络 + 3px 保护边), 返回裁掉的顶部高度。
- * 空白页/读数失败返回 0(不裁)。调用方直接分析裁后 canvas 即可, 坐标系自洽。
+ * 无缝拼接: 裁掉渲染页上下纸张白边(内容包络 + 3px 保护边), 返回原图裁区。
+ * 空白页/读数失败返回整页裁区。HD 显示按同一比例裁切，保持分析坐标严格一致。
  */
-function cropPageMargins(cv: HTMLCanvasElement): number {
+interface PageCrop { top: number; bottom: number; sourceHeight: number }
+
+function cropCanvasRows(cv: HTMLCanvasElement, top: number, bottom: number): void {
+  if (cv.height <= 0) return;
+  top = Math.max(0, Math.min(cv.height - 1, top));
+  bottom = Math.max(top, Math.min(cv.height - 1, bottom));
+  const h = Math.max(1, bottom - top + 1);
+  if (top === 0 && bottom === cv.height - 1) return;
+  const tmp = document.createElement("canvas");
+  tmp.width = cv.width;
+  tmp.height = h;
+  tmp.getContext("2d")!.drawImage(cv, 0, top, cv.width, h, 0, 0, cv.width, h);
+  cv.height = h;
+  cv.getContext("2d", { willReadFrequently: true })!.drawImage(tmp, 0, 0);
+}
+
+function cropPageMargins(cv: HTMLCanvasElement): PageCrop {
   const W = cv.width, H = cv.height;
-  if (!W || !H) return 0;
+  const full = { top: 0, bottom: Math.max(0, H - 1), sourceHeight: H };
+  if (!W || !H) return full;
   let ctx: CanvasRenderingContext2D | null = null;
-  try { ctx = cv.getContext("2d", { willReadFrequently: true }); } catch { return 0; }
-  if (!ctx) return 0;
+  try { ctx = cv.getContext("2d", { willReadFrequently: true }); } catch { return full; }
+  if (!ctx) return full;
   let img: ImageData;
-  try { img = ctx.getImageData(0, 0, W, H); } catch { return 0; }
+  try { img = ctx.getImageData(0, 0, W, H); } catch { return full; }
   const d = img.data;
   const minDark = Math.max(3, Math.floor(W * 0.002));
   const rowHas = (y: number): boolean => {
@@ -164,20 +182,67 @@ function cropPageMargins(cv: HTMLCanvasElement): number {
   };
   let top = 0;
   while (top < H && !rowHas(top)) top++;
-  if (top >= H) return 0; // 全白页
+  if (top >= H) return full; // 全白页
   let bot = H - 1;
   while (bot > top && !rowHas(bot)) bot--;
   const PAD = 3;
   top = Math.max(0, top - PAD);
   bot = Math.min(H - 1, bot + PAD);
-  if (top === 0 && bot === H - 1) return 0;
-  const tmp = document.createElement("canvas");
-  tmp.width = W;
-  tmp.height = bot - top + 1;
-  tmp.getContext("2d")!.drawImage(cv, 0, top, W, tmp.height, 0, 0, W, tmp.height);
-  cv.height = tmp.height; // 重置 canvas(宽度不变)
-  cv.getContext("2d")!.drawImage(tmp, 0, 0);
-  return top;
+  cropCanvasRows(cv, top, bot);
+  return { top, bottom: bot, sourceHeight: H };
+}
+
+function applyPageCrop(cv: HTMLCanvasElement, crop: PageCrop): void {
+  if (!crop.sourceHeight || cv.height <= 0 || (crop.top === 0 && crop.bottom === crop.sourceHeight - 1)) return;
+  const scale = cv.height / crop.sourceHeight;
+  const top = Math.max(0, Math.round(crop.top * scale));
+  const bottom = Math.min(cv.height - 1, Math.round((crop.bottom + 1) * scale) - 1);
+  cropCanvasRows(cv, top, Math.max(top, bottom));
+}
+
+function copyCanvas(src: HTMLCanvasElement, dst: HTMLCanvasElement): HTMLCanvasElement {
+  dst.width = src.width;
+  dst.height = src.height;
+  dst.getContext("2d")!.drawImage(src, 0, 0);
+  return dst;
+}
+
+function releaseCanvas(cv: HTMLCanvasElement): void {
+  cv.width = 0;
+  cv.height = 0;
+}
+
+async function pdfPageUsesLargeRaster(proxy: any): Promise<boolean> {
+  try {
+    const [ops, pdfjs] = await Promise.all([proxy.getOperatorList(), import("pdfjs-dist")]);
+    const imageOps = new Set([
+      pdfjs.OPS.paintImageXObject,
+      pdfjs.OPS.paintInlineImageXObject,
+      pdfjs.OPS.paintImageMaskXObject,
+      pdfjs.OPS.paintSolidColorImageMask,
+    ]);
+    return ops.fnArray.some((fn: number, i: number) => {
+      if (!imageOps.has(fn)) return false;
+      const nums = (ops.argsArray[i] as unknown[]).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+      const [w, h] = nums.slice(-2);
+      return w >= 800 && h >= 800 && w * h >= 1_000_000;
+    });
+  } catch {
+    return false;
+  }
+}
+
+interface AnalysisRasterEntry {
+  canvas: HTMLCanvasElement;
+  angle: number;
+  crop: PageCrop;
+}
+
+interface RenderCacheStats {
+  analysisRasterHits: number;
+  analysisRasterMisses: number;
+  displayHits: number;
+  displayMisses: number;
 }
 
 /**
@@ -186,6 +251,10 @@ function cropPageMargins(cv: HTMLCanvasElement): number {
  */
 const PAGE_ADV_KEYS = ["drmpl", "drmpl2", "seln", "eerst", "sysprf", "onestf",
   "zwgrens", "voorna", "mtdrmpl", "dx", "fixwd"] as const;
+const RENDER_ADV_KEYS = new Set([
+  "drmpl", "drmpl2", "seln", "eerst", "sysprf", "onestf", "zwgrens", "voorna",
+  "mtdrmpl", "dx", "skipn", "pagewd", "hd", "deskew", "notemask", "widrescue", "homrgate",
+]);
 
 /**
  * 整谱级 skipn 切除页规则(逐页切会吃掉每一页, 多页谱/照片谱全毁):
@@ -409,6 +478,12 @@ export default function ScoreFollowPage() {
   const stackRef = useRef<HTMLDivElement>(null);
   const pagesHostRef = useRef<HTMLDivElement>(null);
   const pageOffsetsRef = useRef<{ page: number; y: number; h: number; w: number }[]>([]);
+  const scoreRevisionRef = useRef(0);
+  const analysisRasterCacheRef = useRef(new Map<number, AnalysisRasterEntry>());
+  const displayRasterCacheRef = useRef(new Map<number, HTMLCanvasElement>());
+  const analysisRasterModeRef = useRef("");
+  const displayRasterModeRef = useRef("");
+  const renderCacheStatsRef = useRef<RenderCacheStats>({ analysisRasterHits: 0, analysisRasterMisses: 0, displayHits: 0, displayMisses: 0 });
   const mediaRef = useRef<HTMLAudioElement | HTMLVideoElement | null>(null);
   const pdfDocRef = useRef<any>(null);
   const pdfNameRef = useRef("");
@@ -604,6 +679,7 @@ export default function ScoreFollowPage() {
   const renderingRef = useRef(false);
   // 全量渲染代次: slider 连续触发时旧一轮中途放弃, 避免双份 canvas/错位 offsets
   const renderGenRef = useRef(0);
+  const renderQueueRef = useRef<Promise<void>>(Promise.resolve());
   const advRenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 全页 metric 原子构建(保存/桥接共用): [pageW, p1, p2, ...], 缺失页 null,
@@ -637,100 +713,174 @@ export default function ScoreFollowPage() {
     } catch { /* metro 未加载时忽略 */ }
   }, [buildMetricArr]);
 
-  // 渲染+分析单页(后台页用离屏 canvas, 不碰可见状态)
+  // 渲染+分析单页。分析栅格固定为 pagewd，与 HD 完全解耦；PDF/图片预处理结果和
+  // 当前显示模式的 canvas 分层缓存。后台导出只取分析层，不再生成整份 HD 底图。
   const renderAndAnalyze = useCallback(
-    async (pdf: any, n: number, canvas: HTMLCanvasElement, docId?: string, skipOverride?: number) => {
+    async (pdf: any, n: number, canvas: HTMLCanvasElement, docId?: string, skipOverride?: number, renderDisplay = true, expectedGen?: number) => {
       renderingRef.current = true;
-      // 整谱级 skipn: 本次调用前后恢复全局值, 缓存键自带 skip(见 analyzePage)不串味
-      const savedSkip = opt.skipn;
       const skipUsed = skipOverride ?? scoreSkipFor(n, Number(pdf?.numPages) || 1, Math.round(Number(opt.skipn) || 0));
-      opt.skipn = skipUsed;
-      // 按页参数: 该页调过的键覆盖全局, 分析完恢复(缓存键自带全部参数不串味)
       const pageAdv = advsRef.current[n];
-      const savedAdv: Record<string, number> = {};
-      if (pageAdv) {
-        for (const k of PAGE_ADV_KEYS) {
-          savedAdv[k] = (opt as unknown as Record<string, number>)[k];
-          if (pageAdv[k] === undefined) continue;
-          // sysprf 参与分析的是模块内布尔量(见 setSysprf), 必须走 setter 联动
-          if (k === "sysprf") setSysprf(pageAdv[k]);
-          else (opt as unknown as Record<string, number>)[k] = pageAdv[k];
-        }
-      }
       try {
         let proxy: any = null;
         const imgDoc = (pdf as any)?.__sfImage as { images: { bmp: ImageBitmap; w: number; h: number }[] } | undefined;
-        const anaW = opt.pagewd || 1000; // 分析宽度: 识别像素与原来一致, 显示另走高清
-        let anaCanvas: HTMLCanvasElement;
-        if (imgDoc) {
-          // 图片谱: 白底重绘(照片已在解码时归一化/纠偏; 扫描图在这里统一 deskew),
-          // 显示用原分辨率(照片本身够清), 分析沿用原分辨率(行为不变)
-          const im = imgDoc.images[n - 1];
-          if (!im) { autoRef.current[n] = null as any; return { a: null, proxy }; }
-          const scale = anaW / Math.max(1, im.w);
-           canvas.width = anaW;
-           canvas.height = Math.max(1, Math.round(im.h * scale));
-          const ctx = canvas.getContext("2d")!;
-          ctx.fillStyle = "#fff";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(im.bmp, 0, 0, canvas.width, canvas.height);
-          if ((opt.deskew ?? 1) !== 0) {
-            const ang = deskewCanvasInPlace(canvas);
-            if (ang) deskewNotesRef.current.push(`p${n} ${ang > 0 ? "+" : ""}${ang.toFixed(1)}°`);
-          }
-          // 无缝拼接: 裁掉纸张上下白边再分析/堆叠, 跨页接缝≈正常行距。
-          // 分析坐标跟着 canvas 走(缓存键自带尺寸), 全局合并无需改动。
-          cropPageMargins(canvas);
-          anaCanvas = canvas;
-        } else {
-          proxy = await pdf.getPage(n);
-          const v0 = proxy.getViewport({ scale: 1 });
-          // HD: 显示画布固定 2 倍超采样(确定性: 同一谱面在任何设备上分析像素一致),
-          // 解决 1000px 底图在高分屏/宽屏上放大的模糊; 分析仍用 pagewd, 识别不变.
-          // 超大页按 14MP 等比降档(同样确定性).
-          let R = 1;
-          if ((opt.hd ?? 1) !== 0) {
-            R = 2;
-            const area = (anaW * R) * ((anaW * R * v0.height) / Math.max(1, v0.width));
-            if (area > 14e6) R *= Math.sqrt(14e6 / area);
-          }
-          const vp = proxy.getViewport({ scale: (anaW / v0.width) * R });
-          canvas.width = Math.floor(vp.width);
-          canvas.height = Math.floor(vp.height);
-          await proxy.render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
-          if ((opt.deskew ?? 1) !== 0) {
-            const ang = deskewCanvasInPlace(canvas);
-            if (ang) deskewNotesRef.current.push(`p${n} ${ang > 0 ? "+" : ""}${ang.toFixed(1)}°`);
-          }
-          // 无缝拼接: 裁掉纸张上下白边(高清显示同样无缝), 分析用等比缩小副本
-          cropPageMargins(canvas);
-          const ac = document.createElement("canvas");
-          ac.width = anaW;
-          ac.height = Math.max(1, Math.round((anaW * canvas.height) / Math.max(1, canvas.width)));
-          ac.getContext("2d")!.drawImage(canvas, 0, 0, ac.width, ac.height);
-          anaCanvas = ac;
+        const anaW = Math.max(1, Math.round(opt.pagewd || 1000));
+        const deskewEnabled = (opt.deskew ?? 1) !== 0;
+        const hdEnabled = (opt.hd ?? 1) !== 0;
+        const rasterMode = `${scoreRevisionRef.current}:${imgDoc ? "image" : "pdf"}:${anaW}:deskew${deskewEnabled ? 1 : 0}`;
+        if (analysisRasterModeRef.current !== rasterMode) {
+          for (const entry of analysisRasterCacheRef.current.values()) releaseCanvas(entry.canvas);
+          analysisRasterCacheRef.current.clear();
+          analysisRasterModeRef.current = rasterMode;
+          pagePngRef.current = {};
         }
-        const a = analyzePage(anaCanvas, n, pageAdv?.seln ?? opt.seln, docId ?? pdfNameRef.current);
-        if ((opt.notemask ?? 0) !== 0) maskHeadsRef.current += lastMaskStats.heads;
+        const displayMode = `${rasterMode}:hd${hdEnabled ? 1 : 0}`;
+        if (renderDisplay && displayRasterModeRef.current !== displayMode) {
+          for (const cached of displayRasterCacheRef.current.values()) releaseCanvas(cached);
+          displayRasterCacheRef.current.clear();
+          displayRasterModeRef.current = displayMode;
+        }
+
+        let raster = analysisRasterCacheRef.current.get(n);
+        let preparedHdCanvas: HTMLCanvasElement | null = null;
+        if (raster) {
+          renderCacheStatsRef.current.analysisRasterHits++;
+        } else {
+          renderCacheStatsRef.current.analysisRasterMisses++;
+          let ac = document.createElement("canvas");
+          if (imgDoc) {
+            const im = imgDoc.images[n - 1];
+            if (!im) { autoRef.current[n] = null as any; return { a: null, proxy, canvas }; }
+            ac.width = anaW;
+            ac.height = Math.max(1, Math.round((anaW * im.h) / Math.max(1, im.w)));
+            const ctx = ac.getContext("2d", { willReadFrequently: true })!;
+            ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, ac.width, ac.height);
+            ctx.drawImage(im.bmp, 0, 0, ac.width, ac.height);
+          } else {
+            proxy = await pdf.getPage(n);
+            const v0 = proxy.getViewport({ scale: 1 });
+            const rasterPage = await pdfPageUsesLargeRaster(proxy);
+            let ratio = rasterPage ? 1 : 2;
+            const area = (anaW * ratio) * ((anaW * ratio * v0.height) / Math.max(1, v0.width));
+            if (area > 14e6) ratio *= Math.sqrt(14e6 / area);
+            const vp = proxy.getViewport({ scale: (anaW * ratio) / Math.max(1, v0.width) });
+            const source = document.createElement("canvas");
+            source.width = Math.max(1, Math.floor(vp.width));
+            source.height = Math.max(1, Math.floor(vp.height));
+            await proxy.render({ canvasContext: source.getContext("2d", { willReadFrequently: true })!, viewport: vp }).promise;
+            let angle = 0;
+            if (deskewEnabled) {
+              angle = estimateSkewAngle(source);
+              if (Math.abs(angle) <= 5 && angle !== 0) rotateCanvasInPlace(source, angle);
+              else angle = 0;
+            }
+            const crop = cropPageMargins(source);
+            if (rasterPage) {
+              ac = source;
+            } else {
+              ac.width = anaW;
+              ac.height = Math.max(1, Math.round((anaW * source.height) / Math.max(1, source.width)));
+              ac.getContext("2d", { willReadFrequently: true })!.drawImage(source, 0, 0, ac.width, ac.height);
+            }
+            raster = { canvas: ac, angle, crop };
+            if (!rasterPage) preparedHdCanvas = source;
+          }
+          if (imgDoc) {
+            let angle = 0;
+            if (deskewEnabled) {
+              angle = estimateSkewAngle(ac);
+              if (Math.abs(angle) <= 5 && angle !== 0) rotateCanvasInPlace(ac, angle);
+              else angle = 0;
+            }
+            const crop = cropPageMargins(ac);
+            raster = { canvas: ac, angle, crop };
+          }
+          if (!raster) throw new Error(`page ${n} raster unavailable`);
+          // A newer render can supersede this one while PDF.js is awaiting. Never let the
+          // completed old raster repopulate a cache that has already changed modes.
+          if (analysisRasterModeRef.current === rasterMode) analysisRasterCacheRef.current.set(n, raster);
+        }
+        const anaCanvas = raster.canvas;
+        if (raster.angle) deskewNotesRef.current.push(`p${n} ${raster.angle > 0 ? "+" : ""}${raster.angle.toFixed(1)}°`);
+
+        let displayCanvas = canvas;
+        if (renderDisplay) {
+          const cached = displayRasterCacheRef.current.get(n);
+          if (cached) {
+            renderCacheStatsRef.current.displayHits++;
+            if (canvas !== cached) releaseCanvas(canvas);
+            displayCanvas = cached;
+          } else {
+            renderCacheStatsRef.current.displayMisses++;
+            if (imgDoc || !hdEnabled) {
+              copyCanvas(anaCanvas, displayCanvas);
+            } else if (preparedHdCanvas) {
+              releaseCanvas(displayCanvas);
+              displayCanvas = preparedHdCanvas;
+              preparedHdCanvas = null;
+            } else {
+              if (!proxy) proxy = await pdf.getPage(n);
+              const v0 = proxy.getViewport({ scale: 1 });
+              let ratio = 2;
+              const area = (anaW * ratio) * ((anaW * ratio * v0.height) / Math.max(1, v0.width));
+              if (area > 14e6) ratio *= Math.sqrt(14e6 / area);
+              const vp = proxy.getViewport({ scale: (anaW * ratio) / Math.max(1, v0.width) });
+              displayCanvas.width = Math.max(1, Math.floor(vp.width));
+              displayCanvas.height = Math.max(1, Math.floor(vp.height));
+              await proxy.render({ canvasContext: displayCanvas.getContext("2d")!, viewport: vp }).promise;
+              if (raster.angle) rotateCanvasInPlace(displayCanvas, raster.angle);
+              applyPageCrop(displayCanvas, raster.crop);
+            }
+            if (displayRasterModeRef.current === displayMode) displayRasterCacheRef.current.set(n, displayCanvas);
+          }
+        }
+        if (preparedHdCanvas) releaseCanvas(preparedHdCanvas);
+
+        // A replacement request may arrive while PDF.js is rendering. Its pixels can still
+        // be reused, but it must not write analysis/metric state for the superseded score.
+        if (expectedGen !== undefined && expectedGen !== renderGenRef.current) {
+          return { a: null, proxy, canvas: displayCanvas };
+        }
+
+        // The legacy detector reads shared options. Apply per-page values only around its
+        // synchronous call, never across PDF.js awaits where UI changes can interleave.
+        const savedSkip = opt.skipn;
+        const savedAdv: Record<string, number> = {};
+        opt.skipn = skipUsed;
+        if (pageAdv) {
+          for (const k of PAGE_ADV_KEYS) {
+            if (pageAdv[k] === undefined) continue;
+            savedAdv[k] = (opt as unknown as Record<string, number>)[k];
+            if (k === "sysprf") setSysprf(pageAdv[k]);
+            else (opt as unknown as Record<string, number>)[k] = pageAdv[k];
+          }
+        }
+        let a: PageAnalysis;
+        try {
+          const analysisDocId = `${scoreRevisionRef.current}:${docId ?? pdfNameRef.current}`;
+          a = analyzePage(anaCanvas, n, pageAdv?.seln ?? opt.seln, analysisDocId);
+        } finally {
+          opt.skipn = savedSkip;
+          if (pageAdv) {
+            for (const k of PAGE_ADV_KEYS) {
+              if (pageAdv[k] === undefined) continue;
+              if (k === "sysprf") setSysprf(savedAdv[k]);
+              else (opt as unknown as Record<string, number>)[k] = savedAdv[k];
+            }
+          }
+        }
+        if ((opt.notemask ?? 0) !== 0) maskHeadsRef.current += a.maskHeads;
         if (a.systems.length === 0) {
           autoRef.current[n] = null as any;
-          return { a: null, proxy };
+          return { a: null, proxy, canvas: displayCanvas };
         }
         autoRef.current[n] = a;
         // 上报用底图: 分析画布原样 PNG(去偏+裁边后的确定性像素, 调试与浏览器同帧)
-        try { pagePngRef.current[n] = anaCanvas.toDataURL("image/png"); } catch { /* ignore */ }
+        if (!pagePngRef.current[n]) try { pagePngRef.current[n] = anaCanvas.toDataURL("image/png"); } catch { /* ignore */ }
         // skipn 对齐用: 本页实际切除数 + 切除前系统数(非空页切除数恒等于 |skip|)
         pageSkipRef.current[n] = skipUsed;
         pageFullRef.current[n] = a.systems.length + Math.abs(skipUsed);
-        return { a, proxy };
+        return { a, proxy, canvas: displayCanvas };
       } finally {
-        opt.skipn = savedSkip;
-        if (pageAdv) {
-          for (const k of PAGE_ADV_KEYS) {
-            if (k === "sysprf") setSysprf(savedAdv[k]);
-            else (opt as unknown as Record<string, number>)[k] = savedAdv[k];
-          }
-        }
         renderingRef.current = false;
       }
     },
@@ -783,8 +933,7 @@ export default function ScoreFollowPage() {
 
   // 原版 readPdfdoc: 所有页竖拼进 #notation, knip 用 y 偏移合成全局小节
   const renderAllPages = useCallback(
-    async (pdf: any, docId?: string) => {
-      const gen = ++renderGenRef.current;
+    async (pdf: any, docId: string | undefined, gen: number) => {
       const host = pagesHostRef.current;
       if (!pdf || !host) return;
       // 调参重渲染保持阅读位置: 记下滚动条, 画完恢复(否则每次调参都跳回开头)
@@ -792,6 +941,8 @@ export default function ScoreFollowPage() {
       const savedTop = scroller ? scroller.scrollTop : 0;
       deskewNotesRef.current = [];
       maskHeadsRef.current = 0;
+      renderCacheStatsRef.current = { analysisRasterHits: 0, analysisRasterMisses: 0, displayHits: 0, displayMisses: 0 };
+      const analysisCacheBefore = getPageCacheStats();
       host.innerHTML = "";
       const offsets: { page: number; y: number; h: number; w: number }[] = [];
       let y = 0;
@@ -800,29 +951,30 @@ export default function ScoreFollowPage() {
       for (let n = 1; n <= nPages; n++) {
         if (gen !== renderGenRef.current) return; // 被更新一轮取代
         setStatus(`rendering page: ${n}/${nPages}`);
-        const canvas = document.createElement("canvas");
-        canvas.style.display = "block";
-        canvas.style.width = "100%";
-        canvas.dataset.page = String(n);
+        let canvas = document.createElement("canvas");
         let pageAna: { pageW: number; pageH: number } | null = null;
         try {
-          const rr = (await renderAndAnalyze(pdf, n, canvas, docId)) as { a: { pageW: number; pageH: number } | null };
+          const rr = (await renderAndAnalyze(pdf, n, canvas, docId, undefined, true, gen)) as { a: { pageW: number; pageH: number } | null; canvas: HTMLCanvasElement };
           pageAna = rr ? rr.a : null;
+          if (rr?.canvas) canvas = rr.canvas;
         } catch (err) {
-          autoRef.current[n] = null as any;
+          if (gen === renderGenRef.current) autoRef.current[n] = null as any;
           setStatus(`page ${n} analysis skipped: ${err instanceof Error ? err.message : String(err)}`);
         }
         if (gen !== renderGenRef.current) return; // 丢弃过期结果
-         // offsets 必须记分析坐标(HD 显示画布 backing 是 2 倍, 直接记 canvas.height
-         // 会把 pageH/系统 y 全部放大 R 倍)。显示画布也必须按相同的页高排版:
-         // 否则每页 backing 像素比例的取整误差累积后, 四个覆盖层都会错位。
-         // 有分析结果用 a.pageH(精确); 空白页按显示画布纵横比折算。
-         const anaW = opt.pagewd || 1000;
-         const ah = pageAna && pageAna.pageH > 0 ? pageAna.pageH
-           : Math.max(1, Math.round((anaW * canvas.height) / Math.max(1, canvas.width)));
-         canvas.style.aspectRatio = `${anaW} / ${ah}`;
-         host.appendChild(canvas);
-         offsets.push({ page: n, y, h: ah, w: anaW });
+        canvas.style.display = "block";
+        canvas.style.width = "100%";
+        canvas.dataset.page = String(n);
+        // offsets 必须记分析坐标(HD 显示画布 backing 是 2 倍, 直接记 canvas.height
+        // 会把 pageH/系统 y 全部放大 R 倍)。显示画布也必须按相同的页高排版:
+        // 否则每页 backing 像素比例的取整误差累积后, 四个覆盖层都会错位。
+        // 有分析结果用 a.pageH(精确); 空白页按显示画布纵横比折算。
+        const anaW = opt.pagewd || 1000;
+        const ah = pageAna && pageAna.pageH > 0 ? pageAna.pageH
+          : Math.max(1, Math.round((anaW * canvas.height) / Math.max(1, canvas.width)));
+        canvas.style.aspectRatio = `${anaW} / ${ah}`;
+        host.appendChild(canvas);
+        offsets.push({ page: n, y, h: ah, w: anaW });
         y += ah;
       }
       if (gen !== renderGenRef.current) return;
@@ -839,10 +991,10 @@ export default function ScoreFollowPage() {
           if (target !== ruled) {
             const off = document.createElement("canvas");
             // ruled 页切完是空的: 用 skip=0 对照确认它是原本空白(扫描白页)才转移目标
-            await renderAndAnalyze(pdf, ruled, off, docId, 0);
+            await renderAndAnalyze(pdf, ruled, off, docId, 0, false, gen);
             if (gen !== renderGenRef.current) return; // 被更新一轮取代
             if ((autoRef.current[ruled]?.systems?.length ?? 0) === 0) {
-              await renderAndAnalyze(pdf, target, off, docId, gSkip);
+              await renderAndAnalyze(pdf, target, off, docId, gSkip, false, gen);
               if (gen !== renderGenRef.current) return;
             } else {
               // 被本次切空的内容页(如末页整个是 demo): 保持切除, 该页合并时跳过
@@ -852,6 +1004,12 @@ export default function ScoreFollowPage() {
         }
       }
       pageOffsetsRef.current = offsets;
+      for (const [page, entry] of analysisRasterCacheRef.current) if (page > nPages) {
+        releaseCanvas(entry.canvas); analysisRasterCacheRef.current.delete(page);
+      }
+      for (const [page, cached] of displayRasterCacheRef.current) if (page > nPages) {
+        releaseCanvas(cached); displayRasterCacheRef.current.delete(page);
+      }
       const merged = mergeFromPages();
       if (!merged) {
         // 整谱无系统(切多了或空白谱): 清掉旧分析, 不让旧小节线残留在新画布上
@@ -892,10 +1050,15 @@ export default function ScoreFollowPage() {
       const meas = merged.bars.reduce((s, b) => s + Math.max(0, b.length - 1), 0);
       const dk = deskewNotesRef.current;
       const mh = maskHeadsRef.current;
+      const rc = renderCacheStatsRef.current;
+      const analysisCacheAfter = getPageCacheStats();
+      const analysisHits = analysisCacheAfter.hits - analysisCacheBefore.hits;
+      const analysisMisses = analysisCacheAfter.misses - analysisCacheBefore.misses;
       setStatus(`score: ${nPages} pages, ${merged.systems.length} systems, ${meas} measures, spatium ${merged.spatium.toFixed(1)}px, algo v${merged.algoVersion}` +
         (dropped ? ` · timing截断 ${kept}保留/${dropped}越界` : "") +
         (dk.length ? ` · deskew ${dk.join(" ")}` : "") +
-        (mh > 0 ? ` · notemask ${mh}heads` : ""));
+        (mh > 0 ? ` · notemask ${mh}heads` : "") +
+        ` · cache raster ${rc.analysisRasterHits}/${rc.analysisRasterMisses} display ${rc.displayHits}/${rc.displayMisses} analysis ${analysisHits}/${analysisMisses}`);
       emitMetricRendered();
     },
     [describeAnalysis, emitMetricRendered, mergeFromPages, renderAndAnalyze],
@@ -903,7 +1066,14 @@ export default function ScoreFollowPage() {
 
   const renderPage = useCallback(
     async (pdf: any, _n?: number, docId?: string) => {
-      await renderAllPages(pdf, docId);
+      // Invalidate the active generation immediately, then wait for its current PDF page
+      // to finish before touching the legacy module's shared option state.
+      const gen = ++renderGenRef.current;
+      const job = renderQueueRef.current
+        .catch(() => undefined)
+        .then(() => renderAllPages(pdf, docId, gen));
+      renderQueueRef.current = job;
+      await job;
     },
     [renderAllPages],
   );
@@ -911,6 +1081,8 @@ export default function ScoreFollowPage() {
   // advance 调参防抖: slider 拖动只在停手 350ms 后重渲染一次
   const scheduleAdvRender = useCallback(
     (pdf: any) => {
+      // Stop the active generation now rather than after the debounce delay.
+      renderGenRef.current++;
       if (advRenderTimer.current) clearTimeout(advRenderTimer.current);
       advRenderTimer.current = setTimeout(() => {
         advRenderTimer.current = null;
@@ -929,6 +1101,7 @@ export default function ScoreFollowPage() {
         getMetricArr: () => JSON.parse(JSON.stringify(buildMetricArr())),
         getMeasureCount: () => wijzerRef.current.measures.length,
         isRendering: () => renderingRef.current,
+        getRenderCacheStats: () => ({ ...renderCacheStatsRef.current, analysis: getPageCacheStats() }),
       },
     );
   }, [buildMetricArr]);
@@ -986,7 +1159,19 @@ export default function ScoreFollowPage() {
   // 新谱面: 必须清掉上一份谱的全部状态(缓存/人工校正/timing/undo),
   // 否则同页同尺寸会命中旧缓存、旧小节线盖到新谱上。
   const clearScoreState = useCallback(() => {
+    renderGenRef.current++;
+    if (advRenderTimer.current) {
+      clearTimeout(advRenderTimer.current);
+      advRenderTimer.current = null;
+    }
     clearPageCache();
+    for (const entry of analysisRasterCacheRef.current.values()) releaseCanvas(entry.canvas);
+    for (const canvas of displayRasterCacheRef.current.values()) releaseCanvas(canvas);
+    analysisRasterCacheRef.current.clear();
+    displayRasterCacheRef.current.clear();
+    analysisRasterModeRef.current = "";
+    displayRasterModeRef.current = "";
+    scoreRevisionRef.current++;
     setAnalysis(null);
     setCursor(null);
     setTouchPos(null);
@@ -1202,10 +1387,14 @@ export default function ScoreFollowPage() {
         row[k] = v;
         advsRef.current[pg] = row;
       }
-      clearPageCache();
       forceAdv((n) => n + 1);
-      setStatus(`advanced: ${k}=${v}` + (perPage && pg >= 1 ? ` (p${pg} 已存本页)` : "") + ` - reanalyzed`);
-      if (pdfDocRef.current) scheduleAdvRender(pdfDocRef.current);
+      const rerender = RENDER_ADV_KEYS.has(k);
+      if (k === "lncsr") {
+        const m = wijzerRef.current.measures[curMixRef.current];
+        if (m) setCursor(v === 1 ? { x: m.x, y: m.y, w: Math.max(2, m.w * 0.06), h: m.h } : { x: m.x, y: m.y, w: m.w, h: m.h });
+      }
+      setStatus(`advanced: ${k}=${v}` + (perPage && pg >= 1 ? ` (p${pg} 已存本页)` : "") + (rerender ? " - reanalyzed" : " - updated"));
+      if (rerender && pdfDocRef.current) scheduleAdvRender(pdfDocRef.current);
     },
     [scheduleAdvRender],
   );
@@ -1222,7 +1411,7 @@ export default function ScoreFollowPage() {
   );
 
   // V: 干净视图开关 = 四覆盖层(Systems/Barlines/Cursor/Low confidence)的总闸.
-  // 开=四开关全灭(含 line cursor, 走 applyAdv 会触发一次重分析);
+  // 开=四开关全灭(含 line cursor, 仅更新光标样式, 不重分析);
   // 关=四开关全开, line cursor 恢复进干净前的值. 简单可预测, 不再恢复旧勾选.
   const toggleCleanView = useCallback(() => {
     if (!cleanView) {
@@ -1250,7 +1439,6 @@ export default function ScoreFollowPage() {
       else (opt as unknown as Record<string, number>)[k] = v;
     }
     advsRef.current = {};
-    clearPageCache();
     forceAdv((n) => n + 1);
     setStatus("advanced: 已恢复默认值(含各页独立参数) - reanalyzed");
     if (pdfDocRef.current) scheduleAdvRender(pdfDocRef.current);
@@ -1261,7 +1449,6 @@ export default function ScoreFollowPage() {
     const pg = pageNumRef.current;
     if (advsRef.current[pg]) {
       delete advsRef.current[pg];
-      clearPageCache();
       forceAdv((n) => n + 1);
       setStatus(`p${pg} 已回退跟随全局参数 - reanalyzed`);
       if (pdfDocRef.current) scheduleAdvRender(pdfDocRef.current);
@@ -2219,13 +2406,14 @@ export default function ScoreFollowPage() {
   const buildPreloadText = useCallback(async (useManual = true, includePdf = true): Promise<string | null> => {
     const pdf = pdfDocRef.current;
     if (!pdf || !numPages) { setStatus("先载入谱面再保存 preload"); return null; }
+    await renderQueueRef.current.catch(() => undefined);
     const w = wijzerRef.current;
     // 全页分析(缺失页后台补算, 人工校正优先)
     const off = document.createElement("canvas");
     for (let n = 1; n <= numPages; n++) {
       if (!autoRef.current[n]) {
         setStatus(`saving preload: 分析 p${n}/${numPages} ...`);
-        await renderAndAnalyze(pdf, n, off);
+        await renderAndAnalyze(pdf, n, off, undefined, undefined, false);
       }
     }
     const metric = buildMetricArr(useManual) as unknown[];
@@ -2376,6 +2564,12 @@ export default function ScoreFollowPage() {
   const loadPreloadText = useCallback(async (txt: string, name: string) => {
     setPerformanceOpen(false);
     if (!txt.includes("//# This page")) { setStatus("not a preload file(缺 //# This page 标记)"); return; }
+    renderGenRef.current++;
+    if (advRenderTimer.current) {
+      clearTimeout(advRenderTimer.current);
+      advRenderTimer.current = null;
+    }
+    await renderQueueRef.current.catch(() => undefined);
     const matchBalanced = (open: string, close: string, from: number): string | null => {
       let depth = 0; let instr = false; let start = -1;
       for (let k = from; k < txt.length; k++) {
@@ -2472,6 +2666,13 @@ export default function ScoreFollowPage() {
       }
     }
     clearPageCache();
+    for (const entry of analysisRasterCacheRef.current.values()) releaseCanvas(entry.canvas);
+    for (const cached of displayRasterCacheRef.current.values()) releaseCanvas(cached);
+    analysisRasterCacheRef.current.clear();
+    displayRasterCacheRef.current.clear();
+    analysisRasterModeRef.current = "";
+    displayRasterModeRef.current = "";
+    scoreRevisionRef.current++;
     autoRef.current = {};
     pagePngRef.current = {};
     annotsRef.current = {};
@@ -2499,7 +2700,7 @@ export default function ScoreFollowPage() {
     for (let n = 1; n <= (pdf.numPages as number); n++) {
       // 按页快照由 renderAndAnalyze 自动叠加, 无需再逐页改全局
       setStatus(`loading preload: 分析 p${n}/${pdf.numPages} ...`);
-      const { a } = await renderAndAnalyze(pdf, n, off);
+      const { a } = await renderAndAnalyze(pdf, n, off, undefined, undefined, false);
       if (!a) continue;
       const mp = metricPages[n] as { cxs?: { cs: number[] }[]; bxs?: number[][] } | undefined;
       if (!mp || !Array.isArray(mp.bxs) || !metricWd) continue;
@@ -2716,7 +2917,6 @@ export default function ScoreFollowPage() {
       wijzerRef.current.loadTimes(d.times_arr);
       if (d.loop) wijzerRef.current.setLoop(d.loop.start, d.loop.end);
       setTapCount(wijzerRef.current.times.length);
-      clearPageCache();
       forceAdv((n) => n + 1);
       if (pdfDocRef.current) void renderPage(pdfDocRef.current, pageNum);
       setStatus(`loaded ${wijzerRef.current.times.length} sync points` + (warnings.length ? ` · 注意: ${warnings.join("; ")}` : ""));

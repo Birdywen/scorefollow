@@ -8,10 +8,11 @@ import { pathToFileURL } from "node:url";
 const root = new URL("..", import.meta.url);
 const tmp = mkdtempSync(join(tmpdir(), "sf-regression-"));
 execSync(
-  `npx tsc lib/synpdf-legacy.ts lib/synpdf-wijzer.ts --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`,
+  `npx tsc lib/synpdf-legacy.ts lib/synpdf-core.ts lib/synpdf-wijzer.ts --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`,
   { cwd: new URL(root).pathname, stdio: "inherit" },
 );
 const legacy = await import(pathToFileURL(join(tmp, "synpdf-legacy.js")).href);
+const core = await import(pathToFileURL(join(tmp, "synpdf-core.js")).href);
 const wijzer = await import(pathToFileURL(join(tmp, "synpdf-wijzer.js")).href);
 
 let failures = 0;
@@ -64,6 +65,22 @@ function check(name, cond, detail = "") {
   });
   const xs = measures.map((m) => [m.x, m.w]);
   check("buildMeasures-filters-degenerate", JSON.stringify(xs) === JSON.stringify([[0, 100], [90, 210]]), JSON.stringify(xs));
+}
+
+// HD/cursor/annotation are display-only and must not split analysis cache entries.
+{
+  const before = { hd: core.opt.hd, lncsr: core.opt.lncsr, annot: core.opt.annot, cropx: core.opt.cropx, fixwd: core.opt.fixwd, zwgrens: core.opt.zwgrens };
+  const key = () => core.pageAnalysisCacheKey("doc", 1, 1000, 1400, 0, false);
+  const base = key();
+  core.opt.hd = before.hd ? 0 : 1;
+  core.opt.lncsr = before.lncsr ? 0 : 1;
+  core.opt.annot = before.annot ? 0 : 1;
+  core.opt.cropx = before.cropx + 7;
+  core.opt.fixwd = before.fixwd + 100;
+  check("analysis-cache-ignores-display-options", key() === base);
+  core.opt.zwgrens = before.zwgrens + 0.05;
+  check("analysis-cache-tracks-detector-options", key() !== base);
+  Object.assign(core.opt, before);
 }
 
 if (failures) { console.error(`${failures} regression check(s) failed`); process.exit(1); }

@@ -18,6 +18,7 @@ import {
   getSpatium,
   getAnnotFontPx,
   deskewCanvasInPlace,
+  rotateCanvasInPlace,
   estimateSkewAngle,
   ALGO_VERSION,
   lastBarDiagnostics,
@@ -43,6 +44,7 @@ export {
   getSpatium,
   getAnnotFontPx,
   deskewCanvasInPlace,
+  rotateCanvasInPlace,
   estimateSkewAngle,
   ALGO_VERSION,
   lastBarDiagnostics,
@@ -63,6 +65,7 @@ export interface PageAnalysis {
   confidence: number[];
   diagnostics: BarDiagnostic[];
   elapsedMs: number;
+  maskHeads: number;
 }
 
 /** 稳定分析预设: 快速 / 均衡 / 扫描谱(低对比度) */
@@ -81,7 +84,6 @@ export function applyAnalysisProfile(name: AnalysisProfileName): void {
   legacyOpt.mtdrmpl = p.mtdrmpl;
   legacyOpt.voorna = p.voorna;
   legacyOpt.dx = p.dx;
-  clearPageCache();
 }
 
 export const TIMING_SCHEMA = "scorefollow-timing/2" as const;
@@ -145,11 +147,36 @@ export function validateTimingPayload(p: unknown): { ok: boolean; reason: string
   return { ok: true, reason: "ok", data };
 }
 
-/** 页级缓存: 渲染尺寸变化或跨页时失效 */
+/** 页级分析 LRU；显示清晰度不参与键，HD/SD 必须共享同一分析结果。 */
 const pageCache = new Map<string, PageAnalysis>();
+const MAX_PAGE_CACHE = 128;
+const pageCacheStats = { hits: 0, misses: 0 };
+
+export function getPageCacheStats(): { hits: number; misses: number; size: number } {
+  return { ...pageCacheStats, size: pageCache.size };
+}
+
+export function pageAnalysisCacheKey(
+  docId: string,
+  pageNumber: number,
+  width: number,
+  height: number,
+  seln: number,
+  homrGateOn = getHomrGate() !== null,
+): string {
+  return docId + "_" + pageNumber + "_" + width + "x" + height + "_v" + ALGO_VERSION + "_" +
+    [seln, legacyOpt.skipn, legacyOpt.zwgrens, legacyOpt.drmpl,
+      legacyOpt.drmpl2, legacyOpt.mtdrmpl, legacyOpt.voorna, legacyOpt.dx,
+      legacyOpt.sysprf, legacyOpt.onestf, legacyOpt.eerst,
+      legacyOpt.pagewd, legacyOpt.deskew,
+      legacyOpt.notemask, legacyOpt.widrescue, legacyOpt.homrgate,
+      homrGateOn ? "hg1" : "hg0"].join(",");
+}
 
 export function clearPageCache(): void {
   pageCache.clear();
+  pageCacheStats.hits = 0;
+  pageCacheStats.misses = 0;
   witArr.length = 0;
 }
 
@@ -164,15 +191,15 @@ export function analyzePage(
   docId: string = "",
 ): PageAnalysis {
   const homrGateOn = getHomrGate() !== null;
-  const key = docId + "_" + pageNumber + "_" + canvas.width + "x" + canvas.height + "_v" + ALGO_VERSION + "_" +
-    [legacyOpt.seln, legacyOpt.skipn, legacyOpt.zwgrens, legacyOpt.drmpl,
-      legacyOpt.drmpl2, legacyOpt.mtdrmpl, legacyOpt.voorna, legacyOpt.dx,
-      legacyOpt.sysprf, legacyOpt.onestf, legacyOpt.eerst,
-      legacyOpt.cropx, legacyOpt.pagewd, legacyOpt.hd, legacyOpt.deskew,
-      legacyOpt.notemask, legacyOpt.widrescue, legacyOpt.homrgate,
-      homrGateOn ? "hg1" : "hg0"].join(",");
+  const key = pageAnalysisCacheKey(docId, pageNumber, canvas.width, canvas.height, seln, homrGateOn);
   const hit = pageCache.get(key);
-  if (hit) return hit;
+  if (hit) {
+    pageCacheStats.hits++;
+    pageCache.delete(key);
+    pageCache.set(key, hit);
+    return hit;
+  }
+  pageCacheStats.misses++;
 
   legacyOpt.seln = seln;
   setSkipn(parseInt(String(legacyOpt.skipn), 10) || 0);
@@ -198,7 +225,9 @@ export function analyzePage(
     confidence: conf.slice(0, r.cxs.length),
     diagnostics: lastBarDiagnostics.slice(),
     elapsedMs: Math.round((t1 - t0) * 10) / 10,
+    maskHeads: lastMaskStats.heads,
   };
   pageCache.set(key, out);
+  while (pageCache.size > MAX_PAGE_CACHE) pageCache.delete(pageCache.keys().next().value!);
   return out;
 }

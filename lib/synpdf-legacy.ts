@@ -41,7 +41,7 @@ export const legacyOpt: SynpdfOpt = {
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 23;
+export const ALGO_VERSION = 24;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
@@ -221,23 +221,28 @@ export function estimateSkewAngle(src: HTMLCanvasElement): number {
 export function deskewCanvasInPlace(cv: HTMLCanvasElement, maxDeg = 5): number {
   const ang = estimateSkewAngle(cv);
   if (!ang || Math.abs(ang) > maxDeg) return 0;
+  rotateCanvasInPlace(cv, ang);
+  return ang;
+}
+
+/** Apply a known content skew angle using the same geometry as deskewCanvasInPlace. */
+export function rotateCanvasInPlace(cv: HTMLCanvasElement, ang: number): void {
   // ang 是内容倾角(顺时针为正), 校正反向转
   const rad = (-ang * Math.PI) / 180;
   const w = cv.width, h = cv.height;
-  if (!w || !h) return 0;
+  if (!w || !h) return;
   const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
   const nw = Math.ceil(w * cos + h * sin), nh = Math.ceil(w * sin + h * cos);
   const tmp = document.createElement("canvas");
   tmp.width = nw; tmp.height = nh;
   const ctx = tmp.getContext("2d");
-  if (!ctx) return 0;
+  if (!ctx) return;
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, nw, nh);
   ctx.translate(nw / 2, nh / 2); ctx.rotate(rad); ctx.drawImage(cv, -w / 2, -h / 2);
   cv.width = nw; cv.height = nh;
-  const c2 = cv.getContext("2d");
-  if (!c2) return 0;
+  const c2 = cv.getContext("2d", { willReadFrequently: true });
+  if (!c2) return;
   c2.drawImage(tmp, 0, 0);
-  return ang;
 }
 
 /** 最近一次 maskNoteheads 战果(供状态栏/诊断): 抠掉的符头数与涂白像素数 */
