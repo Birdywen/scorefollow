@@ -668,8 +668,8 @@ export default function ScoreFollowPage() {
           const im = imgDoc.images[n - 1];
           if (!im) { autoRef.current[n] = null as any; return { a: null, proxy }; }
           const scale = anaW / Math.max(1, im.w);
-          canvas.width = Math.max(1, Math.floor(im.w * scale));
-          canvas.height = Math.max(1, Math.floor(im.h * scale));
+           canvas.width = anaW;
+           canvas.height = Math.max(1, Math.round(im.h * scale));
           const ctx = canvas.getContext("2d")!;
           ctx.fillStyle = "#fff";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -758,13 +758,15 @@ export default function ScoreFollowPage() {
   };
 
   const mergeFromPages = useCallback((): PageAnalysis | null => {
-    const first = autoRef.current[1];
+    const first = pageOffsetsRef.current.map((off) => autoRef.current[off.page]).find(Boolean);
     if (!first) return null;
     const systems: PageAnalysis["systems"] = [];
     const bars: number[][] = [];
     const confidence: number[] = [];
     let totalH = 0;
     for (const off of pageOffsetsRef.current) {
+      // 无系统的封面/文字页也占显示高度，不能因没有分析结果而省略。
+      totalH = Math.max(totalH, off.y + off.h);
       const a = autoRef.current[off.page];
       if (!a) continue;
       // 人工校正行数与重分析后的系统数对不上(改过 skipn/阈值): 同一批检测结果就按端对齐,
@@ -775,7 +777,6 @@ export default function ScoreFollowPage() {
         bars.push((pageBars[i] ?? []).slice());
         confidence.push(a.confidence[i] ?? 1);
       });
-      totalH = Math.max(totalH, off.y + off.h);
     }
     return { ...first, systems, bars, confidence, pageH: totalH, pageNumber: 1, diagnostics: [] };
   }, []);
@@ -812,14 +813,16 @@ export default function ScoreFollowPage() {
           setStatus(`page ${n} analysis skipped: ${err instanceof Error ? err.message : String(err)}`);
         }
         if (gen !== renderGenRef.current) return; // 丢弃过期结果
-        host.appendChild(canvas);
-        // offsets 必须记分析坐标(HD 显示画布 backing 是 2 倍, 直接记 canvas.height
-        // 会把 pageH/系统 y 全部放大 R 倍, 四覆盖层被纵向压扁错位; HDScale 回归)。
-        // 有分析结果用 a.pageH(精确); 空白页(无系统)按显示画布纵横比折算。
-        const anaW = opt.pagewd || 1000;
-        const ah = pageAna && pageAna.pageH > 0 ? pageAna.pageH
-          : Math.max(1, Math.round((anaW * canvas.height) / Math.max(1, canvas.width)));
-        offsets.push({ page: n, y, h: ah, w: anaW });
+         // offsets 必须记分析坐标(HD 显示画布 backing 是 2 倍, 直接记 canvas.height
+         // 会把 pageH/系统 y 全部放大 R 倍)。显示画布也必须按相同的页高排版:
+         // 否则每页 backing 像素比例的取整误差累积后, 四个覆盖层都会错位。
+         // 有分析结果用 a.pageH(精确); 空白页按显示画布纵横比折算。
+         const anaW = opt.pagewd || 1000;
+         const ah = pageAna && pageAna.pageH > 0 ? pageAna.pageH
+           : Math.max(1, Math.round((anaW * canvas.height) / Math.max(1, canvas.width)));
+         canvas.style.aspectRatio = `${anaW} / ${ah}`;
+         host.appendChild(canvas);
+         offsets.push({ page: n, y, h: ah, w: anaW });
         y += ah;
       }
       if (gen !== renderGenRef.current) return;
@@ -3288,7 +3291,7 @@ export default function ScoreFollowPage() {
           {!analysis && <div className={styles.emptyScore}><span aria-hidden="true">♬</span><h1>{tx("noPdfHint")}</h1><p>PDF · Smart-Metro · scorefollow</p><button className={styles.practicePlay} onClick={() => pdfInputRef.current?.click()}>{tx("loadPdf")}</button><button className={styles.practicePlay} onClick={() => imgInputRef.current?.click()}>{tx("loadImage")}</button></div>}
          {analysis && pageOffsetsRef.current.slice(1).map((off) => <div key={off.page} className={styles.pageBreak} style={{ top: `${off.y / analysis.pageH * 100}%` }} aria-hidden="true">{lang === "zh" ? `第 ${off.page} 页` : `Page ${off.page}`}</div>)}
          {analysis && (
-           <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: correctMode ? "auto" : "none" }} viewBox={`0 0 ${analysis.pageW} ${analysis.pageH}`}>
+            <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: correctMode ? "auto" : "none" }} viewBox={`0 0 ${analysis.pageW} ${analysis.pageH}`} preserveAspectRatio="none">
              {showSystems && !cleanView && analysis.systems.flatMap((s, si) => {
               const low = (analysis.confidence[si] ?? 1) < 0.6;
               const y1 = s.cs[0];

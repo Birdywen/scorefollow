@@ -41,7 +41,7 @@ export const legacyOpt: SynpdfOpt = {
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 22;
+export const ALGO_VERSION = 23;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
@@ -414,6 +414,7 @@ export function maskNoteheads(w: number, h: number, pix: any, prot?: Uint8Array 
  * (中部粗横杠)跳过、每系统至少 2 个内部 gap 才有可信中位数、最多 4 轮。
  */
 export function rescueWideGapBars(f: any, bars: any[], stride: number, pix: any): any[] {
+  bars = rescueStrongMultiStaffBars(f, bars, stride, pix);
   if (!legacyOpt.widrescue) return bars;
   const sp = Math.max(1, spatium);
   const W = Math.max(1, Math.floor(stride / 4));
@@ -488,10 +489,50 @@ export function rescueWideGapBars(f: any, bars: any[], stride: number, pix: any)
     return row;
   });
 }
+
+/** 原版的强峰通道兜底：多谱表上两个独立谱表都被同一竖线贯穿、
+ * 但后加的局部符头 veto / NMS 淘汰了它时，恢复这条高置信线。
+ * 只使用原版的 full-system 峰值+两侧对比，必须全系统连续 >=0.9 且
+ * 两个独立五线谱各连续 >=0.8；不在单谱表补线。 */
+function rescueStrongMultiStaffBars(systems: any[], bars: number[][], stride: number, pix: any): number[][] {
+  const sp = Math.max(1, spatium), p = Math.max(1, Math.round(legacyOpt.dx));
+  return bars.map((row, si) => {
+    const sys = systems[si];
+    if (!sys?.cs || sys.cs.length < 8 || row.length < 2) return row;
+    const staves: number[][] = [];
+    for (const y of sys.cs as number[]) {
+      if (!staves.length || y - staves[staves.length - 1].at(-1)! > 1.5 * sp) staves.push([]);
+      staves[staves.length - 1].push(y);
+    }
+    if (staves.filter(s => s.length >= 4).length < 2) return row;
+    const darkSum = 3 * witArr[si];
+    const { ys, rs } = columnEvidence(sys.cs, darkSum, stride, pix, 2 * sp);
+    let q = sys.xs.x1 + 50, v = sys.xs.x2 - 20;
+    if (q >= v) { q = sys.xs.x1; v = sys.xs.x2; }
+    let m = 0, left = 0, right = 0;
+    for (let x = q; x < v; x++) m = Math.max(m, ys[x]);
+    if (!m) return row;
+    for (let x = q; x < v; x++) if (ys[x] > m * legacyOpt.mtdrmpl) {
+      left = Math.max(left, rs[x - p] || 0); right = Math.max(right, rs[x + p] || 0);
+    }
+    const out = row.slice();
+    for (let x = Math.max(5, sys.xs.x1 + Math.max(80, 8 * sp)); x <= Math.min(ys.length - 6, sys.xs.x2 - 4); x++) {
+      if (ys[x] <= m * legacyOpt.mtdrmpl ||
+        !(rs[x - p] > left * legacyOpt.voorna && rs[x + p] > right * legacyOpt.voorna)) continue;
+      if (out.some(v => Math.abs(v - x) < 3 * sp)) continue;
+      if (columnRunRatio(x, sys.cs[0], sys.cs[sys.cs.length - 1], stride, pix, darkSum) < 0.9) continue;
+      let votes = 0;
+      for (const staff of staves) if (staff.length >= 4 &&
+        columnRunRatio(x, staff[0], staff[staff.length - 1], stride, pix, darkSum) >= 0.8) votes++;
+      if (votes >= 2) { out.push(x); x += 3 * sp - 1; }
+    }
+    return out.sort((a, b) => a - b);
+  });
+}
 export function countPixFromBuffer(w: number, h: number, data: Uint8ClampedArray | number[], seln: number): CountPixResult { var c: any, e: any; var f: any = w; var g = 4 * f; var k = h; var a: any = data; var l = 0; var p: any = []; var n = 3 * g / 4, stride = g; legacyOpt.eerst && (n = 0, stride = g / 4); for (e = 0; e < k; e++) { var m = 0; for (c = l + n; c < l + stride; c += 4)m += a[c], m += a[c + 1], m += a[c + 2]; c = m / (3 * (stride - n)); p.push(c); l += g } f = drawRes(p, f, k); lastRowGroups.length = 0; for (const gg of (f as number[][])) lastRowGroups.push((gg as number[]).slice()); if (legacyOpt.notemask) { const W = Math.max(1, Math.floor(g / 4)); const f0 = countVsys(f, g, a); frozenWit = witArr.slice(); const baseBars = findBarLines(f0, g, a); frozenM = lastSysM.slice(); const prot = new Uint8Array(W); for (const row of baseBars) for (const bx of row) for (let c = Math.max(0, Math.round(bx) - 3); c <= Math.min(W - 1, Math.round(bx) + 3); c++) prot[c] = 1; const mc = (a as any).slice(); maskNoteheads(g / 4, k, mc, prot); a = mc; } for (f = maskFinalize(countVsys(f, g, a)); f.length && skipnV > 0;)f.shift(), --skipnV; for (; f.length && skipnV < 0;)f.pop(), ++skipnV; seln && (f = f.slice(seln - 1, seln)); const foundBars = maskUnfreeze(findBarLines(f, g, a)); const resBars = rescueWideGapBars(f, foundBars, g, a); return { cxs: f, bxs: resBars } }
 
 function countVsys(a: any, b: any, c: any): any { var d: any, e: any, f: any, g: any = [], k: any = [], l: any = []; for (f = 0; f < a.length; ++f) { var p = a[f][0]; var n: any = a[f][a[f].length - 1]; var h: any = []; for (d = 0; d < b; d += 4) { var m = 0; for (e = p * b + d; e < n * b + d; e += b)m += c[e], m += c[e + 1], m += c[e + 2]; h.push(m / (3 * (n - p))) } for (d = m = 0; d < h.length; ++d)h[d] > m && (m = h[d]); witArr[f] = m * legacyOpt.zwgrens; d = Math.floor(h.length / 2); e = d + d / 2; for (p = 0; d < e; d++)n = h[d], n > m - 10 && (p += 1); var brightLimit = Math.max(5, Math.floor(h.length * 0.03)); if (!(brightLimit < p) || legacyOpt.eerst) { g.push(a[f]); n = []; for (d = 0; d < h.length;)if (h[d] > m - 15)d += 1; else { for (e = d; d < h.length && h[d] <= m - 5;)d += 1; n.push([e, d - 1]) } n.sort(function (a: any, b: any) { return b[1] - b[0] - (a[1] - a[0]) }); var wideRuns = n.filter(function (rg: any) { return rg[1] - rg[0] > 10 * spatium }); var spanRuns = wideRuns.length ? wideRuns : [n[0]]; h = spanRuns[0][0]; d = spanRuns[0][1]; for (var sri = 1; sri < spanRuns.length; sri++) { if (spanRuns[sri][0] < h) h = spanRuns[sri][0]; if (spanRuns[sri][1] > d) d = spanRuns[sri][1]; } l.push({ x1: h, x2: d }) } } a = g; g = []; if (0 == a.length) return a; for (f = 0; f < a.length - 1; ++f) { n = a[f][a[f].length - 1]; p = a[f + 1][0]; h = []; for (d = 0; d < b; d += 4) { m = 0; for (e = n * b + d; e < p * b + d; e += b)m += c[e], m += c[e + 1], m += c[e + 2]; h.push(m / (3 * (p - n))) } e = h[0]; for (d = m = 0; d < h.length; d++)n = h[d], e = Math.abs(n - e), 10 < e && e > m && (m = e), e = n;     k.push(m) } const gaps: number[] = (k as number[]).slice().sort(function (x: number, y: number) { return x - y });
-  if (!gaps.length) { for (let fi = 0; fi < a.length; ++fi) g.push({ cs: a[fi], xs: l[fi] }); return g; }
+  if (!gaps.length) { for (let fi = 0; fi < a.length; ++fi) g.push({ cs: a[fi], xs: l[fi] }); return printedStaffExists(g, b, c) ? g : []; }
   let lowMean = gaps[0];
   let highMean = gaps[gaps.length - 1];
   let low: number[] = [lowMean];
@@ -522,7 +563,12 @@ function countVsys(a: any, b: any, c: any): any { var d: any, e: any, f: any, g:
     // (No.19 m.24/m.28: vgap 58px=7.25sp + kv 76 合并, 后续小节全错位)。
     // 真大谱表并带走 byK(k 均值聚类, merge=true); byV 只在 merge 或带数 ≤3 时放行
     // (单/双系统页保持原行为,  Toccatta/secret_garden 大谱表 merge=true 不受影响)。
-    const byV = !legacyOpt.onestf && (merge || a.length <= 3) && verticalGaps[fi] <= staffGap && kv >= minBrace;
+    // Beethoven 双谱表: 跨系统的「低 k」行距 61-75px(8sp), 原 <=8sp
+    // byV 会把两个独立系统接起来(p5: 7->4)。但三谱表同一系统也可能
+    // 出现低 k (Suzuki cello accomp: 第三行 gap 47-54px)，不能删掉 byV。
+    // 在多组谱表可聚类时收紧低 k 的几何兜底到 7sp；高 k 仍由 byK 并行。
+    const byV = !legacyOpt.onestf && (merge || a.length <= 3) &&
+      verticalGaps[fi] <= (merge ? 7 * Math.max(1, spatium) : staffGap) && kv >= minBrace;
     if (byK || byV || 0 == legacyOpt.drmpl2) a[fi + 1] = (a[fi] as any[]).concat(a[fi + 1]);
     else g.push({ cs: a[fi], xs: l[fi] });
   }
@@ -577,7 +623,27 @@ function countVsys(a: any, b: any, c: any): any { var d: any, e: any, f: any, g:
     joined.push(cur);
     g = joined;
   }
-  return g }
+  return printedStaffExists(g, b, c) ? g : [] }
+
+/** 整页文字会在投影中形成 5 行伪谱表，但没有任何长水平谱线。
+ * 只在整页没有一条长谱线时判为空页；包含正文和真谱的页面保持原状。 */
+function printedStaffExists(systems: { cs: number[] }[], stride: number, pix: any): boolean {
+  if (!systems.length) return false;
+  const width = Math.floor(stride / 4);
+  const required = Math.max(80, Math.round(width * 0.1));
+  for (const sys of systems) for (const y of sys.cs) {
+    for (let dy = -1; dy <= 1; dy++) {
+      let run = 0;
+      for (let x = 0; x < width; x++) {
+        const o = (y + dy) * stride + x * 4;
+        if (o >= 0 && o + 2 < pix.length && pix[o] + pix[o + 1] + pix[o + 2] < 525) {
+          if (++run >= required) return true;
+        } else run = 0;
+      }
+    }
+  }
+  return false;
+}
 
 /**
  * 纯函数: 非极大抑制, 半径按 spatium 比例, 强双线对予以保留。
@@ -953,11 +1019,63 @@ export function debugBarColumn(sysIdx: number, x: number): { sp: number; w0: num
   return { sp, w0, t0, rows: out.join(" ") };
 }
 
+/** 每个物理谱表独立按原版强峰+左右对比取证。只有至少两行在同一 X 一致认线，
+ * 才豁免后续单列「符干」否决；其余（包括单谱表）一律走原有规则。
+ * WeakMap 按系统对象缓存，只属于当前页分析，不跨图像沿用旧证据。 */
+const staffWitnessCache = new WeakMap<object, Set<number>>();
+function sharedStaffWitness(sysIdx: number, x: number): boolean {
+  const sys = lastEB_A?.[sysIdx];
+  if (!sys || sys.cs.length < 8) return false;
+  let shared = staffWitnessCache.get(sys);
+  if (!shared) {
+    shared = new Set<number>();
+    const groups: number[][] = [];
+    for (const row of sys.cs as number[]) {
+      if (!groups.length || row - groups[groups.length - 1].at(-1)! > 1.5 * spatium) groups.push([]);
+      groups[groups.length - 1].push(row);
+    }
+    const credible = groups.filter((g) => g.length >= 4);
+    if (credible.length >= 2) {
+      const width = Math.floor(lastEB_B / 4);
+      const xmin = Math.max(8, sys.xs.x1 + Math.max(80, 8 * spatium));
+      const xmax = Math.min(width - 9, sys.xs.x2 - 3);
+      const seen = new Uint8Array(width);
+      const darkSum = 3 * witArr[sysIdx];
+      const p = Math.max(1, Math.round(legacyOpt.dx));
+      for (const staff of credible) {
+        const { ys, rs } = columnEvidence(staff, darkSum, lastEB_B, lastEB_C, 2 * spatium);
+        const q = Math.max(0, sys.xs.x1 + 50), v = Math.min(width, sys.xs.x2 - 20);
+        let m = 0, left = 0, right = 0;
+        for (let c = q; c < v; c++) if (ys[c] > m) m = ys[c];
+        if (m <= 0) continue;
+        for (let c = q; c < v; c++) if (ys[c] > m * legacyOpt.mtdrmpl) {
+          left = Math.max(left, rs[c - p] || 0);
+          right = Math.max(right, rs[c + p] || 0);
+        }
+        // 每组谱表每列只投一票；同一竖线因抗锯齿可能偏 1px。
+        const voted = new Uint8Array(width);
+        for (let c = xmin; c <= xmax; c++) {
+          if (ys[c] <= m * legacyOpt.mtdrmpl ||
+            !(rs[c - p] > left * legacyOpt.voorna && rs[c + p] > right * legacyOpt.voorna)) continue;
+          if (columnRunRatio(c, staff[0], staff[staff.length - 1], lastEB_B, lastEB_C, darkSum) < 0.85) continue;
+          for (let offset = -2; offset <= 2; offset++) if (c + offset >= 0 && c + offset < width) voted[c + offset] = 1;
+        }
+        for (let c = xmin; c <= xmax; c++) if (voted[c] && seen[c] < 2) seen[c]++;
+      }
+      for (let c = xmin; c <= xmax; c++) if (seen[c] >= 2) shared.add(c);
+    }
+    staffWitnessCache.set(sys, shared);
+  }
+  return shared.has(Math.round(x));
+}
+
 /** 否决判据(候选阶段 + NMS 后复核共用): NMS 中位数可把峰搬到 1-2px 外、
  * 落到否决区内的列上, 复核 catches 这类漏网。525 个 TP 在终检位置零命中(实测)。 */
 export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: number): boolean {
   var sf0 = barStemFeatures(sysIdx, x);
   if (!sf0) return false;
+  // 必须整系统纵向贯穿；两行恰好各有一个短符干(或斜画)虽同 X 也不能保送。
+  if (sf0.runRatio >= 0.9 && sharedStaffWitness(sysIdx, x)) return false;
   // v17 双线豁免: 强孪生竖线即双小节线的一半。孪生线落在 ±10px 特征窗内,
   // 会把 midWidth/blob/nh 全部污染(实测 Toccatta 8 处双线 mid=8~10、nh=1~8,
   // 全因此被规则 3/新纵贯规则误杀)。豁免后交由 NMS 归一为单线输出。
