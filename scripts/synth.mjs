@@ -56,6 +56,20 @@ function head(buf, cx, cy, rx = 4, ry = 5) {
       if (dx * dx + dy * dy <= 1 && x >= 0 && y >= 0 && x < W) px(buf, x, y);
     }
 }
+/** 空心符头(环, 全音符/二分符头): 弧细, 行宽不足 headLo,  veto 恒不可见(用户豁免全音符) */
+function headRing(buf, cx, cy, rx = 5, ry = 6, th = 2) {
+  for (let y = Math.floor(cy - ry - 1); y <= Math.ceil(cy + ry + 1); y++)
+    for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
+      const dx = (x - cx) / rx, dy = (y - cy) / ry;
+      const q = dx * dx + dy * dy;
+      if (q <= 1 && q >= 1 - th / Math.min(rx, ry) && x >= 0 && y >= 0 && x < W) px(buf, x, y);
+    }
+}
+/** 文本块(力度记号/歌词近似): 实心小矩形 */
+function textBlock(buf, x, y, w, h) {
+  for (let yy = y; yy < y + h; yy++)
+    for (let xx = x; xx < x + w; xx++) px(buf, xx, yy);
+}
 /** 上行符干(右上)/下行符干(左下), len 35 = 3.5sp */
 function stemUp(buf, hx, hyTop, len = 35) { vline(buf, hx + 3, hyTop - len, hyTop, 2); }
 function stemDown(buf, hx, hyBot, len = 35) { vline(buf, hx - 4, hyBot, hyBot + len, 2); }
@@ -144,6 +158,18 @@ const SUITES = [
     h: 240,
     systems: [{ yTop: 100, bars: [200, 400, 600, 800], stems: [], sharps: [300, 500, 700] }],
   },
+  {
+    // 全音符豁免锁定(用户要求): 空心符头弧细恒不可见, 邻线真线必须保留。
+    name: "whole-note-keep",
+    h: 240,
+    systems: [{ yTop: 100, bars: [200, 300, 500, 700], stems: [], hollowHeads: [{ x: 290, dy: 20 }] }],
+  },
+  {
+    // 力度记号安全锁定: 谱下 1.8sp 外文本块不得否决邻线真线(宽窗下延止于 1.5sp)。
+    name: "dynamics-keep",
+    h: 240,
+    systems: [{ yTop: 100, bars: [200, 400, 600, 800], stems: [], textBlocks: [{ x: 494, dy: 58, w: 12, h: 6 }] }],
+  },
 ];
 
 function renderSuite(suite) {
@@ -160,6 +186,12 @@ function renderSuite(suite) {
     for (const fx of (s.faint ?? [])) faintBar(buf, fx, s.yTop);
     for (const rb of (s.restbars ?? [])) restBar(buf, rb[0], rb[1], s.yTop + Math.round(sysHeight() / 2));
     for (const ax of (s.artifacts ?? [])) vline(buf, ax, s.yTop + 5, s.yTop + 35);
+    // 全纵贯符干(267 类): 符头可在杆左右 ±8、谱上 3sp/谱下 1.5sp, 宽窗专杀
+    for (const sx of (s.fullStems ?? [])) vline(buf, sx, s.yTop, s.yTop + sysHeight());
+    for (const lh of (s.lowHeads ?? [])) head(buf, lh.x, s.yTop + lh.dy);
+    for (const sh of (s.sideHeads ?? [])) head(buf, sh.x, s.yTop + sh.dy);
+    for (const hh of (s.hollowHeads ?? [])) headRing(buf, hh.x, s.yTop + hh.dy);
+    for (const tb of (s.textBlocks ?? [])) textBlock(buf, tb.x, s.yTop + tb.dy, tb.w, tb.h);
     // 升号: 双短竖(高 2.7sp, 间距 5px) + 双横杠(上下各一, 宽出竖瓣两侧)
     for (const hx of (s.sharps ?? [])) {
       vline(buf, hx - 2, s.yTop + 6, s.yTop + 33, 2);
@@ -271,8 +303,9 @@ for (const suite of SUITES) {
     check(`${tag}/recall-100`, recall === 1, `recall=${recall}`);
     check(`${tag}/precision-100`, precision === 1, `precision=${precision}`);
     check(`${tag}/mean-dev`, meanDev <= tol, `meanDev=${meanDev.toFixed(2)}`);
-    // 符干零误报
-    const nearStem = internal.filter((d) => s.stems.some((sx) => Math.abs(d - sx) <= 10 || Math.abs(d - (sx + 1)) <= 10));
+    // 符干零误报(短符干 stems + 全纵贯符干 fullStems, 后者须由符头 veto 杀死)
+    const allStems = [...(s.stems ?? []), ...(s.fullStems ?? [])];
+    const nearStem = internal.filter((d) => allStems.some((sx) => Math.abs(d - sx) <= 10 || Math.abs(d - (sx + 1)) <= 10));
     check(`${tag}/no-stem-false-positive`, nearStem.length === 0, `near-stem=${nearStem}`);
     // 升号零误报(双竖任一半 ±8 内不得有检出)
     const nearSharp = internal.filter((d) => (s.sharps ?? []).some((sx) => Math.abs(d - sx) <= 8));

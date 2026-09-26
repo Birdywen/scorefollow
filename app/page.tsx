@@ -417,6 +417,8 @@ export default function ScoreFollowPage() {
   const rafRef = useRef(0);
   const clockRef = useRef({ t0: 0, base: 0, running: false });
   const autoRef = useRef<Record<number, PageAnalysis>>({});
+  // 上报用底图(页号→分析画布 PNG dataURL, 新谱面时随 autoRef 清空)
+  const pagePngRef = useRef<Record<number, string>>({});
   const manualRef = useRef<Record<number, number[][]>>({});
   // skipn 对齐三件套: 每页实际生效 skip / 切除前系统数 / 人工行当前对齐的几何.
   // 改 skipn 只从端部切除系统, 保留端的人工行按偏移对齐后继续生效, 不再整页回退自动值.
@@ -710,6 +712,8 @@ export default function ScoreFollowPage() {
           return { a: null, proxy };
         }
         autoRef.current[n] = a;
+        // 上报用底图: 分析画布原样 PNG(去偏+裁边后的确定性像素, 调试与浏览器同帧)
+        try { pagePngRef.current[n] = anaCanvas.toDataURL("image/png"); } catch { /* ignore */ }
         // skipn 对齐用: 本页实际切除数 + 切除前系统数(非空页切除数恒等于 |skip|)
         pageSkipRef.current[n] = skipUsed;
         pageFullRef.current[n] = a.systems.length + Math.abs(skipUsed);
@@ -980,6 +984,7 @@ export default function ScoreFollowPage() {
     setTouchPos(null);
     pageOffsetsRef.current = [];
     autoRef.current = {};
+    pagePngRef.current = {};
     advsRef.current = {};
     manualRef.current = {};
     setManualBarsByPage({});
@@ -1995,12 +2000,19 @@ export default function ScoreFollowPage() {
       pdfSha = Array.from(new Uint8Array(d)).map((x) => x.toString(16).padStart(2, "0")).join("");
     }
     const report: Record<string, unknown> = {
-      app: "scorefollow-report", schema: 2, createdAt: new Date().toISOString(),
+      app: "scorefollow-report", schema: 3, createdAt: new Date().toISOString(),
       pdfName: pdfName || "", kind: pdfBuf ? "pdf" : "image",
       algoVersion: ALGO_VERSION, opt: optSnap, advs,
       files: ["orig.preload.js", "fixed.preload.js"],
       summary, diff, note: reportNote.trim(),
       pdf: pdfBuf ? { file: "fixed.preload.js 内 pdf_data", bytes: pdfBuf.byteLength, sha256: pdfSha } : null,
+      // 分析底图(页号→分析画布 PNG dataURL, 与浏览器同帧像素, 无则该页 null)
+      pagePngs: Object.fromEntries(
+        Object.keys(autoRef.current)
+          .map(Number)
+          .filter((n) => autoRef.current[n])
+          .map((n) => [String(n), pagePngRef.current[n] ?? null]),
+      ),
     };
     return { dir: `${stamp}-${fileBase}`, fileBase, report, pdfBuf, summary, origJs, fixedJs };
   }, [analysis, numPages, pdfName, manualBarsByPage, opt, reportNote]);
@@ -2435,6 +2447,7 @@ export default function ScoreFollowPage() {
     }
     clearPageCache();
     autoRef.current = {};
+    pagePngRef.current = {};
     annotsRef.current = {};
     setAnnotsByPage({});
     undoRef.current = [];
