@@ -4,6 +4,7 @@
 // firstBeatAudioSec = (firstBeatAt - recordingStartedAt) / 1000 in the saved Blob.
 
 export type PracticeState = "idle" | "arming" | "counting-in" | "recording" | "stopping";
+export const MAX_FIRST_BEAT_AUDIO_SEC = 20;
 
 export interface PracticeSession {
   id: string;
@@ -89,7 +90,7 @@ export function measureAndBeatAt(
 
 export function validateTakeSync(firstBeatAudioSec: number | null): string | null {
   if (firstBeatAudioSec == null || !Number.isFinite(firstBeatAudioSec)) return "缺少节拍器第一拍时间戳，无法做同步分析";
-  if (firstBeatAudioSec < 0 || firstBeatAudioSec > 10) return "第一拍时间戳超出 0–10 秒范围";
+  if (firstBeatAudioSec < 0 || firstBeatAudioSec > MAX_FIRST_BEAT_AUDIO_SEC) return `第一拍时间戳超出 0–${MAX_FIRST_BEAT_AUDIO_SEC} 秒范围`;
   return null;
 }
 

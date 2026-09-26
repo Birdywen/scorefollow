@@ -11,10 +11,15 @@ type Note = {
   id: string; measure: number; pitchMidi: number; expectedSec: number;
   performedSec: number | null; pitchErrorCents: number | null;
   timingErrorMs: number | null; confidence: number; status: string;
+  pitchStatus?: "correct" | "sharp" | "flat" | "uncertain";
+  timingStatus?: "correct" | "early" | "late" | "uncertain" | "unscored";
+  matchStatus?: "matched" | "uncertain";
 };
 type Result = {
   version: string; notes: Note[]; limitations: string[];
   summary: { pitchScore: number | null; rhythmScore: number | null;
+    intonationScore?: number | null; correctPitchNotes?: number; wrongPitchNotes?: number;
+    timingAccuracyScore?: number | null; rhythmStabilityScore?: number | null;
     timingOffsetMs: number | null; timingSpreadMs: number | null;
     noteCount: number; measureCount?: number; startMeasure?: number; endMeasure?: number;
     voicedNotes: number; timedNotes: number; confidence: string;
@@ -33,6 +38,14 @@ type OmrJob = { id: string; status: string; progress?: number; error?: string; r
 const LOCAL_API = "http://127.0.0.1:8765";
 const TAKES_KEY = "sf-takes-meta-v1";
 const MAX_TAKES = 3;
+// Keep encoded duration safely below the server's hard 90-second WAV limit.
+const MAX_RECORDING_MS = 89_500;
+
+type PracticeMetro = {
+  isAvailable: () => boolean;
+  start: (detail: unknown) => boolean;
+  stop: () => void;
+};
 
 function apiBase(value: string): string {
   const url = new URL(value);
@@ -119,6 +132,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
   const tickTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const discardRecording = useRef(false);
   const lastJumpMeasure = useRef(0);
   const player = useRef<HTMLAudioElement>(null);
   const alive = useRef(true);
@@ -133,6 +148,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   useEffect(() => { alive.current = true; return () => {
     alive.current = false;
     if (tickTimer.current) clearInterval(tickTimer.current);
+    if (recordingStopTimer.current) clearTimeout(recordingStopTimer.current);
     if (recorder.current?.state === "recording") { try { recorder.current.stop(); } catch { /* noop */ } }
     stream.current?.getTracks().forEach((t) => t.stop());
     takesRef.current.forEach((t) => { if (t.url) URL.revokeObjectURL(t.url); });
@@ -236,6 +252,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     if (!Number.isInteger(countInBeats) || countInBeats < 0 || countInBeats > 8) { setError(zh ? "预备拍请输入 0–8" : "Count-in must be 0–8"); return; }
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new Error(zh ? "浏览器不支持录音；请用上传录音（HTTP 页面可能禁用麦克风）" : "Recording unavailable; upload audio instead (mic may be blocked on HTTP)");
+      const metro = (window as unknown as { __sgaMetroPractice?: PracticeMetro }).__sgaMetroPractice;
+      if (!metro?.isAvailable()) throw new Error(zh ? "节拍器尚无谱面小节数据，无法创建同步录音" : "The metronome has no score measure data for a synced take");
       setError("");
       const mic = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) },
@@ -247,20 +265,23 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       rec.ondataavailable = (event) => { if (event.data.size) chunks.current.push(event.data); };
       const base = createSession({ startMeasure, bpm, beatsPerMeasure, countInBeats });
       const startedAt = performance.now();
-      rec.start(200);
       const sess = attachRecordingStart(base, startedAt);
       recorder.current = rec;
+      discardRecording.current = false;
       setSession({ ...sess, state: "recording" });
       lastJumpMeasure.current = 0;
       rec.onstop = () => {
+        recorder.current = null;
         mic.getTracks().forEach((t) => t.stop()); stream.current = null;
         if (tickTimer.current) { clearInterval(tickTimer.current); tickTimer.current = null; }
-        const metro = (window as unknown as { __sgaMetroPractice?: { stop: () => void } }).__sgaMetroPractice;
+        if (recordingStopTimer.current) { clearTimeout(recordingStopTimer.current); recordingStopTimer.current = null; }
         try { metro?.stop(); } catch { /* ignore */ }
         const blob = new Blob(chunks.current, { type: rec.mimeType });
+        const discard = discardRecording.current;
+        discardRecording.current = false;
         if (alive.current) {
           setSession(null); setTick(null);
-          if (blob.size) {
+          if (blob.size && !discard) {
             const n = takesRef.current.length;
             void addTakeBlob(blob, {
               startMeasure: sess.startMeasure, bpm: sess.bpm, beatsPerMeasure: sess.beatsPerMeasure,
@@ -269,10 +290,12 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           }
         }
       };
+      rec.start(200);
       // Shared clock: metro renders clicks/highlight on sess.firstBeatAt.
-      const metro = (window as unknown as { __sgaMetroPractice?: { start: (d: unknown) => boolean } }).__sgaMetroPractice;
-      if (metro) {
-        metro.start({ startMeasure: sess.startMeasure, bpm: sess.bpm, beatsPerMeasure: sess.beatsPerMeasure, countInBeats: sess.countInBeats, firstBeatAt: sess.firstBeatAt, sessionId: sess.id });
+      if (!metro.start({ startMeasure: sess.startMeasure, bpm: sess.bpm, beatsPerMeasure: sess.beatsPerMeasure, countInBeats: sess.countInBeats, firstBeatAt: sess.firstBeatAt, sessionId: sess.id })) {
+        discardRecording.current = true;
+        rec.stop();
+        throw new Error(zh ? "节拍器启动失败，录音未保存" : "Metronome failed to start; the recording was discarded");
       }
       onJump(startMeasure);
       tickTimer.current = setInterval(() => {
@@ -280,11 +303,26 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         const info = measureAndBeatAt(sess, performance.now());
         setTick(info);
       }, 120);
-    } catch (exc) { setError(exc instanceof Error ? exc.message : String(exc)); }
+      recordingStopTimer.current = setTimeout(() => {
+        if (!alive.current || recorder.current?.state !== "recording") return;
+        setError(zh ? "录音达到 90 秒上限，已自动停止并保存" : "The 90-second limit was reached; the take was stopped and saved");
+        stopSyncRecording();
+      }, MAX_RECORDING_MS);
+    } catch (exc) {
+      if (recorder.current?.state === "recording") {
+        discardRecording.current = true;
+        try { recorder.current.stop(); } catch { /* ignore */ }
+      } else {
+        stream.current?.getTracks().forEach((t) => t.stop());
+        stream.current = null;
+      }
+      setError(exc instanceof Error ? exc.message : String(exc));
+    }
   }
 
   function stopSyncRecording() {
     if (tickTimer.current) { clearInterval(tickTimer.current); tickTimer.current = null; }
+    if (recordingStopTimer.current) { clearTimeout(recordingStopTimer.current); recordingStopTimer.current = null; }
     const metro = (window as unknown as { __sgaMetroPractice?: { stop: () => void } }).__sgaMetroPractice;
     try { metro?.stop(); } catch { /* ignore */ }
     if (recorder.current?.state === "recording") recorder.current.stop();
@@ -485,7 +523,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
                 if (selectedId === take.id) setSelectedId(null);
               }}>{zh ? "删除" : "Delete"}</button>
               {take.jobStatus && <span className={styles.hint}>{take.jobStatus}</span>}
-              {take.result && <span className={styles.hint}>{zh ? "音准" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "节奏" : "Rhythm"} {take.result.summary.rhythmScore ?? "—"}</span>}
+              {take.result && <span className={styles.hint}>{zh ? "综合音高" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</span>}
             </div>
             {take.error && <p className={styles.error}>{take.error}</p>}
           </div>
@@ -498,11 +536,19 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     {(error) && <p role="alert" className={styles.error}>{error}</p>}
     {result && <section className={styles.report} aria-label={zh ? "分析报告" : "Analysis report"}>
       <h2>{zh ? "演奏报告" : "Performance report"}</h2>
-      <div className={styles.scores}><div><b>{result.summary.pitchScore ?? "—"}</b>{zh ? "音准" : "Pitch"}</div>
-        <div><b>{result.summary.rhythmScore ?? "—"}</b>{zh ? "节奏稳定" : "Rhythm"}</div></div>
+      <div className={styles.scores}><div><b>{result.summary.pitchScore ?? "—"}</b>{zh ? "综合音高" : "Pitch"}</div>
+        <div><b>{result.summary.rhythmScore ?? "—"}</b>{zh ? "跟拍" : "Timing"}</div></div>
       <p className={styles.hint}>{zh ? "可判音符" : "Voiced"} {result.summary.voicedNotes}/{result.summary.noteCount} ·
         {zh ? "可判起音" : "Timed"} {result.summary.timedNotes}/{Math.max(0, result.summary.noteCount - 1)} ·
         {zh ? "波动" : "Spread"} {result.summary.timingSpreadMs ?? "—"} ms</p>
+      {(result.summary.correctPitchNotes != null || result.summary.wrongPitchNotes != null) && <p className={styles.hint}>
+        {zh ? "音高正确" : "Pitch correct"} {result.summary.correctPitchNotes ?? "—"} · {zh ? "错音" : "Wrong notes"} {result.summary.wrongPitchNotes ?? "—"} ·
+        {zh ? "正确音音准" : "Intonation"} {result.summary.intonationScore ?? "—"}
+      </p>}
+      {(result.summary.timingOffsetMs != null || result.summary.rhythmStabilityScore != null) && <p className={styles.hint}>
+        {zh ? "整体跟拍偏移" : "Timing offset"} {result.summary.timingOffsetMs == null ? "—" : `${result.summary.timingOffsetMs > 0 ? "+" : ""}${result.summary.timingOffsetMs} ms`} ·
+        {zh ? "稳定性" : "Stability"} {result.summary.rhythmStabilityScore ?? "—"} · {zh ? "准确度" : "Accuracy"} {result.summary.timingAccuracyScore ?? "—"}
+      </p>}
       {result.summary.syncMode === "metronome" && <p className={styles.hint}>
         {zh ? `节拍器同步 · 第一拍 ${result.summary.recordedFirstBeatSec}s · 延迟微调 ${result.summary.estimatedLatencyMs} ms` : `Metronome sync · first beat ${result.summary.recordedFirstBeatSec}s · latency ${result.summary.estimatedLatencyMs} ms`}</p>}
       {result.summary.startMeasure && <p className={styles.hint}>{zh ? `本次分析：第 ${result.summary.startMeasure}–${result.summary.endMeasure} 小节（后续未录到的小节不计分）` : `Analyzed measures ${result.summary.startMeasure}–${result.summary.endMeasure}; later measures were not scored.`}</p>}
@@ -513,6 +559,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         <button onClick={() => replay(note)} title={zh ? "从该音符前 0.5s 回听" : "Replay from 0.5s before this note"}>
           <b>{zh ? "小节" : "Bar"} {note.measure}</b> · {note.pitchErrorCents == null ? (zh ? "音高不确定" : "Pitch uncertain") : `${note.pitchErrorCents > 0 ? "+" : ""}${note.pitchErrorCents} ¢`}
           {note.timingErrorMs != null && ` · ${note.timingErrorMs > 0 ? "+" : ""}${note.timingErrorMs} ms`}
+          {note.timingStatus === "uncertain" && ` · ${zh ? "起音不确定" : "Onset uncertain"}`}
         </button></li>)}</ol>
       {result.limitations.map((text) => <p className={styles.hint} key={text}>{text}</p>)}
     </section>}

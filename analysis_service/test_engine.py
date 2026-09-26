@@ -5,7 +5,7 @@ import wave
 
 import numpy as np
 
-from .engine import analyze, measure_start_beats, parse_score
+from .engine import analyze, measure_start_beats, parse_score, track
 
 
 def score(pitches=(69, 71, 72, 74, 76)):
@@ -29,6 +29,19 @@ def recording(pitches=(69, 71, 72, 74, 76), detune=0, offsets=None):
         hz = 440 * 2 ** ((midi + detune / 100 - 69) / 12)
         envelope = np.minimum(1, t * 60) * np.minimum(1, (length / rate - t) * 30)
         audio[start:start + length] = 0.32 * envelope * np.sin(2 * math.pi * hz * t)
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setparams((1, 2, rate, len(audio), "NONE", "not compressed"))
+        wav.writeframes((audio * 32767).astype("<i2").tobytes())
+    return output.getvalue()
+
+
+def continuous_recording(midi=69, seconds=5.25):
+    rate = 22050
+    t = np.arange(int(seconds * rate)) / rate
+    audio = np.zeros_like(t, dtype=np.float32)
+    active = t >= .12
+    audio[active] = .32 * np.sin(2 * math.pi * 440 * 2 ** ((midi - 69) / 12) * t[active])
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
         wav.setparams((1, 2, rate, len(audio), "NONE", "not compressed"))
@@ -81,6 +94,44 @@ class EngineTests(unittest.TestCase):
         self.assertIsNotNone(uneven["summary"]["rhythmScore"])
         self.assertGreater(steady["summary"]["rhythmScore"], uneven["summary"]["rhythmScore"])
 
+    def test_pitch_score_penalizes_a_substantial_wrong_note_minority(self):
+        target = score((69, 69, 69, 69, 69))
+        clean = analyze(recording((69, 69, 69, 69, 69)), target, 60, "violin")
+        wrong = analyze(recording((69, 69, 69, 71, 71)), target, 60, "violin")
+        self.assertEqual(wrong["summary"]["wrongPitchNotes"], 2)
+        self.assertEqual(wrong["summary"]["correctPitchNotes"], 3)
+        self.assertGreater(clean["summary"]["pitchScore"], wrong["summary"]["pitchScore"] + 30)
+        self.assertEqual([n["pitchStatus"] for n in wrong["notes"]][-2:], ["sharp", "sharp"])
+
+    def test_intonation_detail_is_unavailable_when_every_pitch_is_wrong(self):
+        target = score((69, 69, 69, 69, 69))
+        wrong = analyze(recording((71, 71, 71, 71, 71)), target, 60, "violin")
+        self.assertEqual(wrong["summary"]["wrongPitchNotes"], 5)
+        self.assertIsNone(wrong["summary"]["intonationScore"])
+
+    def test_consistent_lateness_reduces_timing_accuracy_not_stability(self):
+        steady = analyze(recording(), score(), 60, "violin")
+        late = analyze(recording(offsets=(0, .16, .16, .16, .16)), score(), 60, "violin")
+        self.assertGreater(late["summary"]["timingOffsetMs"], 120)
+        self.assertGreaterEqual(late["summary"]["rhythmStabilityScore"], 95)
+        self.assertGreater(steady["summary"]["rhythmScore"], late["summary"]["rhythmScore"] + 30)
+        self.assertTrue(all(n["timingStatus"] == "late" for n in late["notes"][1:]))
+
+    def test_sustained_tone_does_not_claim_repeated_onsets_are_correct(self):
+        result = analyze(continuous_recording(), score((69, 69, 69, 69, 69)), 60, "violin")
+        self.assertEqual(result["summary"]["timedNotes"], 0)
+        self.assertIsNone(result["summary"]["rhythmScore"])
+        self.assertTrue(all(n["status"] == "timing_uncertain" for n in result["notes"][1:]))
+
+    def test_pitch_tracker_covers_declared_range_and_uses_93ms_window(self):
+        rate = 22050
+        t = np.arange(rate) / rate
+        for midi in (36, 69, 84, 88, 96):
+            signal = .3 * np.sin(2 * math.pi * 440 * 2 ** ((midi - 69) / 12) * t)
+            times, pitches, _, _ = track(signal, rate)
+            self.assertAlmostEqual(float(np.nanmedian(pitches)), midi, delta=.12)
+            self.assertAlmostEqual(float(times[0]), .093 / 2, delta=.001)
+
     def test_measure_downbeats_include_rest_measures(self):
         self.assertEqual(measure_start_beats(score()), {1: 0.0, 2: 1.0, 3: 2.0, 4: 3.0, 5: 4.0})
 
@@ -97,8 +148,8 @@ class EngineTests(unittest.TestCase):
         self.assertLessEqual(abs(early["summary"]["estimatedLatencyMs"]), 150)
 
     def test_metronome_anchor_rejects_bad_input(self):
-        with self.assertRaisesRegex(ValueError, "0–10"):
-            analyze(recording(), score(), 60, "violin", first_beat_audio_sec=11, sync_mode="metronome")
+        with self.assertRaisesRegex(ValueError, "0–20"):
+            analyze(recording(), score(), 60, "violin", first_beat_audio_sec=21, sync_mode="metronome")
         with self.assertRaisesRegex(ValueError, "需要 firstBeatAudioSec"):
             analyze(recording(), score(), 60, "violin", sync_mode="metronome")
         with self.assertRaisesRegex(ValueError, "不应携带"):

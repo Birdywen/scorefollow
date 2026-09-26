@@ -86,6 +86,13 @@ class ApiTests(unittest.TestCase):
         else:
             self.fail("metronome analysis did not complete")
 
+    def test_metronome_sync_rejects_timestamp_beyond_count_in_limit(self):
+        status, _, data = self.request("POST", "/jobs", {"scoreXml": score(),
+            "syncMode": "metronome", "firstBeatAudioSec": 21,
+            "audioWavBase64": base64.b64encode(recording()).decode(), "bpm": 60, "instrument": "violin"})
+        self.assertEqual(status, 400)
+        self.assertIn("0–20", data["error"])
+
     def test_omr_async_job_without_network(self):
         from unittest.mock import patch
         from .server import jobs, lock

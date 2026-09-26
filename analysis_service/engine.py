@@ -12,8 +12,9 @@ from decimal import Decimal, InvalidOperation
 
 import numpy as np
 
-VERSION = "string-mono-0.1"
+VERSION = "string-mono-0.2"
 MAX_SECONDS = 90
+MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
 
@@ -124,8 +125,12 @@ def read_wav(data: bytes) -> tuple[np.ndarray, int]:
 def track(signal: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     # 约 12 ms hop、93 ms Hann 窗；自相关法只适合单声部基频。
     hop = max(1, int(rate * 0.012))
-    size = max(1024, 2 ** math.ceil(math.log2(rate * 0.093)))
-    lo, hi = max(2, int(rate / 1200)), min(size // 2, int(rate / 65))
+    size = max(1024, round(rate * 0.093))
+    fft_size = 2 ** math.ceil(math.log2(2 * size - 1))
+    min_hz = 440 * 2 ** ((36 - 69) / 12)
+    max_hz = 440 * 2 ** ((96 - 69) / 12)
+    lo = max(2, math.floor(rate / max_hz))
+    hi = min(size // 2, math.ceil(rate / min_hz))
     window = np.hanning(size).astype(np.float32)
     times, pitches, energies, confidences = [], [], [], []
     for start in range(0, max(1, len(signal) - size + 1), hop):
@@ -139,17 +144,23 @@ def track(signal: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray, np.nda
             pitches.append(float("nan"))
             confidences.append(0.0)
             continue
-        f = np.fft.rfft(frame * window, n=2 * size)
-        ac = np.fft.irfft(f * f.conj(), n=2 * size)[:size]
+        f = np.fft.rfft(frame * window, n=fft_size)
+        ac = np.fft.irfft(f * f.conj(), n=fft_size)[:size]
         candidates = ac[lo:hi + 1] / (ac[0] * (1 - np.arange(lo, hi + 1) / size) + 1e-10)
         peaks = np.where((candidates[1:-1] >= candidates[:-2]) & (candidates[1:-1] >= candidates[2:]))[0] + 1
         maximum = float(np.max(candidates))
         # 首个强峰偏向基频而非 2 倍周期；低置信片段不强行定音。
-        strong = peaks[candidates[peaks] >= max(0.7, maximum * 0.93)]
+        strong = peaks[candidates[peaks] >= max(0.7, maximum * 0.90)]
         idx = int(strong[0]) if len(strong) else int(np.argmax(candidates))
         confidence = float(candidates[idx])
+        lag = float(lo + idx)
+        if 0 < idx < len(candidates) - 1:
+            left, center, right = (float(candidates[idx - 1]), float(candidates[idx]), float(candidates[idx + 1]))
+            denominator = left - 2 * center + right
+            if abs(denominator) > 1e-9:
+                lag += max(-0.5, min(0.5, 0.5 * (left - right) / denominator))
         confidences.append(confidence)
-        pitches.append(69 + 12 * math.log2(rate / (lo + idx) / 440) if confidence >= 0.7 else float("nan"))
+        pitches.append(69 + 12 * math.log2(rate / lag / 440) if confidence >= 0.7 else float("nan"))
     return tuple(np.asarray(x) for x in (times, pitches, energies, confidences))
 
 
@@ -201,8 +212,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if sync_mode not in ("legacy", "metronome"):
         raise ValueError("无效的同步模式")
     if first_beat_audio_sec is not None and (
-            not isinstance(first_beat_audio_sec, (int, float)) or not 0 <= float(first_beat_audio_sec) <= 10):
-        raise ValueError("firstBeatAudioSec 须在 0–10 秒之间")
+            not isinstance(first_beat_audio_sec, (int, float)) or
+            not 0 <= float(first_beat_audio_sec) <= MAX_FIRST_BEAT_SECONDS):
+        raise ValueError(f"firstBeatAudioSec 须在 0–{MAX_FIRST_BEAT_SECONDS} 秒之间")
     if sync_mode == "legacy" and first_beat_audio_sec is not None:
         raise ValueError("legacy 模式不应携带 firstBeatAudioSec")
     if sync_mode == "metronome" and first_beat_audio_sec is None:
@@ -219,6 +231,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     voiced = np.flatnonzero(np.isfinite(pitches) & (energy > max(0.012, np.max(energy) * 0.10)))
     if not len(active) or not len(voiced):
         raise ValueError("无法检测到演奏")
+    onsets = [float(times[active[0]])]
+    for i in range(2, len(times)):
+        if energy[i] < 0.012:
+            continue
+        pitch_jump = np.isfinite(pitches[i]) and np.isfinite(pitches[i - 2]) and abs(pitches[i] - pitches[i - 2]) >= 0.85
+        attack = energy[i] > max(0.018, energy[i - 2] * 1.85) and energy[i] - energy[i - 2] > 0.008
+        if (pitch_jump or attack) and times[i] - onsets[-1] > 0.09:
+            onsets.append(float(times[i]))
     sec_per_beat = 60 / bpm
     estimated_latency_ms: int | None = None
     if sync_mode == "metronome":
@@ -228,31 +248,23 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # drag the whole excerpt to the wrong place.
         base_beat = measure_start_beats(xml)[start_measure]
         start = float(first_beat_audio_sec) - base_beat * sec_per_beat
-        raw_latency = (float(times[voiced[0]]) - 0.047) - (start + notes[0]["onsetBeat"] * sec_per_beat)
+        raw_latency = onsets[0] - (start + notes[0]["onsetBeat"] * sec_per_beat)
         clamped = max(-0.15, min(0.15, raw_latency))
         start += clamped
         estimated_latency_ms = round(clamped * 1000)
     else:
         # Align the first pitched onset with the first written note, even if the
         # MusicXML starts with an all-rest measure. Silence before it is not scored.
-        start = (times[voiced[0]] - 0.047) - notes[0]["onsetBeat"] * sec_per_beat
+        start = onsets[0] - notes[0]["onsetBeat"] * sec_per_beat
     # Score excerpts can start at any measure. Never count score notes beyond
     # the recording as missed notes, including when the full score is hours long.
     last_voiced = times[voiced[-1]]
     notes = [n for n in notes if start + n["onsetBeat"] * sec_per_beat <= last_voiced + 0.06]
     if not notes:
         raise ValueError("录音不足以覆盖所选开始小节")
-    onsets = [float(times[active[0]])]
-    for i in range(2, len(times)):
-        if energy[i] < 0.012:
-            continue
-        pitch_jump = np.isfinite(pitches[i]) and np.isfinite(pitches[i - 2]) and abs(pitches[i] - pitches[i - 2]) >= 0.85
-        attack = energy[i] > max(0.018, energy[i - 2] * 1.85) and energy[i] - energy[i - 2] > 0.008
-        if (pitch_jump or attack) and times[i] - onsets[-1] > 0.09:
-            onsets.append(float(times[i]))
     aligned = []
     pitch_errors, timing_errors = [], []
-    for note in notes:
+    for note_index, note in enumerate(notes):
         expected = start + note["onsetBeat"] * sec_per_beat
         duration = note["durationBeat"] * sec_per_beat
         # 时间误差与稳态音高分开估计，避开擦弦、滑音和收尾。
@@ -265,25 +277,44 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         delta = round((onset - expected) * 1000) if onset is not None else None
         if cents is not None:
             pitch_errors.append(abs(cents))
-        if delta is not None and note is not notes[0]:
+        if delta is not None and note_index > 0:
             timing_errors.append(delta)
+        pitch_status = "uncertain" if cents is None else "sharp" if cents > 50 else "flat" if cents < -50 else "correct"
+        timing_status = "unscored" if note_index == 0 else "uncertain" if delta is None else "late" if delta > 80 else "early" if delta < -80 else "correct"
+        status = "uncertain" if cents is None else "wrong_pitch" if pitch_status in ("sharp", "flat") else \
+            "timing_uncertain" if note_index > 0 and delta is None else timing_status if timing_status in ("late", "early") else "correct"
         aligned.append({**note, "expectedSec": round(expected, 3), "performedSec": round(onset, 3) if onset is not None else None,
-                        "pitchErrorCents": cents, "timingErrorMs": delta if note is not notes[0] else None,
-                        "confidence": quality, "status": "uncertain" if cents is None else
-                        "wrong_pitch" if abs(cents) > 50 else "late" if delta is not None and delta > 80 else
-                        "early" if delta is not None and delta < -80 else "correct"})
+                        "pitchErrorCents": cents, "timingErrorMs": delta if note_index > 0 else None,
+                        "confidence": quality, "pitchStatus": pitch_status, "timingStatus": timing_status,
+                        "matchStatus": "matched" if cents is not None else "uncertain", "status": status})
     # 不将不可判断的音符作为正确或错误；节奏得分只在至少三个起音可匹配时给出。
-    pitch_score = round(max(0, 100 - float(np.median(pitch_errors)) * 1.2)) if pitch_errors and len(pitch_errors) / len(notes) >= .6 else None
+    pitch_score = None
+    intonation_score = None
+    correct_pitch_notes = sum(n["pitchStatus"] == "correct" for n in aligned)
+    wrong_pitch_notes = sum(n["pitchStatus"] in ("sharp", "flat") for n in aligned)
+    if pitch_errors and len(pitch_errors) / len(notes) >= .6:
+        # Capped mean keeps one noisy frame bounded, but unlike a median it cannot
+        # hide a substantial minority of clearly wrong notes.
+        pitch_score = round(max(0, 100 - float(np.mean(np.minimum(pitch_errors, 100))) * 1.2))
+        in_tune = [abs(float(n["pitchErrorCents"])) for n in aligned if n["pitchStatus"] == "correct"]
+        intonation_score = round(max(0, 100 - float(np.median(in_tune)) * 1.2)) if in_tune else None
     rhythm_score = None
+    timing_accuracy_score = None
+    rhythm_stability_score = None
     rhythm_spread = None
     timing_offset = None
     if len(timing_errors) >= 3 and len(timing_errors) / max(1, len(notes) - 1) >= .6:
         timing_offset = round(float(np.median(timing_errors)))
         rhythm_spread = round(float(np.median(np.abs(np.array(timing_errors) - timing_offset))))
-        rhythm_score = round(max(0, 100 - rhythm_spread * .55))
+        rhythm_stability_score = round(max(0, 100 - rhythm_spread * .55))
+        timing_accuracy_score = round(max(0, 100 - float(np.median(np.abs(timing_errors))) * .4))
+        rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))
     duration_sec = round(float(len(signal) / rate), 3)
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
-            "summary": {"pitchScore": pitch_score, "rhythmScore": rhythm_score,
+            "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
+                        "correctPitchNotes": correct_pitch_notes, "wrongPitchNotes": wrong_pitch_notes,
+                        "rhythmScore": rhythm_score, "timingAccuracyScore": timing_accuracy_score,
+                        "rhythmStabilityScore": rhythm_stability_score,
                         "timingOffsetMs": timing_offset, "timingSpreadMs": rhythm_spread,
                         "measureCount": len(ET.fromstring(xml).find("./{*}part").findall("./{*}measure")),
                         "startMeasure": notes[0]["measure"], "endMeasure": notes[-1]["measure"],

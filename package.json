@@ -9,7 +9,9 @@
     "regression": "node scripts/regression.mjs",
     "synth": "node scripts/synth.mjs",
     "homr": "node scripts/homr-compare.mjs",
-    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run build"
+    "analysis-test": "python3 -B -m unittest discover -s analysis_service -t .",
+    "practice-sync": "node scripts/practice-sync-regression.mjs",
+    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run practice-sync && npm run analysis-test && npm run build"
   },
   "dependencies": {
     "next": "16.3.5",

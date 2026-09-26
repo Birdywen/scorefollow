@@ -15,7 +15,7 @@ import time
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from .engine import analyze, parse_score
+from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score
 from .omr import MAX_PDF, recognize
 
 MAX_BODY = 8_000_000
@@ -125,8 +125,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("开始小节没有可演奏音符")
                 if sync_mode not in ("legacy", "metronome"):
                     raise ValueError("无效的同步模式")
-                if first_beat is not None and (not isinstance(first_beat, (int, float)) or not 0 <= float(first_beat) <= 10):
-                    raise ValueError("firstBeatAudioSec 须在 0–10 秒之间")
+                if first_beat is not None and (not isinstance(first_beat, (int, float)) or
+                                               not 0 <= float(first_beat) <= MAX_FIRST_BEAT_SECONDS):
+                    raise ValueError(f"firstBeatAudioSec 须在 0–{MAX_FIRST_BEAT_SECONDS} 秒之间")
                 if sync_mode == "metronome" and first_beat is None:
                     raise ValueError("metronome 模式需要 firstBeatAudioSec")
                 if sync_mode == "legacy" and first_beat is not None:
