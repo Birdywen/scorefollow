@@ -2019,7 +2019,13 @@ export default function ScoreFollowPage() {
     const bad = reportGate();
     if (bad.length) { setReportMsg(bad.join("；")); return; }
     setReportMsg(lang === "zh" ? "生成 bundle 中…" : "Building bundle…");
-    const b = await buildReportBundle();
+    let b: Awaited<ReturnType<typeof buildReportBundle>>;
+    try {
+      b = await buildReportBundle();
+    } catch (e) {
+      setReportMsg((lang === "zh" ? "生成失败：" : "Build failed: ") + (e instanceof Error ? e.message : String(e)));
+      return;
+    }
     if (!b) { setReportMsg("无可上报的数据"); return; }
     const save = (blob: Blob, name: string) => {
       const el = document.createElement("a");
@@ -2051,8 +2057,11 @@ export default function ScoreFollowPage() {
       setReportMsg(lang === "zh" ? "仓库格式应为 owner/repo" : "Repo must look like owner/repo");
       return;
     }
-    const b = await buildReportBundle();
-    if (!b) { setReportBusy(false); setReportMsg("无可上报的数据"); return; }
+    const b = await buildReportBundle().catch((e: unknown) => {
+      setReportMsg((lang === "zh" ? "生成失败：" : "Build failed: ") + (e instanceof Error ? e.message : String(e)));
+      return null;
+    });
+    if (!b) { setReportBusy(false); setReportMsg((m) => m || "无可上报的数据"); return; }
     setReportMsg(lang === "zh" ? "上传中…" : "Uploading…");
     try {
       try { localStorage.setItem("sf-report-token", tok); localStorage.setItem("sf-report-repo", repo); } catch { /* ignore */ }
@@ -2935,6 +2944,7 @@ export default function ScoreFollowPage() {
               <span>{correctMode ? "✗" : "✓"} {tx("exitCorrect")}</span>
               <span>{Object.keys(manualBarsByPage).length > 0 || reportNoChange ? "✓" : "✗"} {lang === "zh" ? "有校正/无需校正" : "Corrected / N/A"}</span>
               <span>{reportConfirmed ? "✓" : "✗"} {lang === "zh" ? "已确认" : "Confirmed"}</span>
+              {correctMode && <button className={styles.practiceBtn} onClick={() => { setCorrectMode(false); setSelectedBar(null); setPie(null); }}>{lang === "zh" ? "退出纠错并继续" : "Exit correction & continue"}</button>}
             </div>
             <label className={styles.expertHint} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <input type="checkbox" checked={reportConfirmed} onChange={(e) => setReportConfirmed(e.target.checked)} />
