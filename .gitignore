@@ -42,7 +42,9 @@ next-env.d.ts
 __pycache__/
 *.pyc
 
-# homr benchmark bulky artifacts (regenerable via scripts/homr-data.py);
+# issue report bundles + local receiver secret (user PDFs, never commit)
+/reports/
+
 # keep meta.json / homr.json / ours.json / adjudicated.json as committed fixtures
 benchmarks/homr/**/*.raw
 benchmarks/homr/**/*.png
