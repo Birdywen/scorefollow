@@ -21,7 +21,7 @@ export interface SynpdfOpt {
   loop: number; annot: number; zwgrens: number; voorna: number; mtdrmpl: number;
   dx: number; fscr: number; pagenum: number; playbtn: number; mmin: string;
   fixwd: number; lastSynced: number; eerst: number; sysprf: number; onestf: number;
-  hd: number; deskew: number; notemask: number; widrescue: number;
+  hd: number; deskew: number; notemask: number; widrescue: number; homrgate: number;
 }
 
 export interface SysXs { x1: number; x2: number; }
@@ -37,10 +37,11 @@ export const legacyOpt: SynpdfOpt = {
   playbtn: 0, mmin: "", fixwd: 1000, lastSynced: -2, eerst: 0, sysprf: 0, onestf: 0,
   hd: 1, deskew: 1, // hd: 显示高清渲染(分析仍用 pagewd); deskew: 扫描偏斜自动转正
   notemask: 0, widrescue: 0, // 逆向路线(默认关): notemask=先抠实心符头+符干再认线; widrescue=宽度先验抢救淡线
+  homrgate: 1, // HoMR 音符模板门(有门数据时 veto 符干; 无数据纯透传)
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 20;
+export const ALGO_VERSION = 22;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
@@ -87,6 +88,62 @@ export function getSpatium(): number { return spatium; }
 export function getAnnotFontPx(): number { return annotFontPx; }
 export function setSkipn(v: number): void { skipnV = v ? 1 * v : 0; }
 export function setSysprf(v: number): void { sysprf = v ? true : false; legacyOpt.sysprf = v ? 1 : 0; }
+
+/**
+ * HoMR 音符模板门(最后一道 veto, 只否决不新增):
+ * 候选内线 x 若距 HoMR 音符头 <=8px(同系统带内, 带宽 25px) 且 HoMR 在该处
+ * 无小节线(>8px) -> 判为符干否决; HoMR 也认是线 / HoMR 无音符 -> 保留。
+ * GT 9 首实测: TP 零误杀(近符真线 HoMR 必同步报线, homrbar<=1.3),
+ * FP 14->6(杀 8 个符干, 剩 6 个 HoMR 也认是线的待人工仲裁)。
+ * 门数据由 scripts/homr-gate.py 离线生成(宽1000坐标), 经 preload 的
+ * homr_gate 行或 setHomrGate 注入; 无数据时纯透传零行为变化。
+ */
+export interface HomrGateSystem { y1: number; y2: number; bars: number[]; }
+export interface HomrGatePage { page: number; w: number; h: number; notes: [number, number][]; systems: HomrGateSystem[]; }
+export interface HomrGateFile { render_w: number; pages: HomrGatePage[]; }
+let homrGate: HomrGateFile | null = null;
+export function setHomrGate(d: HomrGateFile | null): void { homrGate = d; }
+export function getHomrGate(): HomrGateFile | null { return homrGate; }
+export interface HomrGateVeto { system: number; x: number; ndx: number; bdx: number; }
+export const lastHomrGateVetoes: HomrGateVeto[] = [];
+const HOMR_NOTE_DX = 8, HOMR_BAR_DX = 8, HOMR_BAND = 25; // 宽1000坐标 px
+export function applyHomrGate(
+  systems: { cs: number[] }[], bars: number[][], pageNo: number,
+  analysisW: number, gate?: HomrGateFile | null,
+): number[][] {
+  lastHomrGateVetoes.length = 0;
+  const g = gate === undefined ? homrGate : gate;
+  if (!legacyOpt.homrgate || !g || !g.pages || !g.pages.length) return bars;
+  const pg = g.pages.find((p) => p.page === pageNo);
+  if (!pg) return bars;
+  const s = analysisW / Math.max(1, g.render_w || pg.w || 1000);
+  const noteDx = HOMR_NOTE_DX * s, barDx = HOMR_BAR_DX * s, band = HOMR_BAND * s;
+  return bars.map((row, si) => {
+    const sys = systems[si];
+    if (!sys || !sys.cs || !sys.cs.length || row.length <= 2) return row;
+    const y1 = sys.cs[0], y2 = sys.cs[sys.cs.length - 1];
+    const bandNotes = pg.notes.filter((n) => n[1] * s >= y1 - band && n[1] * s <= y2 + band);
+    if (!bandNotes.length) return row;
+    const confirmed: number[] = [];
+    for (const gs of pg.systems) {
+      const gy1 = gs.y1 * s, gy2 = gs.y2 * s;
+      const ov = Math.max(0, Math.min(y2, gy2) - Math.max(y1, gy1)) / Math.max(1, y2 - y1);
+      if (ov > 0.5) for (const bx of gs.bars) confirmed.push(bx * s);
+    }
+    return row.filter((x, xi) => {
+      if (xi === 0 || xi === row.length - 1) return true; // 系统边界恒保留
+      let ndx = Infinity;
+      for (const n of bandNotes) { const d = Math.abs(x - n[0] * s); if (d < ndx) ndx = d; }
+      if (ndx > noteDx) return true;
+      let bdx = Infinity;
+      for (const bx of confirmed) { const d = Math.abs(x - bx); if (d < bdx) bdx = d; }
+      if (bdx <= barDx) return true; // HoMR 同步报线: 近符真线, 保留
+      lastHomrGateVetoes.push({ system: si, x, ndx: Math.round(ndx * 10) / 10, bdx: bdx === Infinity ? -1 : Math.round(bdx * 10) / 10 });
+      lastBarDiagnostics.push({ system: si, x, strength: 0, rel: 0, kept: false, reason: `homr-gate ndx=${Math.round(ndx * 10) / 10}` });
+      return false;
+    });
+  });
+}
 
 function drawRes(a: any, b: any, c: any): any {
   if (!a || !a.length) { spatium = 8; annotFontPx = 32; return []; }
@@ -681,6 +738,7 @@ export interface BarStemFeatures {
   neighbors: number; strength: number; noteheadProximity: number;
   headSegs: { y: number; h: number; w: number }[];
   twinDist: number; twinRel: number; twinSide: number; extAbove: number; beamAbove: number; beamBelow: number;
+  stemExtAbove: number; stemExtBelow: number;
   headDip: boolean;
 }
 
@@ -785,6 +843,22 @@ export function barStemFeatures(sysIdx: number, x: number): BarStemFeatures | nu
   };
   const beamAbove = beamRun(Math.round(w0 - 3 * sp), w0 - 1);
   const beamBelow = beamRun(t0 + 1, Math.round(t0 + 3 * sp));
+  // 窄杆外伸(不对称姿态探针): 候选列自身墨水(xi±1, 杆宽)贴着谱表框连续外伸的长度.
+  // 与 extAbove(符头级宽墨≥headLo, 邻音符头即误伤)不同, 窄窗只认杆的延续:
+  // 真线端部干净, 符干单侧外伸(267: 上伸10px/下0px)。要求贴框(飞来墨水不算)。
+  const narrowInk = (row: number): boolean =>
+    darkAt(row, xi - 1) || darkAt(row, xi) || darkAt(row, xi + 1);
+  let stemExtAbove = 0;
+  for (let row = w0 - 1; row >= Math.max(0, Math.round(w0 - 3 * sp)); row--) {
+    if (narrowInk(row)) stemExtAbove++;
+    else break;
+  }
+  let stemExtBelow = 0;
+  const Hpx = Math.floor(pix.length / stride);
+  for (let row = t0 + 1; row <= Math.min(Hpx - 1, Math.round(t0 + 3 * sp)); row++) {
+    if (narrowInk(row)) stemExtBelow++;
+    else break;
+  }
   let noteheadProximity = 0, headRun = 0, headY0 = 0, headW: number[] = [];
   const headSegs: { y: number; h: number; w: number }[] = [];
   const flushHead = (): void => {
@@ -841,6 +915,7 @@ export function barStemFeatures(sysIdx: number, x: number): BarStemFeatures | nu
     midWidth: bandWidth(w0 + band, t0 - band),
     neighbors, strength: m > 0 ? Math.round((ev.ys[xi] / m) * 1000) / 1000 : 0,
     noteheadProximity, headSegs, twinDist, twinRel, twinSide, extAbove, beamAbove, beamBelow,
+    stemExtAbove, stemExtBelow,
     headDip,
   };
 }
@@ -980,6 +1055,13 @@ export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: num
     (sf0.runRatio >= 0.8 && sf0.noteheadProximity >= 1 && Math.max(sf0.topBlob, sf0.botBlob) >= 6) ||
     // extAbove(谱上延伸墨)全局否决已证伪: GT 上 26 个真线被邻音符头误杀
     // (自头/邻头单列不可分, v17.4), 保留字段供窄对仲裁等上下文规则参考。
+    // 不对称窄外伸(267: 上伸10px/下0px)同样证伪: GT 上 21 个真线同形
+    // (声乐上行符干贴线而过, 甚至有 (11,0)/(12,0) 比 267 更长), 不可做 veto。
+    // 纵贯线否决(Tschaikowsky p2s4-259/p3s6-716: 符干纵穿谱表上下各外伸
+    // 13px、上下符头/梁附着, run=1): 真线端部止于谱表框(渲染±2px); 大谱表
+    // 连接线收在合并系统框内不外伸(grand-staff-linked 锁定)。阈值双侧 1sp:
+    // GT 536 真线 min 侧最大 0.7sp, 本例 min=1.85sp, 裕度充足。+run≥0.9 设防弱列。
+    (sf0.runRatio >= 0.9 && Math.min(sf0.stemExtAbove, sf0.stemExtBelow) >= Math.max(1, spatium)) ||
     ((sf0.beamAbove >= 3 || sf0.beamBelow >= 4) && narrowSys) ||
     (narrowSys && sf0.runRatio < 0.95 && sf0.midWidth <= 2));
 }

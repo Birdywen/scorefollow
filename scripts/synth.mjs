@@ -170,6 +170,13 @@ const SUITES = [
     h: 240,
     systems: [{ yTop: 100, bars: [200, 400, 600, 800], stems: [], textBlocks: [{ x: 494, dy: 58, w: 12, h: 6 }] }],
   },
+  {
+    // 纵贯符干否决锁定(259/716 类): 竖线纵穿谱表上下各外伸 1.2sp、上下符头
+    // 附着 → 符干不得检出; 真线端部止于框(grand-staff-linked 另锁连接线)。
+    name: "span-stem-kill",
+    h: 240,
+    systems: [{ yTop: 100, bars: [200, 400, 600, 800], stems: [], spanStems: [500], highHeads: [{ x: 503, dy: -14 }], lowHeads: [{ x: 497, dy: 54 }] }],
+  },
 ];
 
 function renderSuite(suite) {
@@ -188,6 +195,9 @@ function renderSuite(suite) {
     for (const ax of (s.artifacts ?? [])) vline(buf, ax, s.yTop + 5, s.yTop + 35);
     // 全纵贯符干(267 类): 符头可在杆左右 ±8、谱上 3sp/谱下 1.5sp, 宽窗专杀
     for (const sx of (s.fullStems ?? [])) vline(buf, sx, s.yTop, s.yTop + sysHeight());
+    // 纵贯符干(259/716 类): 上下各超框 12px(1.2sp), 双侧 1sp 否决专杀
+    for (const sx of (s.spanStems ?? [])) vline(buf, sx, s.yTop - 12, s.yTop + sysHeight() + 12);
+    for (const xh of (s.highHeads ?? [])) head(buf, xh.x, s.yTop + xh.dy);
     for (const lh of (s.lowHeads ?? [])) head(buf, lh.x, s.yTop + lh.dy);
     for (const sh of (s.sideHeads ?? [])) head(buf, sh.x, s.yTop + sh.dy);
     for (const hh of (s.hollowHeads ?? [])) headRing(buf, hh.x, s.yTop + hh.dy);
@@ -303,8 +313,8 @@ for (const suite of SUITES) {
     check(`${tag}/recall-100`, recall === 1, `recall=${recall}`);
     check(`${tag}/precision-100`, precision === 1, `precision=${precision}`);
     check(`${tag}/mean-dev`, meanDev <= tol, `meanDev=${meanDev.toFixed(2)}`);
-    // 符干零误报(短符干 stems + 全纵贯符干 fullStems, 后者须由符头 veto 杀死)
-    const allStems = [...(s.stems ?? []), ...(s.fullStems ?? [])];
+    // 符干零误报(短符干 stems + 全纵贯符干 fullStems + 纵贯符干 spanStems)
+    const allStems = [...(s.stems ?? []), ...(s.fullStems ?? []), ...(s.spanStems ?? [])];
     const nearStem = internal.filter((d) => allStems.some((sx) => Math.abs(d - sx) <= 10 || Math.abs(d - (sx + 1)) <= 10));
     check(`${tag}/no-stem-false-positive`, nearStem.length === 0, `near-stem=${nearStem}`);
     // 升号零误报(双竖任一半 ±8 内不得有检出)

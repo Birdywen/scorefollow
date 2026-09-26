@@ -16,6 +16,7 @@ import {
   opt,
   setSkipn,
   setSysprf,
+  setHomrGate,
   deskewCanvasInPlace,
   lastMaskStats,
   applyAnalysisProfile,
@@ -24,6 +25,7 @@ import {
   ALGO_VERSION,
   type AnalysisProfileName,
   type PageAnalysis,
+  type HomrGateFile,
 } from "@/lib/synpdf-core";
 import { Wijzer, buildMeasures } from "@/lib/synpdf-wijzer";
 import PerformancePanel from "./PerformancePanel";
@@ -32,7 +34,7 @@ import styles from "./page.module.css";
 const DEFAULT_ADV: Record<string, number> = {
   zwgrens: 0.7, drmpl: 0.4, drmpl2: 2, mtdrmpl: 0.85, voorna: 0.9, dx: 3,
   sysprf: 0, onestf: 0, eerst: 0, skipn: 0, seln: 0, cropx: 0,
-  pagewd: 1000, fixwd: 1000, hd: 1, deskew: 1,
+  pagewd: 1000, fixwd: 1000, hd: 1, deskew: 1, homrgate: 1,
 };
 // stepper 合法范围(与原版 synpdf.html 输入框 min/max 一致)
 const ADV_RANGES: Record<string, [number, number]> = {
@@ -419,6 +421,9 @@ export default function ScoreFollowPage() {
   const autoRef = useRef<Record<number, PageAnalysis>>({});
   // 上报用底图(页号→分析画布 PNG dataURL, 新谱面时随 autoRef 清空)
   const pagePngRef = useRef<Record<number, string>>({});
+  // HoMR 音符模板门数据(随谱面清空; preload homr_gate 行或门文件载入后生效)
+  const homrGateRef = useRef<HomrGateFile | null>(null);
+  const [homrGateInfo, setHomrGateInfo] = useState("");
   const manualRef = useRef<Record<number, number[][]>>({});
   // skipn 对齐三件套: 每页实际生效 skip / 切除前系统数 / 人工行当前对齐的几何.
   // 改 skipn 只从端部切除系统, 保留端的人工行按偏移对齐后继续生效, 不再整页回退自动值.
@@ -997,6 +1002,9 @@ export default function ScoreFollowPage() {
     setTapCount(0);
     setSelectedBar(null);
     setPie(null);
+    homrGateRef.current = null;
+    setHomrGate(null);
+    setHomrGateInfo("");
   }, []);
   const onPdfFile = useCallback(
     async (f: File) => {
@@ -2287,11 +2295,13 @@ export default function ScoreFollowPage() {
     L.push(`times_arr = ${JSON.stringify(w.times.map((e) => ({ t: 1 * e.t, mix: 1 * e.mix })))};`);
     L.push(`metric_arr = ${JSON.stringify(metric)};`);
     L.push(`adv_settings = ${JSON.stringify(adv)};`);
+    // HoMR 门数据随谱走(原版忽略不认识的行, 兼容): 载入时先于分析注入
+    if (homrGateRef.current) L.push(`homr_gate = ${JSON.stringify(homrGateRef.current)};`);
     return L.join("\n") + "\n";
   }, [analysis, numPages, pageNum, pdfName, renderAndAnalyze, bin2txt, embedMetro, buildMetricArr, opt,
     readMetroCfg, fullScreen, chromeOpen, cleanView, darkTheme, lang,
     showSystems, showBars, showCursor, showLowConf, diagnosticMode,
-    speed, profileName, loopA, loopB, synbox, mediaName]);
+    speed, profileName, loopA, loopB, synbox, mediaName, homrGateInfo]);
 
   useEffect(() => { buildPreloadTextRef.current = buildPreloadText; }, [buildPreloadText]);
 
@@ -2416,6 +2426,19 @@ export default function ScoreFollowPage() {
     const optAll = getObj("opt");
     const sgaOwn = getObj("sga_config");
     const uiState = getObj("ui_state");
+    const homrGateData = getObj("homr_gate") as unknown as HomrGateFile | null;
+    // HoMR 门(先于逐页分析注入; 无则清空旧谱残留, 与 clearScoreState 同语义)
+    homrGateRef.current = null;
+    setHomrGate(null);
+    setHomrGateInfo("");
+    if (homrGateData && Array.isArray(homrGateData.pages) &&
+      homrGateData.pages.every((p) => Number.isInteger(p.page) && Array.isArray(p.notes) &&
+        Array.isArray(p.systems) && p.systems.every((s) => Array.isArray(s.bars)))) {
+      homrGateRef.current = homrGateData;
+      setHomrGate(homrGateData);
+      const nn = homrGateData.pages.reduce((a, p) => a + p.notes.length, 0);
+      setHomrGateInfo(`HoMR门·${homrGateData.pages.length}页·${nn}音符`);
+    }
     const mediaWant = getStr("media_file");
     const applyNums = (o: Record<string, unknown> | null) => {
       if (!o) return;
@@ -2628,6 +2651,34 @@ export default function ScoreFollowPage() {
   const loadPreload = useCallback((f: File) => {
     f.text().then((txt) => void loadPreloadText(txt, f.name)).catch(() => setStatus("preload 文件读取失败"));
   }, [loadPreloadText]);
+
+  // HoMR 音符模板门数据载入(scripts/homr-gate.py 产物): 校验形状后注入,
+  // 重分析即生效(只否决符干, 不新增)。preload 的 homr_gate 行走同样入口。
+  const applyHomrGateData = useCallback((d: unknown, name: string): boolean => {
+    const ok = !!d && typeof d === "object" &&
+      Array.isArray((d as HomrGateFile).pages) &&
+      (d as HomrGateFile).pages.every((p) =>
+        Number.isInteger(p.page) && Array.isArray(p.notes) && Array.isArray(p.systems) &&
+        p.systems.every((s) => Array.isArray(s.bars)));
+    if (!ok) { setStatus(`HoMR 门数据无效: ${name}`); return false; }
+    const gd = d as HomrGateFile;
+    homrGateRef.current = gd;
+    setHomrGate(gd);
+    const nn = gd.pages.reduce((a, p) => a + p.notes.length, 0);
+    setHomrGateInfo(`HoMR门·${gd.pages.length}页·${nn}音符`);
+    clearPageCache();
+    forceAdv((n) => n + 1);
+    if (pdfDocRef.current) void renderPage(pdfDocRef.current, pageNumRef.current);
+    setStatus(`HoMR 门已载入: ${name} (${gd.pages.length}页/${nn}音符) - reanalyzed`);
+    return true;
+  }, [renderPage]);
+  const loadHomrGate = useCallback((f: File) => {
+    f.text().then((txt) => {
+      let p: unknown;
+      try { p = JSON.parse(txt); } catch { setStatus("HoMR 门文件解析失败"); return; }
+      applyHomrGateData(p, f.name);
+    }).catch(() => setStatus("HoMR 门文件读取失败"));
+  }, [applyHomrGateData]);
 
   const loadTiming = useCallback((f: File) => {
     f.text().then((txt) => {
@@ -3143,6 +3194,7 @@ export default function ScoreFollowPage() {
               <label className={`${styles.pill} ${(opt.deskew ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.deskew ?? 1) ? true : false} onChange={(e) => applyAdv("deskew", e.target.checked ? 1 : 0)} title={lang === "zh" ? "偏斜校正: 扫描摆不正自动转正" : "Deskew: auto-straighten tilted scans"} /> deskew</label>
               <label className={`${styles.pill} ${(opt.notemask ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.notemask ?? 0) ? true : false} onChange={(e) => applyAdv("notemask", e.target.checked ? 1 : 0)} title={lang === "zh" ? "音符优先: 先抠符头符干再认小节线(实验)" : "Notes first: mask noteheads/stems before bar detection (experimental)"} /> notemask</label>
               <label className={`${styles.pill} ${(opt.widrescue ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.widrescue ?? 0) ? true : false} onChange={(e) => applyAdv("widrescue", e.target.checked ? 1 : 0)} title={lang === "zh" ? "宽度先验: 过宽小节低阈抢救淡线(实验)" : "Width prior: rescue faint bars in wide gaps (experimental)"} /> widrescue</label>
+              <label className={`${styles.pill} ${(opt.homrgate ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.homrgate ?? 1) ? true : false} onChange={(e) => applyAdv("homrgate", e.target.checked ? 1 : 0)} title={lang === "zh" ? `HoMR 音符门: 有门数据时否决符干(只否决不新增)${homrGateInfo ? ` · ${homrGateInfo}` : " · 当前无门数据"}` : `HoMR note gate: veto stems when gate data present (veto-only)${homrGateInfo ? ` · ${homrGateInfo}` : " · no gate data"}`} /> homrgate{homrGateInfo ? "·" : ""}</label>
             </div>
             <label className={styles.stepper}>skipn <input type="number" min={-5} max={5} step={1} value={opt.skipn} title={lang === "zh" ? ">0 去掉整谱开头 N 个系统(封面/标题, 只动首个有系统页); <0 去掉整谱末尾 |N| 个系统(它曲/demo, 只动末个有系统页)" : "score-level: positive drops first N systems of first content page; negative drops last |N| of last content page"} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
             <label className={styles.stepper}>seln <input type="number" min={0} max={9} value={opt.seln} onChange={(e) => applyAdv("seln", Number(e.target.value))} /></label>
@@ -3170,6 +3222,7 @@ export default function ScoreFollowPage() {
             <button className={styles.pfileBtn} onClick={() => void savePreload()}>{tx("savePreload")}</button>
             <label className={styles.pfileBtn}>{tx("loadTiming")} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTiming(f); }} /></label>
             <label className={styles.pfileBtn}>{tx("loadPreload")} <input type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); }} /></label>
+            <label className={styles.pfileBtn} title={lang === "zh" ? "载入 scripts/homr-gate.py 生成的门数据(本地 HoMR 音符模板, 否决符干)" : "Load gate data from scripts/homr-gate.py (local HoMR note templates, veto stems)"}>{lang === "zh" ? "载入门数据" : "Load gate"} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadHomrGate(f); e.target.value = ""; }} /></label>
              <div className={styles.pillRow}>
                <label className={`${styles.pill} ${synbox ? styles.pillOn : ""}`}><input type="checkbox" checked={synbox} onChange={(e) => setSynbox(e.target.checked)} /> {tx("enableSync")}</label>
                <label className={`${styles.pill} ${embedMetro ? styles.pillOn : ""}`}><input type="checkbox" checked={embedMetro} onChange={(e) => setEmbedMetro(e.target.checked)} /> +metro</label>

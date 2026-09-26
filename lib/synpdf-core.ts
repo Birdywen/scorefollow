@@ -12,20 +12,25 @@ import {
   countPixFromBuffer,
   setSkipn,
   setSysprf,
+  setHomrGate,
+  applyHomrGate,
+  getHomrGate,
   getSpatium,
   getAnnotFontPx,
   deskewCanvasInPlace,
   estimateSkewAngle,
   ALGO_VERSION,
   lastBarDiagnostics,
+  lastHomrGateVetoes,
   lastMaskStats,
   lastSystemConfidence,
   type BarDiagnostic,
+  type HomrGateFile,
 } from "./synpdf-legacy";
 import type { SynpdfOpt, SystemInfo, CountPixResult } from "./synpdf-legacy";
 import type { TimeEntry } from "./synpdf-wijzer";
 
-export type { SynpdfOpt, SystemInfo, CountPixResult, BarDiagnostic };
+export type { SynpdfOpt, SystemInfo, CountPixResult, BarDiagnostic, HomrGateFile };
 export {
   legacyOpt as opt,
   witArr,
@@ -33,12 +38,16 @@ export {
   countPixFromBuffer,
   setSkipn,
   setSysprf,
+  setHomrGate,
+  applyHomrGate,
   getSpatium,
   getAnnotFontPx,
   deskewCanvasInPlace,
   estimateSkewAngle,
   ALGO_VERSION,
   lastBarDiagnostics,
+  lastHomrGateVetoes,
+  getHomrGate,
   lastMaskStats,
 };
 
@@ -154,12 +163,14 @@ export function analyzePage(
   seln: number = 0,
   docId: string = "",
 ): PageAnalysis {
+  const homrGateOn = getHomrGate() !== null;
   const key = docId + "_" + pageNumber + "_" + canvas.width + "x" + canvas.height + "_v" + ALGO_VERSION + "_" +
     [legacyOpt.seln, legacyOpt.skipn, legacyOpt.zwgrens, legacyOpt.drmpl,
       legacyOpt.drmpl2, legacyOpt.mtdrmpl, legacyOpt.voorna, legacyOpt.dx,
       legacyOpt.sysprf, legacyOpt.onestf, legacyOpt.eerst,
       legacyOpt.cropx, legacyOpt.pagewd, legacyOpt.hd, legacyOpt.deskew,
-      legacyOpt.notemask, legacyOpt.widrescue].join(",");
+      legacyOpt.notemask, legacyOpt.widrescue, legacyOpt.homrgate,
+      homrGateOn ? "hg1" : "hg0"].join(",");
   const hit = pageCache.get(key);
   if (hit) return hit;
 
@@ -168,12 +179,16 @@ export function analyzePage(
 
   const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
   const r: CountPixResult = countPix(canvas, seln);
+  // HoMR 音符模板门(有门数据且 homrgate 开时): veto 符干, 只否决不新增
+  const gated = homrGateOn && legacyOpt.homrgate
+    ? applyHomrGate(r.cxs, r.bxs, pageNumber, canvas.width)
+    : r.bxs;
   const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
   const conf = lastSystemConfidence.slice();
   while (conf.length < r.cxs.length) conf.push(0.35);
   const out: PageAnalysis = {
     systems: r.cxs,
-    bars: r.bxs,
+    bars: gated,
     spatium: getSpatium(),
     annotFontPx: getAnnotFontPx(),
     pageW: canvas.width,

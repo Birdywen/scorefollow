@@ -27,6 +27,13 @@ const names = process.argv[2] ? [process.argv[2]]
 for (const name of names) {
   const dir = join(benchRoot, name);
   const meta = JSON.parse(readFileSync(join(dir, "meta.json"), "utf8"));
+  // 端到端门验证: SF_HOMR_GATE=<dir> 下 <score>.homr-gate.json, 与线上同代码路径
+  let gate = null;
+  if (process.env.SF_HOMR_GATE) {
+    try { gate = JSON.parse(readFileSync(join(process.env.SF_HOMR_GATE, `${name}.homr-gate.json`), "utf8")); }
+    catch { gate = null; }
+  }
+  if (gate) console.log(`  gate: ${name} pages=${gate.pages.length}`);
   const out = { algoVersion: legacy.ALGO_VERSION, pages: [] };
   for (const pm of meta.pages) {
     const raw = readFileSync(join(dir, `page_${pm.page}.raw`));
@@ -35,10 +42,13 @@ for (const name of names) {
       rgba[j] = raw[i]; rgba[j + 1] = raw[i + 1]; rgba[j + 2] = raw[i + 2]; rgba[j + 3] = 255;
     }
     const r = legacy.countPixFromBuffer(pm.w, pm.h, rgba, 0);
+    const bars = legacy.applyHomrGate(r.cxs, r.bxs, pm.page, pm.w, gate);
+    const vetoes = legacy.lastHomrGateVetoes.slice();
+    if (vetoes.length) console.log(`  p${pm.page} homr-gate vetoes: ${vetoes.map((v) => `s${v.system + 1}x${Math.round(v.x)}(ndx${v.ndx})`).join(" ")}`);
     out.pages.push({
       page: pm.page, spatium: legacy.getSpatium(),
       systems: r.cxs.map((s) => ({ y1: s.cs[0], y2: s.cs[s.cs.length - 1], x1: s.xs.x1, x2: s.xs.x2 })),
-      bars: r.bxs,
+      bars,
     });
   }
   writeFileSync(join(dir, "ours.json"), JSON.stringify(out));

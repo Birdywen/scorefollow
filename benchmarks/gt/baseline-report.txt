@@ -7,7 +7,7 @@ kupdf_net_suzuki-cello-school-vol-3-piano-accomp   73    1    0
 swan_cello_melody                                  46    1    0
 vivaldi-bajazet-sposa-son-disprezzata-aria-irene   76    0    1
 yradier_c_la_paloma_piano_beg                      56    0    0
-tschaikowsky_rococo_gru_mmer_cello                 49    3    1
-TOTAL                                             536   14    7
+tschaikowsky_rococo_gru_mmer_cello                 49    1    1
+TOTAL                                             536   12    7
 gt_sys=144 our_sys=144 | ref_bars=543
-precision=0.975 recall=0.987
+precision=0.978 recall=0.987
