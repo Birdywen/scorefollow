@@ -2,12 +2,12 @@ score                                              tp   fp   fn
 arpeggione_sonata                                  55    0    0
 saint-preux_-_le_reve                              32    0    0
 serenade_vl_pf                                     84    4    4
-suzuki-book3-3-4                                   63    5    3
-kupdf_net_suzuki-cello-school-vol-3-piano-accomp   73    2    0
+suzuki-book3-3-4                                   63    4    3
+kupdf_net_suzuki-cello-school-vol-3-piano-accomp   73    1    0
 swan_cello_melody                                  46    1    0
 vivaldi-bajazet-sposa-son-disprezzata-aria-irene   76    0    1
 yradier_c_la_paloma_piano_beg                      56    0    0
 tschaikowsky_rococo_gru_mmer_cello                 49    3    1
-TOTAL                                             534   15    9
+TOTAL                                             534   13    9
 gt_sys=144 our_sys=144 | ref_bars=543
-precision=0.973 recall=0.983
+precision=0.976 recall=0.983

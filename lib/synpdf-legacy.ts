@@ -40,7 +40,7 @@ export const legacyOpt: SynpdfOpt = {
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 18;
+export const ALGO_VERSION = 19;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
@@ -680,7 +680,7 @@ export interface BarStemFeatures {
   topBlob: number; botBlob: number; midWidth: number;
   neighbors: number; strength: number; noteheadProximity: number;
   headSegs: { y: number; h: number; w: number }[];
-  twinDist: number; twinRel: number; extAbove: number; beamAbove: number; beamBelow: number;
+  twinDist: number; twinRel: number; twinSide: number; extAbove: number; beamAbove: number; beamBelow: number;
   headDip: boolean;
 }
 
@@ -825,13 +825,14 @@ export function barStemFeatures(sysIdx: number, x: number): BarStemFeatures | nu
     if (ev.ys[c] > m * 0.7) neighbors++;
   }
   // 升号双竖: 3..0.75*sp 内另一根强竖线. 反复/双小节线间距通常 >=0.7sp 且两根都很强.
-  let twinDist = 0, twinRel = 0;
+  // twinSide 记录获胜边(±1, v19 升号子句只验获胜边, 另一边未知不代判)。
+  let twinDist = 0, twinRel = 0, twinSide = 0;
   const twinHi = Math.max(4, Math.round(0.75 * sp));
   for (let dist = 3; dist <= twinHi; dist++) {
     for (const c of [xi - dist, xi + dist]) {
       if (c < 0 || c >= ev.ys.length) continue;
       const rel = m > 0 ? ev.ys[c] / m : 0;
-      if (rel >= 0.55 && rel > twinRel) { twinDist = dist; twinRel = Math.round(rel * 1000) / 1000; }
+      if (rel >= 0.55 && rel > twinRel) { twinDist = dist; twinRel = Math.round(rel * 1000) / 1000; twinSide = c > xi ? 1 : -1; }
     }
   }
   return {
@@ -839,7 +840,7 @@ export function barStemFeatures(sysIdx: number, x: number): BarStemFeatures | nu
     topBlob: endTop, botBlob: endBot,
     midWidth: bandWidth(w0 + band, t0 - band),
     neighbors, strength: m > 0 ? Math.round((ev.ys[xi] / m) * 1000) / 1000 : 0,
-    noteheadProximity, headSegs, twinDist, twinRel, extAbove, beamAbove, beamBelow,
+    noteheadProximity, headSegs, twinDist, twinRel, twinSide, extAbove, beamAbove, beamBelow,
     headDip,
   };
 }
@@ -915,7 +916,62 @@ export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: num
     (sf0.runRatio >= 0.9 && nearProx >= 1 && !sf0.headDip) ||
     (sf0.runRatio >= 0.95 && nearProx >= 1 && !sf0.headDip) ||
     (sf0.runRatio >= 0.6 && sf0.midWidth >= 6) ||
-    (sf0.twinDist >= 4 && sf0.twinDist <= 6 && sf0.twinRel >= 0.55 && sf0.twinRel < 0.65) ||
+    // 升号双竖子句 v19(Saint-Saens p2s3: 真线旁 4px 贴杆符干 twinRel=0.667,
+    // 旧窗 <0.65 采样抖 0.017 即误杀)。实测真升号孪生 rel 0.55-0.95(旧窗
+    // 上限 0.65 抓不住任何真升号, 纯摆设): 窗展到 0.95, 距离 3-8(NMS 峰常
+    // 落双竖正中及旁瓣, 如合成 ♯ 的 299 列 twin=3/0.8、suzuki 915/922 旁瓣),
+    // 但加三护栏——候选 run<0.95(全纵贯真线/双线/反复线豁免)，
+    // 孪生三联征(短+窄+不贴边): 纵贯<0.95、去谱线行中位宽≤4、
+    // 谱表外 2sp 内(去谱线行)无墨。符干/双线/单线必连谱表内外,
+    // 升号瓣居中悬空; 符头虽悬空但宽>4。谱线行按 ±2 排除(2px 线粗+检测
+    // 舍入可偏 2px, ±1 会把真谱线行漏进来, 宽度中位数/贴边全毁)。
+    // 只验获胜边(twinSide): 另一边可能是白空/无关墨, 代判会误杀。
+    // 双小节线(孪生 rel≥0.95)走前面的豁免先行返回, 不受本子句影响。
+    (sf0.twinDist >= 3 && sf0.twinDist <= 8 && sf0.twinRel >= 0.55 && sf0.twinRel < 0.95 && sf0.runRatio < 0.95 && sf0.twinSide !== 0 &&
+      (() => {
+        const darkSumT = 3 * (witArr[sysIdx] ?? 0);
+        const strideT: number = lastEB_B; const pixT: any = lastEB_C;
+        const css: number[] = (lastEB_A && lastEB_A[sysIdx] && lastEB_A[sysIdx].cs) || [];
+        const isStaffR2 = (row: number): boolean => css.some((yy: number) => Math.abs(yy - row) <= 2);
+        const darkTC = (row: number, c: number): boolean => {
+          const g = row * strideT + c * 4;
+          const s0 = pixT[g] + pixT[g + 1] + pixT[g + 2];
+          const s1 = pixT[g + 4] + pixT[g + 5] + pixT[g + 6];
+          return Math.min(s0, s1) < darkSumT;
+        };
+        const twinIsHalf = (c: number): boolean => {
+          if (c < 0) return true;
+          if (columnRunRatio(c, rw0, rt0, strideT, pixT, darkSumT) >= 0.95) return false;
+          // 贴边: 谱表外 2sp(上/下)去谱线行后有墨即连谱表(符干/线)
+          const spT = Math.max(1, spatium);
+          for (let row = Math.max(0, rw0 - 2 * spT); row <= rw0 - 1; row++) {
+            if (isStaffR2(row)) continue;
+            for (let cc = c - 1; cc <= c + 1; cc++) if (cc >= 0 && darkTC(row, cc)) return false;
+          }
+          const maxR = Math.floor(pixT.length / strideT) - 1;
+          for (let row = rt0 + 1; row <= Math.min(maxR, rt0 + 2 * spT); row++) {
+            if (isStaffR2(row)) continue;
+            for (let cc = c - 1; cc <= c + 1; cc++) if (cc >= 0 && darkTC(row, cc)) return false;
+          }
+          // 宽度(符头块): 去谱线行中位游程宽
+          const ws: number[] = [];
+          for (let row = rw0; row <= rt0; row++) {
+            if (isStaffR2(row)) continue;
+            if (!darkTC(row, c)) continue;
+            let lo = c, hi = c;
+            while (lo - 1 >= c - 10 && darkTC(row, lo - 1)) lo--;
+            while (hi + 1 <= c + 10 && darkTC(row, hi + 1)) hi++;
+            ws.push(hi - lo + 1);
+          }
+          if (!ws.length) return false;
+          ws.sort((a, b) => a - b);
+          return ws[Math.floor(ws.length / 2)] <= 4;
+        };
+        for (const s of [sf0.twinSide]) {
+          if (!twinIsHalf(x + s * sf0.twinDist)) return false;
+        }
+        return true;
+      })()) ||
     (sf0.runRatio >= 0.8 && sf0.noteheadProximity >= 1 && Math.max(sf0.topBlob, sf0.botBlob) >= 6) ||
     // extAbove(谱上延伸墨)全局否决已证伪: GT 上 26 个真线被邻音符头误杀
     // (自头/邻头单列不可分, v17.4), 保留字段供窄对仲裁等上下文规则参考。

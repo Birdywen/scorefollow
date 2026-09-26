@@ -134,8 +134,15 @@ const SUITES = [
     // 这里只放横杠, 测"不硬造"的契约; 抢救灵敏度由 artifact-rescued 刻画。)
     name: "multirest-quiet",
     h: 240,
-    flags: { notemask: 1, widrescue: 1 },
     systems: [{ yTop: 100, bars: [200, 400, 900], stems: [], restbars: [[500, 800]] }],
+  },
+  {
+    // 升号 veto 锁定: ♯(双短竖 + 双横杠)不得检出小节线。竖瓣高 2.7sp
+    // (弱峰可达, 触发否决链), 横杠保证 twin 信号; 真升号瓣纵贯<0.85,
+    // twin-run 护栏(Saint-Saens)不得放行此类。
+    name: "sharp-sign",
+    h: 240,
+    systems: [{ yTop: 100, bars: [200, 400, 600, 800], stems: [], sharps: [300, 500, 700] }],
   },
 ];
 
@@ -153,6 +160,13 @@ function renderSuite(suite) {
     for (const fx of (s.faint ?? [])) faintBar(buf, fx, s.yTop);
     for (const rb of (s.restbars ?? [])) restBar(buf, rb[0], rb[1], s.yTop + Math.round(sysHeight() / 2));
     for (const ax of (s.artifacts ?? [])) vline(buf, ax, s.yTop + 5, s.yTop + 35);
+    // 升号: 双短竖(高 2.7sp, 间距 5px) + 双横杠(上下各一, 宽出竖瓣两侧)
+    for (const hx of (s.sharps ?? [])) {
+      vline(buf, hx - 2, s.yTop + 6, s.yTop + 33, 2);
+      vline(buf, hx + 3, s.yTop + 6, s.yTop + 33, 2);
+      hline(buf, s.yTop + 12, hx - 7, hx + 9, 2);
+      hline(buf, s.yTop + 24, hx - 7, hx + 9, 2);
+    }
   }
   if (suite.beam) {
     // 符梁: 连两根上行符干的顶端
@@ -260,6 +274,9 @@ for (const suite of SUITES) {
     // 符干零误报
     const nearStem = internal.filter((d) => s.stems.some((sx) => Math.abs(d - sx) <= 10 || Math.abs(d - (sx + 1)) <= 10));
     check(`${tag}/no-stem-false-positive`, nearStem.length === 0, `near-stem=${nearStem}`);
+    // 升号零误报(双竖任一半 ±8 内不得有检出)
+    const nearSharp = internal.filter((d) => (s.sharps ?? []).some((sx) => Math.abs(d - sx) <= 8));
+    check(`${tag}/no-sharp-false-positive`, nearSharp.length === 0, `near-sharp=${nearSharp}`);
   });
   }
 }
