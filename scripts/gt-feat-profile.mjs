@@ -40,7 +40,7 @@ const TOL = 4;
 const fmt = (f) => {
   if (!f) return "null";
   const segs = (f.headSegs ?? []).map((s) => `${s.y}:${s.h}x${s.w}`).join(";");
-  return `run=${f.runRatio} topB=${f.topBlob} botB=${f.botBlob} mid=${f.midWidth} nb=${f.neighbors} prox=${f.noteheadProximity} twin=${f.twinDist}/${f.twinRel} segs=[${segs}]`;
+  return `run=${f.runRatio} topB=${f.topBlob} botB=${f.botBlob} mid=${f.midWidth} nb=${f.neighbors} prox=${f.noteheadProximity} twin=${f.twinDist}/${f.twinRel} dip=${f.headDip ? 1 : 0} beam=${f.beamAbove}/${f.beamBelow} ext=${f.extAbove} segs=[${segs}]`;
 };
 
 // 每页检测只跑一次, 系统索引与 ours.json 对齐(同 meta 同 raw, 确定性重跑)

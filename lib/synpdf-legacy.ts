@@ -40,7 +40,7 @@ export const legacyOpt: SynpdfOpt = {
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 17;
+export const ALGO_VERSION = 18;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
@@ -904,9 +904,16 @@ export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: num
     }
   }
   var narrowSys = (rt0 - rw0 + 1) <= 6.5 * spatium;
+  // 谱表带内符头数(Boek: 真线旁 1.5sp 外的邻音符头把 rule2/3 全点着,
+  // 符干自带头必贴杆端落在带内; 只认与 [rw0-0.5sp, rt0+0.5sp] 相交的段)。
+  var spN = Math.max(1, spatium);
+  var nearProx = 0;
+  for (const sg of (sf0.headSegs ?? [])) {
+    if (sg.y < rt0 + 0.5 * spN && sg.y + sg.h > rw0 - 0.5 * spN) nearProx++;
+  }
   return ((Math.max(sf0.topBlob, sf0.botBlob) >= 4 && sf0.runRatio >= 0.8 && sf0.midWidth <= 5) ||
-    (sf0.runRatio >= 0.9 && sf0.noteheadProximity >= 1 && !sf0.headDip) ||
-    (sf0.runRatio >= 0.95 && sf0.noteheadProximity >= 1 && !sf0.headDip) ||
+    (sf0.runRatio >= 0.9 && nearProx >= 1 && !sf0.headDip) ||
+    (sf0.runRatio >= 0.95 && nearProx >= 1 && !sf0.headDip) ||
     (sf0.runRatio >= 0.6 && sf0.midWidth >= 6) ||
     (sf0.twinDist >= 4 && sf0.twinDist <= 6 && sf0.twinRel >= 0.55 && sf0.twinRel < 0.65) ||
     (sf0.runRatio >= 0.8 && sf0.noteheadProximity >= 1 && Math.max(sf0.topBlob, sf0.botBlob) >= 6) ||
