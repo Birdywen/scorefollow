@@ -109,10 +109,32 @@ const STR: Record<string, { zh: string; en: string }> = {
   loadTiming: { zh: "导入同步数据", en: "Load timing" },
   savePreload: { zh: "导出 preload.js", en: "Save preload.js" },
   loadPreload: { zh: "导入 preload.js", en: "Load preload.js" },
+  reportIssue: { zh: "上报异常", en: "Report" },
+  reportTitle: { zh: "上报识别异常", en: "Report recognition issue" },
+  reportConfirmDone: { zh: "我已逐页核对，确认校正完成", en: "I have reviewed every page; correction is complete" },
+  reportNoChangeOpt: { zh: "本谱无需校正（原识别正确，只报漏报/其他问题）", en: "No correction needed (recognition was right; reporting misses/other)" },
+  reportNotePh: { zh: "问题描述（哪一页、哪一行、哪条线错了）…", en: "Describe the problem (page, system, which bar)…" },
+  reportTokenPh: { zh: "GitHub token（仅存本机浏览器，用于自动建 issue/传文件）", en: "GitHub token (stored only in this browser, for auto issue/upload)" },
+  reportSubmit: { zh: "提交到 GitHub", en: "Submit to GitHub" },
+  reportDownloadOnly: { zh: "仅下载 bundle", en: "Download bundle only" },
+  reportServer: { zh: "提交到服务器", en: "Submit to server" },
+  reportEndpointPh: { zh: "上报地址（默认随站发布，无需改）", en: "Upload endpoint (default follows site, no change needed)" },
+  reportSecretPh: { zh: "上报密钥（服务器 ~/sf-report-secret 首行，仅存本机浏览器）", en: "Upload secret (first line of ~/sf-report-secret; stored only in this browser)" },
 };
 
 function cloneBars(bars: number[][]): number[][] {
   return bars.map((b) => b.slice());
+}
+
+/** ArrayBuffer → base64(分块, 防栈溢出): 上报 bundle 传 PDF/JSON 共用 */
+function bufToB64(buf: ArrayBuffer): string {
+  const u = new Uint8Array(buf);
+  let s = "";
+  const CH = 32768;
+  for (let i = 0; i < u.length; i += CH) {
+    s += String.fromCharCode.apply(null, Array.from(u.subarray(i, i + CH)));
+  }
+  return btoa(s);
 }
 
 /**
@@ -468,6 +490,28 @@ export default function ScoreFollowPage() {
   const previewCloseRef = useRef<HTMLButtonElement>(null);
   const previewReturnRef = useRef<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // 异常上报(全自动 debug 通道): 原识别 + 校正结果 + 原 PDF 打包, 浏览器直发 GitHub
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportNote, setReportNote] = useState("");
+  const [reportConfirmed, setReportConfirmed] = useState(false);
+  const [reportNoChange, setReportNoChange] = useState(false);
+  const [reportToken, setReportToken] = useState(() => {
+    try { return localStorage.getItem("sf-report-token") ?? ""; } catch { return ""; }
+  });
+  const [reportRepo, setReportRepo] = useState(() => {
+    try { return localStorage.getItem("sf-report-repo") ?? "Birdywen/scorefollow"; } catch { return "Birdywen/scorefollow"; }
+  });
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportMsg, setReportMsg] = useState("");
+  // 直传服务器(主通道, 无需 token): 地址默认随站发布, 密钥只存本机 localStorage
+  const [reportEndpoint, setReportEndpoint] = useState(() => {
+    try { return localStorage.getItem("sf-report-endpoint") ?? `${BASE}/sf-report-upload.php`; } catch { return `${BASE}/sf-report-upload.php`; }
+  });
+  const [reportSecret, setReportSecret] = useState(() => {
+    try { return localStorage.getItem("sf-report-secret") ?? ""; } catch { return ""; }
+  });
+  // buildPreloadText 在下方定义，bundle 构建经 ref 间接调用（避 TDZ）
+  const buildPreloadTextRef = useRef<((useManual?: boolean, includePdf?: boolean) => Promise<string | null>) | null>(null);
   const [lang, setLang] = useState<Lang>(() =>
     typeof window !== "undefined" && localStorage.getItem("sf-lang") === "en" ? "en" : "zh");
   const tx = (k: keyof typeof STR) => STR[k][lang];
@@ -555,8 +599,9 @@ export default function ScoreFollowPage() {
   const renderGenRef = useRef(0);
   const advRenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 全页 metric 原子构建(保存/桥接共用): [pageW, p1, p2, ...], 缺失页 null, 人工校正优先
-  const buildMetricArr = useCallback((): unknown[] => {
+  // 全页 metric 原子构建(保存/桥接共用): [pageW, p1, p2, ...], 缺失页 null,
+  // 人工校正优先(useManual=false 时纯自动, 供异常上报交修复前版本)
+  const buildMetricArr = useCallback((useManual = true): unknown[] => {
     const first = autoRef.current[1];
     const pageW = first?.pageW ?? opt.pagewd ?? 1000;
     const out: unknown[] = [pageW];
@@ -565,7 +610,7 @@ export default function ScoreFollowPage() {
       const a = autoRef.current[n];
       if (!a) { out.push(null); continue; }
       const k = pageW / a.pageW;
-      const bars = pageBarsFor(n, a);
+      const bars = useManual ? pageBarsFor(n, a) : a.bars;
       out.push({
         cxs: a.systems.map((s) => ({
           cs: s.cs.map((y) => Math.round(y * k * 1000) / 1000),
@@ -1866,7 +1911,249 @@ export default function ScoreFollowPage() {
     return '["' + parts.join('",\n"') + '"]';
   }, []);
 
+  // 异常上报 bundle: 修复前 preload.js(纯自动) + 修复后 preload.js(人工校正) +
+  // 原 PDF(pdfBytesRef)；issue 里附逐行 diff，直达第几页第几行、增/删/移了哪条线。
+  // 图片谱无原文件则只带数据(kind=image, 调试时需另附原图)
+  const buildReportBundle = useCallback(async (): Promise<{
+    dir: string; fileBase: string; report: Record<string, unknown>;
+    pdfBuf: ArrayBuffer | null; summary: string[]; origJs: string; fixedJs: string;
+  } | null> => {
+    if (!analysis || !numPages) return null;
+    const summary: string[] = [];
+    const diff: string[] = [];
+    for (let n = 1; n <= numPages; n++) {
+      const a = autoRef.current[n];
+      if (!a) continue;
+      const corrected = pageBarsFor(n, a);
+      const autoCount = a.bars.reduce((s, b) => s + Math.max(0, b.length - 1), 0);
+      const corrCount = corrected.reduce((s, b) => s + Math.max(0, b.length - 1), 0);
+      summary.push(`p${n}: auto ${autoCount} → corrected ${corrCount}${manualRef.current[n] ? " (manual)" : ""}`);
+      // 逐行 diff(TOL=4 配对): +新增 -删除 ~移位(>1px)
+      a.bars.forEach((autoRow, si) => {
+        const fixRow = corrected[si] ?? [];
+        const used = new Array(fixRow.length).fill(false);
+        const moved: string[] = [];
+        const removed: number[] = [];
+        autoRow.forEach((w) => {
+          let best = -1, bestD = 5;
+          fixRow.forEach((d, ii) => {
+            if (used[ii]) return;
+            const dd = Math.abs(d - w);
+            if (dd < bestD) { bestD = dd; best = ii; }
+          });
+          if (best >= 0) {
+            used[best] = true;
+            if (bestD > 1) moved.push(`${Math.round(w)}→${Math.round(fixRow[best])}`);
+          } else removed.push(Math.round(w));
+        });
+        const added = fixRow.filter((_, ii) => !used[ii]).map((x) => Math.round(x));
+        if (added.length || removed.length || moved.length) {
+          diff.push(`p${n} s${si + 1}:` +
+            (added.length ? ` +[${added.join(",")}]` : "") +
+            (removed.length ? ` -[${removed.join(",")}]` : "") +
+            (moved.length ? ` ~[${moved.join(",")}]` : ""));
+        }
+      });
+    }
+    if (!diff.length) diff.push("(auto 与 corrected 逐行一致：无小节线改动，问题在别处)");
+    const optSnap: Record<string, number | string> = {};
+    for (const [k, v] of Object.entries(opt)) {
+      if (typeof v === "number" || typeof v === "string") optSnap[k] = v;
+    }
+    const numKeys = ["drmpl", "drmpl2", "skipn", "seln", "eerst", "sysprf", "onestf",
+      "zwgrens", "voorna", "mtdrmpl", "dx", "fixwd"] as const;
+    const advs: Record<string, Record<string, number>> = {};
+    for (let n = 1; n <= numPages; n++) {
+      const row: Record<string, number> = {};
+      const snap = advsRef.current[n];
+      for (const k of numKeys) {
+        row[k] = k === "skipn" || snap?.[k] === undefined
+          ? 1 * ((opt as unknown as Record<string, number>)[k] ?? 0)
+          : 1 * snap[k];
+      }
+      advs[String(n)] = row;
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const fileBase = (pdfName || "score").replace(/\.pdf$/i, "")
+      .replace(/[^\w\-一-鿿]+/g, "_").slice(0, 40) || "score";
+    const pdfBuf = pdfBytesRef.current ? pdfBytesRef.current.slice(0) : null;
+    const bpt = buildPreloadTextRef.current;
+    if (!bpt) { setReportMsg("内部错误：导出器未就绪"); return null; }
+    setStatus("上报：生成修复前 preload …");
+    // orig 版只留 metric 做对照, 不嵌 PDF(以 fixed 版那份为准, 省一份拷贝)
+    const origJs = await bpt(false, false);
+    if (!origJs) return null;
+    setStatus("上报：生成修复后 preload …");
+    const fixedJs = await bpt(true, true);
+    if (!fixedJs) return null;
+    // sha 仍按原字节算(供抽 PDF 后校验), 不再单独传 score.pdf
+    let pdfSha = "";
+    if (pdfBuf && typeof crypto !== "undefined" && crypto.subtle) {
+      const d = await crypto.subtle.digest("SHA-256", pdfBuf.slice(0));
+      pdfSha = Array.from(new Uint8Array(d)).map((x) => x.toString(16).padStart(2, "0")).join("");
+    }
+    const report: Record<string, unknown> = {
+      app: "scorefollow-report", schema: 2, createdAt: new Date().toISOString(),
+      pdfName: pdfName || "", kind: pdfBuf ? "pdf" : "image",
+      algoVersion: ALGO_VERSION, opt: optSnap, advs,
+      files: ["orig.preload.js", "fixed.preload.js"],
+      summary, diff, note: reportNote.trim(),
+      pdf: pdfBuf ? { file: "fixed.preload.js 内 pdf_data", bytes: pdfBuf.byteLength, sha256: pdfSha } : null,
+    };
+    return { dir: `${stamp}-${fileBase}`, fileBase, report, pdfBuf, summary, origJs, fixedJs };
+  }, [analysis, numPages, pdfName, manualBarsByPage, opt, reportNote]);
+
+  // 上报门禁: 没分析 / 还在纠错模式 / 无校正证据 / 没勾确认, 一律不让提交(下载同门)
+  const reportGate = useCallback((): string[] => {
+    const bad: string[] = [];
+    if (!analysis || !numPages) bad.push(lang === "zh" ? "先载入并分析谱面" : "Load and analyze a score first");
+    if (correctMode) bad.push(lang === "zh" ? "先退出纠错模式（点“完成校正”）" : "Exit correction mode first (Done correcting)");
+    if (!(Object.keys(manualBarsByPage).length > 0 || reportNoChange)) {
+      bad.push(lang === "zh" ? "至少校正一页，或勾选“本谱无需校正”" : "Correct at least one page, or check “no correction needed”");
+    }
+    if (!reportConfirmed) bad.push(lang === "zh" ? "勾选“确认校正完成”后才能提交" : "Check “correction complete” before submitting");
+    return bad;
+  }, [analysis, numPages, correctMode, manualBarsByPage, reportNoChange, reportConfirmed, lang]);
+
+  const downloadReport = useCallback(async () => {
+    const bad = reportGate();
+    if (bad.length) { setReportMsg(bad.join("；")); return; }
+    setReportMsg(lang === "zh" ? "生成 bundle 中…" : "Building bundle…");
+    const b = await buildReportBundle();
+    if (!b) { setReportMsg("无可上报的数据"); return; }
+    const save = (blob: Blob, name: string) => {
+      const el = document.createElement("a");
+      el.href = URL.createObjectURL(blob);
+      el.download = name;
+      el.click();
+      setTimeout(() => URL.revokeObjectURL(el.href), 4000);
+    };
+    save(new Blob([b.origJs], { type: "text/javascript" }), `${b.dir}-orig.preload.js`);
+    save(new Blob([b.fixedJs], { type: "text/javascript" }), `${b.dir}-fixed.preload.js`);
+    save(new Blob([JSON.stringify(b.report, null, 1)], { type: "application/json" }), `${b.dir}-report.json`);
+    setReportMsg(lang === "zh"
+      ? `已下载 bundle（${b.dir}，3 个文件；原 PDF 在 fixed.preload.js 里），发过来即可开修`
+      : `Bundle downloaded (${b.dir}, 3 files; source PDF inside fixed.preload.js)`);
+  }, [reportGate, buildReportBundle, lang]);
+
+  // 全自动提交: 浏览器直发 GitHub(Contents API 传文件 + Issues API 建单),
+  // token 只存本机 localStorage, 绝不进代码仓库；静态托管无后端，这是唯一零服务器通道
+  const submitReport = useCallback(async () => {
+    const bad = reportGate();
+    if (bad.length) { setReportMsg(bad.join("；")); return; }
+    const tok = reportToken.trim();
+    const repo = (reportRepo.trim() || "Birdywen/scorefollow").replace(/^\/+|\/+$/g, "");
+    if (!tok) {
+      setReportMsg(lang === "zh" ? "先填写 GitHub token（仅存本机浏览器）" : "Enter a GitHub token first (stored only in this browser)");
+      return;
+    }
+    if (!/^[\w.\-]+\/[\w.\-]+$/.test(repo)) {
+      setReportMsg(lang === "zh" ? "仓库格式应为 owner/repo" : "Repo must look like owner/repo");
+      return;
+    }
+    const b = await buildReportBundle();
+    if (!b) { setReportBusy(false); setReportMsg("无可上报的数据"); return; }
+    setReportMsg(lang === "zh" ? "上传中…" : "Uploading…");
+    try {
+      try { localStorage.setItem("sf-report-token", tok); localStorage.setItem("sf-report-repo", repo); } catch { /* ignore */ }
+      const fixedBytes = new Blob([b.fixedJs]).size;
+      if (fixedBytes > 90 * 1024 * 1024) {
+        throw new Error(lang === "zh" ? "fixed.preload.js 超过 90MB，GitHub 单文件上限，请改用“仅下载”" : "fixed.preload.js over 90MB exceeds GitHub single-file limit; use download instead");
+      }
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${tok}`, Accept: "application/vnd.github+json" };
+      const put = async (path: string, contentB64: string) => {
+        const r = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+          method: "PUT", headers,
+          body: JSON.stringify({ message: `auto-report: ${b.dir} ${path.split("/").pop()}`, content: contentB64, branch: "main" }),
+        });
+        if (!r.ok) {
+          const t = await r.text().then((s) => s.slice(0, 200)).catch(() => "");
+          throw new Error(`upload ${path.split("/").pop()} failed: ${r.status} ${t}`);
+        }
+      };
+      const enc = new TextEncoder();
+      await put(`reports/${b.dir}/orig.preload.js`, bufToB64(enc.encode(b.origJs).buffer as ArrayBuffer));
+      await put(`reports/${b.dir}/fixed.preload.js`, bufToB64(enc.encode(b.fixedJs).buffer as ArrayBuffer));
+      await put(`reports/${b.dir}/report.json`, bufToB64(enc.encode(JSON.stringify(b.report, null, 1)).buffer as ArrayBuffer));
+      const diffLines = (b.report.diff as string[]).slice(0, 60);
+      const lines = [
+        `auto-report by scorefollow web UI (algo v${ALGO_VERSION})`, ``,
+        `谱面: ${pdfName || "(未命名)"} · ${numPages} 页 · kind=${b.pdfBuf ? "pdf" : "image"}${
+          b.report.pdf ? ` · 原 PDF 嵌于 fixed.preload.js 的 pdf_data（sha256 ${(b.report.pdf as Record<string, unknown>).sha256 || "n/a"}，可用 scripts/preload-pdf.mjs 抽出）` : " · 无原文件（图片谱，需另附原图）"}`,
+        ``, `## 改动定位（auto → corrected）`,
+        ...b.summary.map((s) => `- ${s}`),
+        ...diffLines.map((s) => `- \`${s}\``),
+        (b.report.diff as string[]).length > 60 ? `- …（共 ${(b.report.diff as string[]).length} 行，见 report.json）` : ``, ``,
+        `备注: ${(reportNote.trim() || "（无）").slice(0, 2000)}`, ``,
+        `bundle: \`reports/${b.dir}/\``,
+        `- [orig.preload.js](https://github.com/${repo}/blob/main/reports/${b.dir}/orig.preload.js)（修复前·纯自动）`,
+        `- [fixed.preload.js](https://github.com/${repo}/blob/main/reports/${b.dir}/fixed.preload.js)（修复后·人工校正·含原 PDF）`,
+        `- [report.json](https://github.com/${repo}/blob/main/reports/${b.dir}/report.json)`,
+      ];
+      const ir = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+        method: "POST", headers,
+        body: JSON.stringify({ title: `[auto-report] ${b.fileBase} ${b.dir.slice(0, 10)}`, body: lines.join("\n"), labels: ["auto-report"] }),
+      });
+      if (!ir.ok) {
+        const t = await ir.text().then((s) => s.slice(0, 200)).catch(() => "");
+        throw new Error(`create issue failed: ${ir.status} ${t}`);
+      }
+      const ij = await ir.json() as { number?: number };
+      setReportMsg(lang === "zh"
+        ? `已提交：issue #${ij.number} · bundle reports/${b.dir}/ —— 喊一声就开修`
+        : `Submitted: issue #${ij.number} · bundle reports/${b.dir}/`);
+    } catch (e) {
+      setReportMsg((lang === "zh" ? "提交失败：" : "Submit failed: ") +
+        (e instanceof Error ? e.message : String(e)) +
+        (lang === "zh" ? "（可改用“仅下载 bundle”把文件发过来）" : " (use “Download bundle only” instead)"));
+    } finally {
+      setReportBusy(false);
+    }
+  }, [reportGate, buildReportBundle, reportToken, reportRepo, pdfName, numPages, reportNote, lang]);
+
+  // 主通道: 直传服务器本地目录(~/scorefollow-reports/<dir>/)，无需 token、无中转。
+  // 失败时（本地开发无 PHP / 服务器未配置）报出原因，由调用方决定是否降级 GitHub/下载。
+  const submitToServer = useCallback(async (): Promise<boolean> => {
+    const bad = reportGate();
+    if (bad.length) { setReportMsg(bad.join("；")); return false; }
+    const endpoint = reportEndpoint.trim();
+    const secret = reportSecret.trim();
+    if (!secret) {
+      setReportMsg(lang === "zh" ? "先填写上报密钥（服务器 ~/sf-report-secret 首行）" : "Enter the upload secret first (first line of ~/sf-report-secret)");
+      return false;
+    }
+    const b = await buildReportBundle();
+    if (!b) { setReportBusy(false); setReportMsg("无可上报的数据"); return false; }
+    setReportBusy(true);
+    setReportMsg(lang === "zh" ? "直传服务器中…" : "Uploading to server…");
+    try {
+      try { localStorage.setItem("sf-report-endpoint", endpoint); localStorage.setItem("sf-report-secret", secret); } catch { /* ignore */ }
+      const fd = new FormData();
+      fd.append("secret", secret);
+      fd.append("dir", b.dir);
+      fd.append("orig", new Blob([b.origJs], { type: "text/javascript" }), "orig.preload.js");
+      fd.append("fixed", new Blob([b.fixedJs], { type: "text/javascript" }), "fixed.preload.js");
+      fd.append("meta", new Blob([JSON.stringify(b.report, null, 1)], { type: "application/json" }), "report.json");
+      const r = await fetch(endpoint, { method: "POST", body: fd });
+      const j = await r.json().catch(() => null) as { ok?: boolean; error?: string; dir?: string } | null;
+      if (!r.ok || !j || j.ok !== true) {
+        throw new Error(`server ${r.status}: ${(j && j.error) || "upload rejected"}`);
+      }
+      setReportMsg(lang === "zh"
+        ? `已直传服务器：~/scorefollow-reports/${j.dir || b.dir}/ —— 喊一声就开修`
+        : `Uploaded to server: ~/scorefollow-reports/${j.dir || b.dir}/`);
+      return true;
+    } catch (e) {
+      setReportMsg((lang === "zh" ? "直传失败：" : "Server upload failed: ") +
+        (e instanceof Error ? e.message : String(e)));
+      return false;
+    } finally {
+      setReportBusy(false);
+    }
+  }, [reportGate, buildReportBundle, reportEndpoint, reportSecret, lang]);
+
   // preload.js 文本组装(原版 synpdf.html 兼容: 全页 metric + pdf_data + 全局 timing + 逐页 adv)
+
   // 读活节拍器预设(面板导出与 File 卡导出统一写 sga_config, 导入时恢复)
   const readMetroCfg = useCallback((): Record<string, unknown> | null => {
     try {
@@ -1883,7 +2170,9 @@ export default function ScoreFollowPage() {
   }, []);
 
   // 供 File 卡预览/下载 + 节拍器面板 ⤓ Export(经 window.__sfPreloadText)共用
-  const buildPreloadText = useCallback(async (): Promise<string | null> => {
+  // useManual=false 时 metric 全取自动值(异常上报交修复前版本用), 头部打标区分;
+  // includePdf=false 时不嵌 pdf_data(上报 orig 版只留 metric 做对照, PDF 以 fixed 版那份为准)
+  const buildPreloadText = useCallback(async (useManual = true, includePdf = true): Promise<string | null> => {
     const pdf = pdfDocRef.current;
     if (!pdf || !numPages) { setStatus("先载入谱面再保存 preload"); return null; }
     const w = wijzerRef.current;
@@ -1895,7 +2184,7 @@ export default function ScoreFollowPage() {
         await renderAndAnalyze(pdf, n, off);
       }
     }
-    const metric = buildMetricArr() as unknown[];
+    const metric = buildMetricArr(useManual) as unknown[];
     const numKeys = ["drmpl", "drmpl2", "skipn", "seln", "eerst", "sysprf", "onestf",
       "zwgrens", "voorna", "mtdrmpl", "dx", "fixwd"] as const;
     const adv: Record<string, Record<string, number>> = {};
@@ -1921,10 +2210,10 @@ export default function ScoreFollowPage() {
     L.push("//# the same folder as synpdf.html. Synpdf preloads score and media when it is opened with the");
     L.push("//# file name as parameter in the url, for example: http://your.domain.org/synpdf.html?file_name.js");
     L.push("//# Also works locally with file:///path/to/synpdf.html?file_name.js");
-    L.push(`//# **** exported by scorefollow algo v${ALGO_VERSION} · ${numPages} pages metric + ${pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0 ? "pdf_data + " : ""}timing ****`);
+    L.push(`//# **** exported by scorefollow algo v${ALGO_VERSION} · ${numPages} pages metric${useManual ? "" : " AUTO-ONLY(orig)"} + ${pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0 ? "pdf_data + " : ""}timing ****`);
     L.push("//########################################");
     L.push(`pdf_file = ${JSON.stringify(base + ".pdf")};`);
-    if (pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0) {
+    if (includePdf && pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0) {
       L.push(`pdf_data = ${bin2txt(pdfBytesRef.current)};`);
     }
     L.push(`media_file = ${JSON.stringify(mediaName || "")};`);
@@ -1970,6 +2259,8 @@ export default function ScoreFollowPage() {
     readMetroCfg, fullScreen, chromeOpen, cleanView, darkTheme, lang,
     showSystems, showBars, showCursor, showLowConf, diagnosticMode,
     speed, profileName, loopA, loopB, synbox, mediaName]);
+
+  useEffect(() => { buildPreloadTextRef.current = buildPreloadText; }, [buildPreloadText]);
 
   // save preload.js: 预览仅显示摘要；完整文本保留供下载/复制。
   const savePreload = useCallback(async () => {
@@ -2618,8 +2909,9 @@ export default function ScoreFollowPage() {
          <span className={styles.modeHint}>{selectedBar ? `${tx("selected")} · p${pageNum} · s${selectedBar.si + 1} · x${Math.round(analysis?.bars[selectedBar.si]?.[selectedBar.bi] ?? 0)}` : tx("correctHint")}</span>
          <button onClick={doUndo} disabled={!undoRef.current.length}>{tx("pieUndo")}</button>
          <button onClick={doRedo} disabled={!redoRef.current.length}>{tx("pieRedo")}</button>
-         <button onClick={() => { setCorrectMode(false); setSelectedBar(null); setPie(null); }}>{tx("exitCorrect")}</button>
-       </div>}
+          <button onClick={() => { setCorrectMode(false); setSelectedBar(null); setPie(null); }}>{tx("exitCorrect")}</button>
+          <button onClick={() => { setReportOpen(true); setReportMsg(""); }}>{tx("reportIssue")}</button>
+        </div>}
 
        {helpOpen && <section className={`${styles.advpanel} ${styles.helpPanel}`} role="region" aria-label={lang === "zh" ? "快捷键帮助" : "Keyboard help"}>
          <div className={styles.pcardHead}><strong>{lang === "zh" ? "快捷键与操作" : "Keyboard & controls"}</strong><button onClick={() => setHelpOpen(false)} aria-label={tx("close")}>×</button></div>
@@ -2631,7 +2923,50 @@ export default function ScoreFollowPage() {
         <div>Annotation: enable annot, then long-click/shift-click to add; drag to move.</div>
       </section>}
 
-       {preloadPreview && <div className={styles.modalBackdrop} onClick={closePreview}>
+        {reportOpen && <div className={styles.modalBackdrop} onClick={() => setReportOpen(false)}>
+          <section className={styles.exportDialog} role="dialog" aria-modal="true" aria-label={tx("reportTitle")} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.exportHead}>
+              <div><h2>{tx("reportTitle")}</h2>
+                <p>{numPages} {tx("pageUnit")} · {correctedPages} {lang === "zh" ? "页已校正" : "corrected pages"} · algo v{ALGO_VERSION} · {pdfBytesRef.current ? lang === "zh" ? "原 PDF 将嵌于 fixed.preload.js" : "source PDF embedded in fixed.preload.js" : lang === "zh" ? "图片谱（无原文件，需另附原图）" : "image score (no source file; attach originals separately)"}</p></div>
+              <button className={styles.practiceBtn} onClick={() => setReportOpen(false)} aria-label={tx("close")}>×</button>
+            </div>
+            <div className={styles.exportActions} style={{ justifyContent: "flex-start" }}>
+              <span>{!analysis || !numPages ? "✗" : "✓"} {lang === "zh" ? "已分析" : "Analyzed"}</span>
+              <span>{correctMode ? "✗" : "✓"} {tx("exitCorrect")}</span>
+              <span>{Object.keys(manualBarsByPage).length > 0 || reportNoChange ? "✓" : "✗"} {lang === "zh" ? "有校正/无需校正" : "Corrected / N/A"}</span>
+              <span>{reportConfirmed ? "✓" : "✗"} {lang === "zh" ? "已确认" : "Confirmed"}</span>
+            </div>
+            <label className={styles.expertHint} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <input type="checkbox" checked={reportConfirmed} onChange={(e) => setReportConfirmed(e.target.checked)} />
+              <span>{tx("reportConfirmDone")}</span>
+            </label>
+            <label className={styles.expertHint} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <input type="checkbox" checked={reportNoChange} onChange={(e) => setReportNoChange(e.target.checked)} />
+              <span>{tx("reportNoChangeOpt")}</span>
+            </label>
+            <textarea rows={3} style={{ width: "100%" }} value={reportNote} onChange={(e) => setReportNote(e.target.value)} placeholder={tx("reportNotePh")} />
+            <input style={{ width: "100%" }} value={reportEndpoint} onChange={(e) => setReportEndpoint(e.target.value)} placeholder={tx("reportEndpointPh")} />
+            <input style={{ width: "100%" }} type="password" autoComplete="off" value={reportSecret} onChange={(e) => setReportSecret(e.target.value)} placeholder={tx("reportSecretPh")} />
+            <p className={styles.expertHint}>{lang === "zh"
+              ? "服务器配一次即可（ezmusics shell）：head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \\n' > ~/sf-report-secret && mkdir -p ~/scorefollow-reports && chmod 700 ~/scorefollow-reports —— 首行字符串填进上面密钥框"
+              : "One-time server setup (ezmusics shell): pipe 16 random bytes into ~/sf-report-secret and mkdir ~/scorefollow-reports, then paste the first line into the secret box above"}</p>
+            <details>
+              <summary className={styles.expertHint}>{lang === "zh" ? "备用：经 GitHub 中转（需 token）" : "Fallback: via GitHub (needs token)"}</summary>
+              <input style={{ width: "100%" }} type="password" autoComplete="off" value={reportToken} onChange={(e) => setReportToken(e.target.value)} placeholder={tx("reportTokenPh")} />
+              <input style={{ width: "100%" }} value={reportRepo} onChange={(e) => setReportRepo(e.target.value)} placeholder="owner/repo" />
+              <div className={styles.exportActions}>
+                <button className={styles.practiceBtn} onClick={() => void submitReport()} disabled={reportBusy}>{reportBusy ? "…" : tx("reportSubmit")}</button>
+              </div>
+            </details>
+            {reportMsg && <p className={styles.expertHint}>{reportMsg}</p>}
+            <div className={styles.exportActions}>
+              <button className={styles.practiceBtn} onClick={() => void downloadReport()} disabled={reportBusy}>{tx("reportDownloadOnly")}</button>
+              <button className={styles.practicePlay} onClick={() => void submitToServer()} disabled={reportBusy}>{reportBusy ? "…" : tx("reportServer")}</button>
+            </div>
+          </section>
+        </div>}
+
+        {preloadPreview && <div className={styles.modalBackdrop} onClick={closePreview}>
          <section className={styles.exportDialog} role="dialog" aria-modal="true" aria-label={tx("exportPreview")} onClick={(e) => e.stopPropagation()}
            onKeyDown={(e) => {
              if (e.key !== "Tab") return;
