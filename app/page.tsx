@@ -1517,12 +1517,14 @@ export default function ScoreFollowPage() {
     if (!analysis || !selectedBar) return;
     const { si, bi } = selectedBar;
     const row = analysis.bars[si];
-    if (!row || bi <= 0 || bi >= row.length - 1) return;
+    // bi=0(首小节左线/系统左边界)允许向右合(删 line1); 向左合由 removeIndex<=0 拦。
+    // 原先 bi<=0 一刀切, 首小节 D 键永远没反应(A 从 m2 删 line1 才绕过去)。
+    if (!row || bi < 0 || bi >= row.length - 1) return;
     const removeIndex = side === "left" ? bi : bi + 1;
     if (removeIndex <= 0 || removeIndex >= row.length - 1) return;
     const bars = cloneBars(analysis.bars);
     bars[si].splice(removeIndex, 1);
-    setSelectedBar({ si, bi: Math.max(1, Math.min(bi, bars[si].length - 2)) });
+    setSelectedBar({ si, bi: Math.max(0, Math.min(bi, bars[si].length - 2)) });
     commitBars(bars, `merge ${side} p${pageNum} s${si + 1}`);
   }, [analysis, commitBars, pageNum, selectedBar]);
 
