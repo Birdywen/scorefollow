@@ -2121,40 +2121,50 @@ export default function ScoreFollowPage() {
   }, [reportGate, buildReportBundle, reportToken, reportRepo, pdfName, numPages, reportNote, lang]);
 
   // 主通道: 直传服务器本地目录(~/scorefollow-reports/<dir>/)，无需 token、无中转。
-  // 失败时（本地开发无 PHP / 服务器未配置）报出原因，由调用方决定是否降级 GitHub/下载。
+  // 级联: 先走配置的地址, 不通再试同源 /sf-report-upload(本机测试直收)——两边都写同一密钥即可一次点通。
   const submitToServer = useCallback(async (): Promise<boolean> => {
     const bad = reportGate();
     if (bad.length) { setReportMsg(bad.join("；")); return false; }
-    const endpoint = reportEndpoint.trim();
     const secret = reportSecret.trim();
     if (!secret) {
       setReportMsg(lang === "zh" ? "先填写上报密钥（服务器 ~/sf-report-secret 首行）" : "Enter the upload secret first (first line of ~/sf-report-secret)");
       return false;
     }
-    const b = await buildReportBundle();
-    if (!b) { setReportBusy(false); setReportMsg("无可上报的数据"); return false; }
+    const b = await buildReportBundle().catch((e: unknown) => {
+      setReportMsg((lang === "zh" ? "生成失败：" : "Build failed: ") + (e instanceof Error ? e.message : String(e)));
+      return null;
+    });
+    if (!b) { setReportMsg((m) => m || "无可上报的数据"); return false; }
     setReportBusy(true);
     setReportMsg(lang === "zh" ? "直传服务器中…" : "Uploading to server…");
     try {
-      try { localStorage.setItem("sf-report-endpoint", endpoint); localStorage.setItem("sf-report-secret", secret); } catch { /* ignore */ }
+      const configured = reportEndpoint.trim() || `${BASE}/sf-report-upload.php`;
+      const sameOrigin = `${window.location.origin}/sf-report-upload`;
+      const endpoints = [...new Set([configured, sameOrigin])];
+      try { localStorage.setItem("sf-report-endpoint", configured); localStorage.setItem("sf-report-secret", secret); } catch { /* ignore */ }
       const fd = new FormData();
       fd.append("secret", secret);
       fd.append("dir", b.dir);
       fd.append("orig", new Blob([b.origJs], { type: "text/javascript" }), "orig.preload.js");
       fd.append("fixed", new Blob([b.fixedJs], { type: "text/javascript" }), "fixed.preload.js");
       fd.append("meta", new Blob([JSON.stringify(b.report, null, 1)], { type: "application/json" }), "report.json");
-      const r = await fetch(endpoint, { method: "POST", body: fd });
-      const j = await r.json().catch(() => null) as { ok?: boolean; error?: string; dir?: string } | null;
-      if (!r.ok || !j || j.ok !== true) {
-        throw new Error(`server ${r.status}: ${(j && j.error) || "upload rejected"}`);
+      let lastErr = "";
+      for (const endpoint of endpoints) {
+        try {
+          const r = await fetch(endpoint, { method: "POST", body: fd });
+          const j = await r.json().catch(() => null) as { ok?: boolean; error?: string; dir?: string } | null;
+          if (!r.ok || !j || j.ok !== true) {
+            throw new Error(`server ${r.status}: ${(j && j.error) || "upload rejected"}`);
+          }
+          setReportMsg(lang === "zh"
+            ? `已直传服务器（经 ${endpoint}）：~/scorefollow-reports/${j.dir || b.dir}/ —— 喊一声就开修`
+            : `Uploaded to server (via ${endpoint}): ~/scorefollow-reports/${j.dir || b.dir}/`);
+          return true;
+        } catch (e) {
+          lastErr = e instanceof Error ? `${endpoint} → ${e.message}` : String(e);
+        }
       }
-      setReportMsg(lang === "zh"
-        ? `已直传服务器：~/scorefollow-reports/${j.dir || b.dir}/ —— 喊一声就开修`
-        : `Uploaded to server: ~/scorefollow-reports/${j.dir || b.dir}/`);
-      return true;
-    } catch (e) {
-      setReportMsg((lang === "zh" ? "直传失败：" : "Server upload failed: ") +
-        (e instanceof Error ? e.message : String(e)));
+      setReportMsg((lang === "zh" ? "直传失败：" : "Server upload failed: ") + lastErr);
       return false;
     } finally {
       setReportBusy(false);
