@@ -211,6 +211,13 @@ export function estimateSkewAngle(src: HTMLCanvasElement): number {
     for (let k = 0; k < rows; k++) { const e = rm[k] - mean; v += e * e; }
     if (v > bestV) { bestV = v; bestA = a; }
   }
+  // 边界峰不可信: 真实偏斜的峰必在搜索区间内部。落在 ±5° 边界上说明
+  // 方差随角度单调变化, 多为近空白页旋转把墨拖进测量窗造出的假峰,
+  // 此时禁止转正(否则把摆正的谱面转歪, 如 No.19 p3 误检 -5.00°)。
+  if (Math.abs(bestA) >= 5 - 1e-9) return 0;
+  // 本底过滤: 行均值方差过低说明测量窗内没有谱线结构(稀疏页),
+  // 任何"峰"都是噪声。No.19 实测: 健康页 ~900/行, 稀疏页 ~1.5/行。
+  if (bestV / Math.max(1, rows) < 20) return 0;
   return Math.abs(bestA) < 0.15 ? 0 : bestA;
 }
 
