@@ -16,6 +16,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "reports")
 DIR_RE = re.compile(r"^[0-9A-Za-z\-_]{1,80}$")
 MAX_FILE = 120 * 1024 * 1024
+# 公开谱库: 落盘位置独立于 next out/ 之外, 重构建不清空; 由 nginx
+# location /scorefollow/Score/ 直接 alias 对外(见 /etc/nginx/sites-enabled/default)
+SCORE_ROOT = "/home/ubuntu/scorefollow-scores"
+SCORE_PATH_RE = re.compile(r"^Score/[0-9A-Za-z\-_./]{1,110}\.js$")
 
 
 def get_secret() -> str:
@@ -98,6 +102,53 @@ class Handler(BaseHTTPRequestHandler):
         secret = fields.get("secret", (None, b""))[1].decode("utf-8", "replace")
         if not secrets.compare_digest(secret, SECRET):
             return self._json(403, {"ok": False, "error": "bad secret"})
+        # 公开谱面推送(target=score): 同密钥; path=Score/[子目录/]名.js 白名单;
+        # 落盘 SCORE_ROOT 并更新 Score/scores.json 目录单(同 path 去重后置顶)
+        if fields.get("target", (None, b""))[1].decode("utf-8", "replace") == "score":
+            import json
+            import time
+            p = fields.get("path", (None, b""))[1].decode("utf-8", "replace")
+            if not SCORE_PATH_RE.match(p) or ".." in p:
+                return self._json(400, {"ok": False, "error": "bad path (want Score/[sub/]name.js)"})
+            if "file" not in fields or fields["file"][0] is None:
+                return self._json(400, {"ok": False, "error": "missing file: file"})
+            data = fields["file"][1]
+            if not data or len(data) > MAX_FILE:
+                return self._json(400, {"ok": False, "error": "bad size on file"})
+            dest = os.path.join(SCORE_ROOT, p)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as f:
+                f.write(data)
+            os.chmod(dest, 0o644)
+            title = fields.get("title", (None, b""))[1].decode("utf-8", "replace").strip()
+            if not title:
+                title = re.sub(r"\.js$", "", os.path.basename(p), flags=re.I)
+            bpm_raw = fields.get("bpm", (None, b""))[1].decode("utf-8", "replace").strip()
+            meter_raw = fields.get("meter", (None, b""))[1].decode("utf-8", "replace").strip()
+            try:
+                bpm = min(300, max(20, int(bpm_raw))) if bpm_raw else None
+            except ValueError:
+                bpm = None
+            meter = meter_raw if re.match(r"^\d{1,2}/\d{1,2}$", meter_raw) else None
+            mf = os.path.join(SCORE_ROOT, "Score", "scores.json")
+            manifest = {"scores": []}
+            if os.path.exists(mf):
+                try:
+                    with open(mf) as f:
+                        old = json.load(f)
+                    if isinstance(old, dict) and isinstance(old.get("scores"), list):
+                        manifest = old
+                except (ValueError, OSError):
+                    pass
+            entry = {"path": p, "title": title[:80], "bpm": bpm, "meter": meter,
+                     "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+            manifest["scores"] = [entry] + [s for s in manifest["scores"]
+                                            if isinstance(s, dict) and s.get("path") != p][:499]
+            with open(mf, "w") as f:
+                json.dump(manifest, f, ensure_ascii=False, indent=1)
+            os.chmod(mf, 0o644)
+            return self._json(200, {"ok": True, "path": p,
+                                    "files": [os.path.basename(p), "scores.json"]})
         d = fields.get("dir", (None, b""))[1].decode("utf-8", "replace")
         if not DIR_RE.match(d):
             return self._json(400, {"ok": False, "error": "bad dir"})
