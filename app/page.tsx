@@ -1119,7 +1119,7 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = `${BASE}/metro-engine.js?v=20260927-space-ready`;
+    s.src = `${BASE}/metro-engine.js?v=20260928-space-control`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
@@ -1159,6 +1159,19 @@ export default function ScoreFollowPage() {
       return ((window as unknown as Record<string, unknown>).__sgaMetroControl ?? null) as MetroControl | null;
     } catch { return null; }
   };
+
+  useEffect(() => {
+    const win = window as unknown as { __sfSpaceControl?: (event: KeyboardEvent) => boolean };
+    const control = (event: KeyboardEvent) => {
+      if (mediaURL) return false; // 音频播放器的空格仍由 React 接管
+      const mc = metroControl();
+      if (!mc) return false;
+      if (!event.repeat) { if (mc.isPlaying()) mc.stop(); else mc.play(); }
+      return true;
+    };
+    win.__sfSpaceControl = control;
+    return () => { if (win.__sfSpaceControl === control) delete win.__sfSpaceControl; };
+  }, [mediaURL]);
 
   // 新谱面: 必须清掉上一份谱的全部状态(缓存/人工校正/timing/undo),
   // 否则同页同尺寸会命中旧缓存、旧小节线盖到新谱上。
@@ -2963,10 +2976,13 @@ export default function ScoreFollowPage() {
       if (e.key === " ") {
         e.preventDefault();
         if (!e.repeat) {
-          // 无音频时空格归引擎(面板空格 toggle 播放/停止, 自带 300ms 防连击);
-          // React 这里再调会造成双触发(一按就停), 故让路
-          if (!mediaURL && metroControl()) return;
-          playing ? doPause() : doPlay();
+          if (mediaURL) {
+            playing ? doPause() : doPlay();
+          } else {
+            const mc = metroControl();
+            if (mc) { mc.isPlaying() ? mc.stop() : mc.play(); }
+            else { playing ? doPause() : doPlay(); }
+          }
         }
       }
       else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {

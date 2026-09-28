@@ -622,6 +622,13 @@ function boot(){
     if(document.querySelector('[data-editing="true"]')) return;  // annotation editing owns arrow keys
     var k=ev.key, target=-1, i;
     if(k===' '||k==='Spacebar'){
+      // 练习页由 React 统一走与播放按钮相同的控制 API；独立引擎保留原快捷键。
+      if(typeof window.__sfSpaceControl==='function'){
+        if(window.__sfSpaceControl(ev)){
+          ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+        }
+        return; // 有音频时留给 React 的 keydown，不启动节拍器
+      }
       ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
       if(!ev.repeat) start();
       return;
