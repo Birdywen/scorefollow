@@ -175,6 +175,7 @@ def _hint_track(signal: np.ndarray, rate: int,
     mids = (ends[:-1] + starts[1:]) / 2
     j = np.searchsorted(mids, times, side="right")
     outside = (times < starts[0]) | (times >= ends[-1])
+    # silence inherits neighbor pitch; voiced gated by energy in caller
     pyin_p = np.where(outside, np.nan, midis[np.clip(j, 0, len(midis) - 1)])
     # 自研高置信帧优先, 盲区才用 pYIN 补
     use_self = np.isfinite(self_p) & (self_c >= 0.7)
@@ -248,6 +249,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         raise ValueError("开始小节没有可演奏音符")
     notes = [n for n in score_notes if n["measure"] >= start_measure]
     signal, rate = read_wav(wav)
+    # Guard: pYIN 只返回 1 音符时 _hint_track midis[clip(j,0,-1)] 会 IndexError
+    pitch_notes = pitch_notes if pitch_notes and len(pitch_notes) >= 2 else None
     times, pitches, energy, confidence = _hint_track(signal, rate, pitch_notes) if pitch_notes \
         else track(signal, rate)
     if len(times) < 8:
@@ -281,22 +284,24 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # 拍点网格是独立于起音事件的周期参考, 这正是节奏分可测量的前提;
         # 逐音符锚定的 warp(谱面感知对齐)会让期望与实测同源、节奏分恒满分, 故不用。
         if not beat_map or len(beat_map) < 4:
-            raise ValueError("vamp-beat 模式需要 QM 拍点时间轴")
-        base_beat = measure_start_beats(xml)[start_measure]
-        beats = np.asarray(sorted(float(b) for b in beat_map))
-        med = float(np.median(np.diff(beats)))
-        detected_bpm = round(60 / med, 1) if med > 0 else None
-        anchor = int(np.argmin(np.abs(beats - onsets[0])))
+            # Vamp 不可用时静默降级到 legacy 固定速度，前端无感
+            sync_mode = "legacy"
+        else:
+            base_beat = measure_start_beats(xml)[start_measure]
+            beats = np.asarray(sorted(float(b) for b in beat_map))
+            med = float(np.median(np.diff(beats)))
+            detected_bpm = round(60 / med, 1) if med > 0 else None
+            anchor = int(np.argmin(np.abs(beats - onsets[0])))
 
-        def beat_time(rel_beat: float) -> float:  # noqa: F811
-            pos = anchor + rel_beat
-            if pos <= 0:
-                return float(beats[0] + pos * med)
-            if pos >= len(beats) - 1:
-                return float(beats[-1] + (pos - (len(beats) - 1)) * med)
-            i = int(pos)
-            f = pos - i
-            return float(beats[i] * (1 - f) + beats[i + 1] * f)
+            def beat_time(rel_beat: float) -> float:  # noqa: F811
+                pos = anchor + rel_beat
+                if pos <= 0:
+                    return float(beats[0] + pos * med)
+                if pos >= len(beats) - 1:
+                    return float(beats[-1] + (pos - (len(beats) - 1)) * med)
+                i = int(pos)
+                f = pos - i
+                return float(beats[i] * (1 - f) + beats[i + 1] * f)
 
     if sync_mode == "metronome":
         # The client records the metronome downbeat of start_measure.

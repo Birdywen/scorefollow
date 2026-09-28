@@ -5,6 +5,7 @@ function returns None and the engine falls back to its builtin detectors.
 Plugin build recipe lives in VAMP_SETUP.md next to this file.
 """
 
+import logging
 import os
 
 os.environ.setdefault("VAMP_PATH", os.path.expanduser("~/.vamp"))
@@ -34,7 +35,8 @@ def extract_pitch_notes(wav: bytes) -> list | None:
             t = float(seg["timestamp"])
             notes.append((t, t + float(seg["duration"]), 69 + 12 * np.log2(hz / 440.0)))
         return notes or None
-    except Exception:
+    except Exception as e:
+        logging.warning(f"extract_pitch_notes 降级 (builtin): {e}")
         return None
 
 
@@ -56,7 +58,8 @@ def extract_onsets(wav: bytes, sensitivity: int = 20) -> list | None:
                 continue
             merged.append(t)
         return merged or None
-    except Exception:
+    except Exception as e:
+        logging.warning(f"extract_onsets 降级 (builtin): {e}")
         return None
 
 
@@ -71,7 +74,8 @@ def extract_beats(wav: bytes) -> list | None:
                            "qm-vamp-plugins:qm-barbeattracker", output="beats")
         beats = sorted(float(e["timestamp"]) for e in out["list"])
         return beats if len(beats) >= 4 else None
-    except Exception:
+    except Exception as e:
+        logging.warning(f"extract_beats 降级 (legacy): {e}")
         return None
 
 

@@ -71,6 +71,18 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["summary"]["endMeasure"], 1)
         self.assertIsNone(result["summary"]["rhythmScore"])
 
+    def test_single_pyin_note_falls_back_to_builtin_tracker(self):
+        result = analyze(recording((69,)), score(), 60, "violin",
+                         pitch_notes=[(0.12, 0.9, 69.0)])
+        self.assertEqual(result["summary"]["noteCount"], 1)
+        self.assertEqual(result["summary"]["sensors"], ["builtin"])
+
+    def test_vamp_beat_without_beat_map_falls_back_to_legacy(self):
+        result = analyze(recording(), score(), 60, "violin",
+                         sync_mode="vamp-beat", beat_map=None)
+        self.assertEqual(result["summary"]["syncMode"], "legacy")
+        self.assertIsNone(result["summary"]["detectedBpm"])
+
     def test_start_from_later_measure(self):
         result = analyze(recording((72, 74, 76)), score(), 60, "violin", start_measure=3)
         self.assertEqual(result["summary"]["noteCount"], 3)
