@@ -592,6 +592,10 @@ export default function ScoreFollowPage() {
   const [reportSecret, setReportSecret] = useState(() => {
     try { return localStorage.getItem("sf-report-secret") ?? ""; } catch { return ""; }
   });
+  // 公开谱库推送 Score/: 路径 + 状态(密钥复用直传服务器同一密钥)
+  const [scoreBusy, setScoreBusy] = useState(false);
+  const [scoreMsg, setScoreMsg] = useState("");
+  const [scorePath, setScorePath] = useState("");
   // buildPreloadText 在下方定义，bundle 构建经 ref 间接调用（避 TDZ）
   const buildPreloadTextRef = useRef<((useManual?: boolean, includePdf?: boolean) => Promise<string | null>) | null>(null);
   const [lang, setLang] = useState<Lang>(() =>
@@ -1115,7 +1119,7 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = `${BASE}/metro-engine.js?v=20260925-cfg`;
+    s.src = `${BASE}/metro-engine.js?v=20260927-space-ready`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
@@ -3013,6 +3017,107 @@ export default function ScoreFollowPage() {
     if (!mediaURL) clockRef.current.running = playing;
   }, [speed, mediaURL, playing]);
 
+  // URL 演奏参数覆盖: ?preload=Score/x.js&bpm=80&meter=3/4&countIn=2&speed=1&sound=wood
+  // 在 preload 预设恢复之后再压一层, 速度随链接走, 发给学生点开即用。
+  const applyUrlOverrides = useCallback((params: URLSearchParams) => {
+    const cfg: Record<string, unknown> = {};
+    const bpm = Number(params.get("bpm"));
+    if (Number.isFinite(bpm)) cfg.bpm = Math.min(300, Math.max(20, Math.round(bpm)));
+    const meter = (params.get("meter") || "").trim();
+    if (/^\d{1,2}\/\d{1,2}$/.test(meter)) cfg.meter = meter;
+    const countIn = Number(params.get("countIn"));
+    if (Number.isFinite(countIn)) cfg.countIn = Math.min(8, Math.max(0, Math.round(countIn)));
+    const sound = params.get("sound") || "";
+    if (["wood", "clave", "beep", "digital", "snare"].includes(sound)) cfg.sound = sound;
+    const speed = Number(params.get("speed"));
+    if (Number.isFinite(speed)) setSpeed(Math.min(4, Math.max(0.1, speed)));
+    if (!Object.keys(cfg).length) return;
+    // 引擎可能稍后才挂载: 先试一次, 不成则跟 metro-state 重试(约 3 秒)
+    let tries = 0;
+    const push = () => {
+      tries += 1;
+      try {
+        const mc = (window as unknown as Record<string, unknown>).__sgaMetroControl as
+          { applyConfig?: (c: Record<string, unknown>) => void } | undefined;
+        if (mc?.applyConfig) {
+          mc.applyConfig(cfg);
+          setStatus((s) => s + " · 链接演奏参数已应用");
+          return;
+        }
+      } catch { /* retry */ }
+      if (tries < 6) window.setTimeout(push, 500);
+    };
+    push();
+  }, []);
+
+  // 一键推送公开谱库: fixed preload → 本站 Score/ 目录(经 sf-report-upload.php target=score),
+  // 落盘即公开可 fetch, 索引页 /scores/ 自动收录, 返回可分享链接并复制。
+  const publishToScore = useCallback(async () => {
+    if (!analysis || !numPages) {
+      setScoreMsg(lang === "zh" ? "先载入并分析谱面" : "Load and analyze a score first");
+      return;
+    }
+    const secret = reportSecret.trim();
+    if (!secret) {
+      setScoreMsg(lang === "zh" ? "先在上报区填写推送密钥（与直传服务器同一密钥）" : "Enter the upload secret first (same as server upload)");
+      return;
+    }
+    let path = scorePath.trim().replace(/^\/+/, "");
+    if (!path) {
+      const base = (pdfName || "score").replace(/\.pdf$/i, "")
+        .replace(/[^\w\-一-鿿]+/g, "_").slice(0, 40) || "score";
+      path = `Score/${base}.js`;
+    }
+    if (!/^Score\/[0-9A-Za-z\-_./]{1,110}\.js$/.test(path) || path.includes("..")) {
+      setScoreMsg(lang === "zh" ? "路径须形如 Score/书名/曲名.js（字母数字 - _ . /）" : "Path must look like Score/book/piece.js");
+      return;
+    }
+    const b = await buildReportBundle().catch(() => null);
+    if (!b?.fixedJs) {
+      setScoreMsg(lang === "zh" ? "谱面导出失败" : "Export failed");
+      return;
+    }
+    const metro = readMetroCfg();
+    setScoreBusy(true);
+    setScoreMsg(lang === "zh" ? "推送公开谱库中…" : "Publishing to library…");
+    try {
+      const fd = new FormData();
+      fd.append("secret", secret);
+      fd.append("target", "score");
+      fd.append("path", path);
+      fd.append("title", path.replace(/\.js$/i, "").split("/").pop() || path);
+      if (metro && typeof metro.bpm === "number") fd.append("bpm", String(metro.bpm));
+      if (metro && typeof metro.meter === "string") fd.append("meter", metro.meter);
+      fd.append("file", new Blob([b.fixedJs], { type: "text/javascript" }), path.split("/").pop());
+      // 级联: 本站 PHP(虚拟主机) 不通则试同源直收 report-server.py(本机 nginx+8931)
+      const configured = reportEndpoint.trim() || `${BASE}/sf-report-upload.php`;
+      const sameOrigin = `${window.location.origin}/sf-report-upload`;
+      let link = "";
+      let lastErr = "";
+      for (const endpoint of [...new Set([configured, sameOrigin])]) {
+        try {
+          const r = await fetch(endpoint, { method: "POST", body: fd });
+          const j = await r.json().catch(() => null) as { ok?: boolean; error?: string; path?: string } | null;
+          if (!r.ok || !j || j.ok !== true) throw new Error(`server ${r.status}: ${(j && j.error) || "rejected"}`);
+          link = `${window.location.origin}${BASE}/?preload=${encodeURIComponent(j.path || path)}`;
+          break;
+        } catch (e) {
+          lastErr = e instanceof Error ? `${endpoint} → ${e.message}` : String(e);
+        }
+      }
+      if (!link) throw new Error(lastErr || "upload rejected");
+      setScoreMsg((lang === "zh" ? "已公开：" : "Published: ") + link);
+      try {
+        await navigator.clipboard.writeText(link);
+        setScoreMsg((m) => m + (lang === "zh" ? "（已复制）" : " (copied)"));
+      } catch { /* 剪贴板不可用时只展示链接 */ }
+    } catch (e) {
+      setScoreMsg((lang === "zh" ? "推送失败：" : "Publish failed: ") + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setScoreBusy(false);
+    }
+  }, [analysis, numPages, reportSecret, scorePath, pdfName, buildReportBundle, readMetroCfg, reportEndpoint, lang]);
+
   // URL 直载 preload(原版风格): ?曲名.js(裸文件名, 相对本站目录) 或 ?preload=曲名.js
   // 例: /scorefollow/?mytune.js / /scorefollow/?preload=mytune.js
   // 原版 synpdf.html?preload_file.js 同约定(同目录相对路径, 也支持 ../ 上级)
@@ -3039,6 +3144,8 @@ export default function ScoreFollowPage() {
         const txt = await r.text();
         if (dead) return;
         await loadPreloadText(txt, name.split("/").pop() || "url-preload.js");
+        if (dead) return;
+        applyUrlOverrides(params);
       } catch {
         if (!dead) setStatus(`URL preload 载入失败: ${name}(文件须与本站同源可访问; file:// 下浏览器会拦截)`);
       }
@@ -3130,7 +3237,7 @@ export default function ScoreFollowPage() {
               <button className={styles.tbBtn} onClick={doTap}>sync {tapCount > 0 ? `(${tapCount})` : ""}</button>
               <button className={styles.tbBtn} onClick={() => setAdvOpen((v) => !v)} title="Toggle control panel (M)">panel</button>
               <button className={styles.tbBtn} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }} title="Barline correction mode (C)">{correctMode ? "✓ correct" : "correct"}</button>
-              <button className={styles.tbBtn} onClick={() => setHelpOpen((v) => !v)} title="Keyboard shortcuts and help">help</button>
+              <button className={styles.tbBtn} onClick={() => { setMenuOpen(false); setHelpOpen(true); }} title="Keyboard shortcuts and help">? help</button>
               <button className={styles.tbBtn} onClick={toggleFullScreen} title="Toggle fullscreen">{fullScreen ? "exit full" : "full screen"}</button>
               <button className={styles.tbBtn} onClick={() => setDarkTheme((v) => !v)} title="Toggle light/dark theme">{darkTheme ? "light" : "dark"}</button>
               <button className={styles.tbBtn} onClick={() => { setMenuOpen(false); setChromeOpen(false); }} title="Hide toolbar (T)">hide UI</button>
@@ -3202,15 +3309,23 @@ export default function ScoreFollowPage() {
           <button onClick={() => { setReportOpen(true); setReportMsg(""); }}>{tx("reportIssue")}</button>
         </div>}
 
-       {helpOpen && <section className={`${styles.advpanel} ${styles.helpPanel}`} role="region" aria-label={lang === "zh" ? "快捷键帮助" : "Keyboard help"}>
-         <div className={styles.pcardHead}><strong>{lang === "zh" ? "快捷键与操作" : "Keyboard & controls"}</strong><button onClick={() => setHelpOpen(false)} aria-label={tx("close")}>×</button></div>
-        <div>←/→ next or previous measure · ↑/↓ next system · PageUp/PageDown page</div>
-        <div>Space play/pause · B sync · Backspace backup · ,/. adjust duration</div>
-        <div>Tap a measure while metro plays: count-in (follows meter) then restarts there</div>
-        <div>F setting · H help · L line cursor · M panel · V clean view · Esc close</div>
-        <div>C correction mode · S split · A merge left · D merge right (with selection)</div>
-        <div>Annotation: enable annot, then long-click/shift-click to add; drag to move.</div>
-      </section>}
+       {helpOpen && <div className={styles.helpBackdrop} onClick={() => setHelpOpen(false)}>
+         <section className={styles.helpDialog} role="dialog" aria-modal="true" aria-label={lang === "zh" ? "帮助与快捷键" : "Help and shortcuts"} onClick={(e) => e.stopPropagation()}>
+           <header className={styles.helpHero}>
+             <div className={styles.helpHeroIcon}>♪</div>
+             <div><p className={styles.helpEyebrow}>SCOREFOLLOW GUIDE</p><h2>{lang === "zh" ? "把练习变成一条清晰的路" : "A clearer path through practice"}</h2><p>{lang === "zh" ? "从载入谱面，到节拍器跟随，再到演奏分析，这里是你的快速地图。" : "From loading a score to following the beat and reviewing a take, here is your quick map."}</p></div>
+             <button className={styles.helpClose} onClick={() => setHelpOpen(false)} aria-label={tx("close")}>×</button>
+           </header>
+           <div className={styles.helpBody}>
+             <section className={styles.helpCard + " " + styles.helpCardAccent}><span className={styles.helpCardIcon}>▶</span><div><h3>{lang === "zh" ? "开始播放" : "Start playing"}</h3><p>{lang === "zh" ? "谱面载入并显示后，直接按空格即可播放。首次按键若正在准备识别，应用会自动等小节数据就绪。" : "Once the score is visible, press Space to play. If recognition is still settling, the app waits for the measure map automatically."}</p><kbd>Space</kbd><span className={styles.helpMeta}>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span></div></section>
+             <section className={styles.helpCard}><span className={styles.helpCardIcon}>⌁</span><div><h3>{lang === "zh" ? "跟着节拍练" : "Practice with the beat"}</h3><p>{lang === "zh" ? "点击任意小节可移动起点；播放中点击会带预备拍从该小节重新开始。" : "Click a measure to move the start point. While playing, it restarts there with a count-in."}</p><kbd>← →</kbd><kbd>↑ ↓</kbd><span className={styles.helpMeta}>{lang === "zh" ? "小节 / 系统" : "measure / system"}</span></div></section>
+             <section className={styles.helpCard}><span className={styles.helpCardIcon}>◌</span><div><h3>{lang === "zh" ? "建立同步" : "Build sync"}</h3><p>{lang === "zh" ? "播放录音时按 B 记录拍点；Backspace 撤回一个点，逗号和句号微调时值。" : "While listening, press B to mark beats. Backspace removes one; comma and period fine-tune duration."}</p><div><kbd>B</kbd><kbd>⌫</kbd><kbd>, .</kbd></div></div></section>
+             <section className={styles.helpCard}><span className={styles.helpCardIcon}>✦</span><div><h3>{lang === "zh" ? "查看演奏分析" : "Review your take"}</h3><p>{lang === "zh" ? "打开“演奏分析”，上传练习录音，查看音准、节奏、稳定性与需要回听的小节。" : "Open Analyze and upload a take to see pitch, rhythm, stability, and measures worth revisiting."}</p><span className={styles.helpTag}>{lang === "zh" ? "练习报告" : "practice report"}</span></div></section>
+             <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "设置" : "settings"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
+           </div>
+           <footer className={styles.helpFooter}><span>{lang === "zh" ? "提示：按钮也可以直接点击，快捷键适合专注演奏时使用。" : "Tip: every shortcut also has a button, so you can stay focused on the music."}</span><button className={styles.practicePlay} onClick={() => setHelpOpen(false)}>{lang === "zh" ? "开始练习" : "Start practicing"}</button></footer>
+         </section>
+       </div>}
 
         {reportOpen && <div className={styles.modalBackdrop} onClick={() => setReportOpen(false)}>
           <section className={styles.exportDialog} role="dialog" aria-modal="true" aria-label={tx("reportTitle")} onClick={(e) => e.stopPropagation()}>
@@ -3423,6 +3538,23 @@ export default function ScoreFollowPage() {
              <div className={styles.pcardTitle}><span>{tx("fileSection")}</span></div>
             <button className={styles.pfileBtn} onClick={saveTiming}>{tx("saveTiming")}</button>
             <button className={styles.pfileBtn} onClick={() => void savePreload()}>{tx("savePreload")}</button>
+            <div className={styles.pillRow}>
+              <input
+                style={{ width: "100%" }}
+                value={scorePath}
+                onChange={(e) => setScorePath(e.target.value)}
+                placeholder={lang === "zh" ? "公开路径：Score/书名/曲名.js（空=自动）" : "Public path: Score/book/piece.js (empty=auto)"}
+              />
+            </div>
+            <div className={styles.pillRow}>
+              <button className={styles.pfileBtn} disabled={scoreBusy} onClick={() => void publishToScore()}>
+                {scoreBusy ? "…" : lang === "zh" ? "推送到 Score" : "Publish to Score"}
+              </button>
+              <a className={styles.pfileBtn} href={`${BASE}/scores/`}>
+                {lang === "zh" ? "公开谱库" : "Library"}
+              </a>
+            </div>
+            {scoreMsg && <p className={styles.expertHint}>{scoreMsg}</p>}
             <label className={styles.pfileBtn}>{tx("loadTiming")} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTiming(f); }} /></label>
             <label className={styles.pfileBtn}>{tx("loadPreload")} <input type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); }} /></label>
             <label className={styles.pfileBtn} title={lang === "zh" ? "载入 scripts/homr-gate.py 生成的门数据(本地 HoMR 音符模板, 否决符干)" : "Load gate data from scripts/homr-gate.py (local HoMR note templates, veto stems)"}>{lang === "zh" ? "载入门数据" : "Load gate"} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadHomrGate(f); e.target.value = ""; }} /></label>

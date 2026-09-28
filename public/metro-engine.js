@@ -380,7 +380,27 @@ function boot(){
     if(st.playing){ if(nowMs()-(st._startAt||0)<300) return; stop(); return; }
     if(!st.audio) st.audio=new (window.AudioContext||window.webkitAudioContext)();
     if(st.audio.state==='suspended') st.audio.resume();
-    if(!B.length){ info.textContent='no data'; return; }
+    // 首次按空格可能早于 React 发出 metric-rendered；把这次用户操作
+    // 延迟到 metric 可用，而不是要求用户先点一下首小节来“唤醒”引擎。
+    if(!B.length){
+      info.textContent='loading score...';
+      // React may have rendered the metric a moment after the engine booted.
+      // Consume it directly when available, otherwise wait for its bridge event.
+      var live=runtimeMetric();
+      if(live&&applyResponsiveMetric(live)&&B.length){ start(); return; }
+      if(st._waitingStart) return;
+      st._waitingStart=true;
+      var waitForMetric=function(){
+        st._waitingStart=false;
+        window.removeEventListener('synpdf:metric-rendered',waitForMetric);
+        var next=runtimeMetric();
+        if(next) applyResponsiveMetric(next);
+        if(B.length) start(); else info.textContent='no data';
+      };
+      window.addEventListener('synpdf:metric-rendered',waitForMetric,{once:true});
+      setTimeout(function(){ if(st._waitingStart) waitForMetric(); },1500);
+      return;
+    }
     st.playing=true;
     st._startAt=nowMs();
     setPlayBtn(true);
@@ -600,13 +620,17 @@ function boot(){
     var target=ev.target, tn=(target&&target.tagName)||'';
     if(['INPUT','SELECT','TEXTAREA','BUTTON'].indexOf(tn)>=0||(target&&target.isContentEditable)) return;
     if(document.querySelector('[data-editing="true"]')) return;  // annotation editing owns arrow keys
-    if(!B.length) return;
     var k=ev.key, target=-1, i;
+    if(k===' '||k==='Spacebar'){
+      ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+      if(!ev.repeat) start();
+      return;
+    }
+    if(!B.length) return;
     if(k==='ArrowRight'){ var mR=B[st.iSeq][4]; for(i=st.iSeq+1;i<B.length;i++){ if(B[i][4]>mR){ target=barFirst(i); break; } } if(target<0) target=B.length-1; }
     else if(k==='ArrowLeft'){ var fL=barFirst(st.iSeq); target=(st.iSeq>fL)?fL:((fL>0)?barFirst(fL-1):0); }
     else if(k==='ArrowDown'){ var yD=B[st.iSeq][2]; for(i=st.iSeq+1;i<B.length;i++){ if(B[i][2]>yD+1){ target=barFirst(i); break; } } if(target<0) target=st.iSeq; }
     else if(k==='ArrowUp'){ var yU=B[st.iSeq][2], c=st.iSeq; while(c>0&&Math.abs(B[c-1][2]-yU)<=1) c--; if(c>0){ var yP=B[c-1][2], d=c-1; while(d>0&&Math.abs(B[d-1][2]-yP)<=1) d--; target=barFirst(d); } else target=0; }
-    else if(k===' '||k==='Spacebar'){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); if(!ev.repeat) start(); return; }
     else if(k==='h'||k==='H'){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); __toggle(); return; }
     else return;
     ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();

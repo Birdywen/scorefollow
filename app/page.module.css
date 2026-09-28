@@ -65,6 +65,30 @@
 .advpanel { position: absolute; top: 112px; left: 14px; width: 284px; max-height: calc(100vh - 166px); overflow-y: auto; background: #fff; border: 1px solid #e1e6ee; border-radius: 14px; padding: 14px; box-shadow: 0 12px 32px rgba(35,50,75,.13); z-index: 100; font-size: 12px; }
 .controlPanel { position: relative; inset: auto; flex: 0 0 292px; width: 292px; max-height: none; box-sizing: border-box; overflow-y: auto; border-width: 0 1px 0 0; border-radius: 0; padding: 16px 14px; box-shadow: none; z-index: 2; }
 .helpPanel { top: 112px; right: 14px; left: auto; width: min(360px, calc(100vw - 28px)); }
+.helpBackdrop { position: fixed; inset: 0; z-index: 10050; display: grid; place-items: center; padding: 20px; background: radial-gradient(circle at 50% 0%, rgba(61,123,255,.18), rgba(14,24,39,.72) 58%); backdrop-filter: blur(7px); }
+.helpDialog { width: min(760px, 100%); max-height: min(88vh, 820px); overflow: hidden; display: flex; flex-direction: column; color: var(--sf-ink); background: var(--sf-surface); border: 1px solid var(--sf-border); border-radius: 24px; box-shadow: 0 28px 90px rgba(13,28,58,.32); }
+.helpHero { position: relative; display: flex; align-items: center; gap: 18px; padding: 30px 34px 26px; color: #fff; background: linear-gradient(135deg, #12316e, #2563eb 58%, #18a6a1); }
+.helpHeroIcon { display: grid; place-items: center; flex: 0 0 56px; width: 56px; height: 56px; border: 1px solid rgba(255,255,255,.35); border-radius: 18px; background: rgba(255,255,255,.15); font: 700 29px Georgia, serif; box-shadow: 0 10px 24px rgba(0,0,0,.14); }
+.helpEyebrow { margin: 0 0 6px; opacity: .75; font-size: 10px; font-weight: 800; letter-spacing: .18em; }
+.helpHero h2 { margin: 0; font-size: clamp(20px, 3vw, 30px); letter-spacing: -.03em; }
+.helpHero p:last-child { max-width: 590px; margin: 8px 0 0; color: rgba(255,255,255,.8); font-size: 13px; line-height: 1.6; }
+.helpClose { align-self: flex-start; margin-left: auto; padding: 2px 8px; border: 0; border-radius: 9px; color: #fff; background: rgba(255,255,255,.14); font-size: 25px; line-height: 1; cursor: pointer; }
+.helpClose:hover { background: rgba(255,255,255,.25); }
+.helpBody { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; overflow: auto; padding: 22px 30px 14px; }
+.helpCard { display: flex; gap: 13px; min-height: 145px; padding: 17px; border: 1px solid var(--sf-border); border-radius: 16px; background: var(--sf-elevated); }
+.helpCardAccent { border-color: #9dbbfa; background: linear-gradient(145deg, #f0f6ff, var(--sf-elevated)); }
+.helpCardIcon { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 11px; color: #2563eb; background: #dce9ff; font-weight: 800; }
+.helpCard h3, .helpShortcuts h3 { margin: 0; color: var(--sf-ink); font-size: 14px; }
+.helpCard p { margin: 8px 0 13px; color: var(--sf-muted); font-size: 12px; line-height: 1.65; }
+.helpCard kbd, .shortcutGrid kbd { display: inline-block; min-width: 25px; margin: 0 4px 0 0; padding: 3px 7px; border: 1px solid var(--sf-border); border-bottom-width: 2px; border-radius: 6px; color: var(--sf-ink); background: var(--sf-surface); font: 700 11px ui-monospace, monospace; text-align: center; }
+.helpMeta { margin-left: 3px; color: var(--sf-muted); font-size: 11px; }
+.helpTag { display: inline-block; padding: 4px 9px; border-radius: 999px; color: #087f78; background: #d9f5ef; font-size: 11px; font-weight: 700; }
+.helpShortcuts { grid-column: 1 / -1; padding: 16px 17px; border-top: 1px solid var(--sf-border); }
+.shortcutGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-top: 12px; color: var(--sf-muted); font-size: 12px; }
+.helpFooter { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 30px 20px; border-top: 1px solid var(--sf-border); color: var(--sf-muted); font-size: 11px; }
+.page[data-theme="dark"] .helpCardAccent { border-color: #3865ad; background: linear-gradient(145deg, #192c4b, var(--sf-elevated)); }
+.page[data-theme="dark"] .helpCardIcon { color: #91baff; background: #233b64; }
+.page[data-theme="dark"] .helpTag { color: #8ee4d5; background: #173b39; }
 .page[data-theme="dark"] .practicebar { background: #1c1e22; border-color: #343941; }
 .page[data-theme="dark"] .practiceBtn { background: #252930; border-color: #3a3f47; color: #e6e6e6; }
 .page[data-theme="dark"] .practiceBtnActive { background: #192c4b; border-color: #3865ad; color: #91baff; }
@@ -450,6 +474,15 @@ a.secondary {
   .modebar button:first-of-type { margin-left: auto; }
   .statusFacts span:nth-child(n + 3) { display: none; }
   .exportDialog { padding: 16px; }
+  .helpBackdrop { padding: 9px; }
+  .helpDialog { max-height: 94vh; border-radius: 18px; }
+  .helpHero { align-items: flex-start; padding: 23px 20px 20px; }
+  .helpHeroIcon { flex-basis: 44px; width: 44px; height: 44px; border-radius: 14px; }
+  .helpBody { grid-template-columns: 1fr; padding: 16px; }
+  .helpCard { min-height: 0; }
+  .helpShortcuts { grid-column: auto; }
+  .shortcutGrid { grid-template-columns: 1fr 1fr; }
+  .helpFooter { align-items: stretch; flex-direction: column; padding: 14px 16px 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .page :is(.tbBtn, .practiceBtn, .pfileBtn) { transition: none; }
