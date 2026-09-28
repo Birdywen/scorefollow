@@ -60,6 +60,21 @@ def extract_onsets(wav: bytes, sensitivity: int = 20) -> list | None:
         return None
 
 
+def extract_beats(wav: bytes) -> list | None:
+    """QM BarBeatTracker 拍点时间轴（秒）。标签相位不可信，只取时间戳；
+    不足 4 个拍点视为无效。None = 不可用。"""
+    try:
+        import vamp
+        from .engine import read_wav
+        signal, rate = read_wav(wav)
+        out = vamp.collect(_load(signal, rate), rate,
+                           "qm-vamp-plugins:qm-barbeattracker", output="beats")
+        beats = sorted(float(e["timestamp"]) for e in out["list"])
+        return beats if len(beats) >= 4 else None
+    except Exception:
+        return None
+
+
 def extract_all(wav: bytes) -> tuple:
-    """Best-effort (pitch_notes, onsets); each None independently on failure."""
-    return extract_pitch_notes(wav), extract_onsets(wav)
+    """Best-effort (pitch_notes, onsets, beats); 各自独立失败即 None。"""
+    return extract_pitch_notes(wav), extract_onsets(wav), extract_beats(wav)

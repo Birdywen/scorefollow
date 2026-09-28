@@ -85,8 +85,14 @@ curl -s http://127.0.0.1:8765/health
 - pYIN `smoothedpitchtrack` 定步长向量的时间戳直接外推会漂移；
   `notes` 输出的时间戳与音频核对无误——引擎只吃 `notes`（见 `_hint_track`）。
 - pYIN 音符段取平均会抹掉短促偏差（如 +25¢ 只剩 +5¢），自研原始跟踪
-  对这类更敏感；两者互补，下一版做融合，不要二选一。
+  对这类更敏感；已融合（`_hint_track`：自研高置信帧打底 + pYIN 补盲区），
+  sensors 记为 `fused-pitch`。不要二选一。
 - QM 起音 `sensitivity` 反直觉：值越小越少（20≈27 个，50≈37 个，80≈120 个）；
   本机配方 sensitivity=20 + 150 ms 并档，14 个真实起音全中。
+- `sync_mode="vamp-beat"`（活网格）：谱面相对拍→QM 拍点时间轴分段线性映射，
+  稳速材料上节奏 79→97（《小星星》实测），detectedBpm 一并回传。
+  强 rubato（±12%）下拍点跟踪会漂移，错位音符按 uncertain 排除、照实打分。
+  教训：逐音符锚定的 warp 让期望与实测同源、节奏分恒满分——不可用，已删；
+  节奏分必须以独立周期网格为参考才有意义。
 - `vamp.collect` 的 dict 键有 `RealTime` 类型，`float()` 转后再算；
   `notes["list"]` 项是 dict（timestamp/duration/values[Hz]）。

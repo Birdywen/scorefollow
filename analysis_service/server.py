@@ -34,9 +34,9 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
         jobs[job_id]["status"] = "analyzing"
     try:
         # 有 Vamp 插件就用 pYIN+QM 当耳朵, 没有则引擎退回自研检测(前端无感)
-        pitch_notes, onset_hint = vamp_features.extract_all(audio)
+        pitch_notes, onset_hint, beat_map = vamp_features.extract_all(audio)
         result = analyze(audio, xml, bpm, instrument, start_measure, first_beat_audio_sec, sync_mode,
-                         pitch_notes=pitch_notes, onset_hint=onset_hint)
+                         pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map)
         update = {"status": "completed", "result": result}
     except Exception as exc:
         update = {"status": "failed", "error": str(exc) if isinstance(exc, ValueError) else "分析失败，请检查音频和谱面"}
@@ -127,7 +127,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("无效的乐器或 BPM")
                 if type(start_measure) is not int or not 1 <= start_measure <= notes[-1]["measure"]:
                     raise ValueError("开始小节没有可演奏音符")
-                if sync_mode not in ("legacy", "metronome"):
+                if sync_mode not in ("legacy", "metronome", "vamp-beat"):
                     raise ValueError("无效的同步模式")
                 if first_beat is not None and (not isinstance(first_beat, (int, float)) or
                                                not 0 <= float(first_beat) <= MAX_FIRST_BEAT_SECONDS):

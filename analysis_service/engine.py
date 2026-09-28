@@ -166,17 +166,20 @@ def track(signal: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray, np.nda
 
 def _hint_track(signal: np.ndarray, rate: int,
                 notes: list) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """把外部音符段(pYIN)铺到自研时间网格上: 段内取段平均音高, 段间按中点归属
-    (过渡就发生在这段静默里), 首尾之外留 NaN。能量网格沿用自研, 起音沿可比。"""
-    times, _, energy, _ = track(signal, rate)
+    """融合基频: 自研原始跟踪打底(对短促偏差更敏感), pYIN 音符段只补自研
+    无声/低置信的盲区。段间按中点归属, 首尾之外留 NaN, 能量网格沿用自研。"""
+    times, self_p, energy, self_c = track(signal, rate)
     starts = np.array([a for a, _, _ in notes])
     ends = np.array([b for _, b, _ in notes])
     midis = np.array([m for _, _, m in notes])
     mids = (ends[:-1] + starts[1:]) / 2
     j = np.searchsorted(mids, times, side="right")
     outside = (times < starts[0]) | (times >= ends[-1])
-    pitches = np.where(outside, np.nan, midis[np.clip(j, 0, len(midis) - 1)])
-    conf = np.where(outside, 0.0, 0.95)
+    pyin_p = np.where(outside, np.nan, midis[np.clip(j, 0, len(midis) - 1)])
+    # 自研高置信帧优先, 盲区才用 pYIN 补
+    use_self = np.isfinite(self_p) & (self_c >= 0.7)
+    pitches = np.where(use_self, self_p, pyin_p)
+    conf = np.where(use_self, self_c, np.where(np.isfinite(pyin_p), 0.9, 0.0))
     return times, pitches, energy, conf
 
 
@@ -221,14 +224,16 @@ def measure_start_beats(xml: str) -> dict[int, float]:
 
 def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: int = 1,
             first_beat_audio_sec: float | None = None, sync_mode: str = "legacy",
-            pitch_notes: list | None = None, onset_hint: list | None = None) -> dict:
+            pitch_notes: list | None = None, onset_hint: list | None = None,
+            beat_map: list | None = None) -> dict:
     """pitch_notes: [(start_sec, end_sec, midi)] 外部基频传感器(pYIN); onset_hint: [sec]
-    外部起音传感器(QM)。两者都可选, 为空时退回自研检测, 打分逻辑不变。"""
+    外部起音传感器(QM)。两者都可选, 为空时退回自研检测, 打分逻辑不变。
+    sync_mode="vamp-beat": 用 QM 拍点时间轴做活网格, 需 beat_map=[sec...]。"""
     if instrument not in ("violin", "viola", "cello"):
         raise ValueError("不支持的乐器")
     if not 30 <= bpm <= 200:
         raise ValueError("BPM 须在 30–200 之间")
-    if sync_mode not in ("legacy", "metronome"):
+    if sync_mode not in ("legacy", "metronome", "vamp-beat"):
         raise ValueError("无效的同步模式")
     if first_beat_audio_sec is not None and (
             not isinstance(first_beat_audio_sec, (int, float)) or
@@ -267,6 +272,32 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         onsets.sort()
     sec_per_beat = 60 / bpm
     estimated_latency_ms: int | None = None
+    detected_bpm: float | None = None
+    beat_time = None
+    base_beat = 0.0
+    if sync_mode == "vamp-beat":
+        # 活网格: 谱面相对拍 -> QM 实测拍点时间的分段线性映射, 越界用中位间隔外推。
+        # 只用拍点时间戳(QM 的 beat number 相位不可信), 锚到首个有声起音最近的拍点。
+        # 拍点网格是独立于起音事件的周期参考, 这正是节奏分可测量的前提;
+        # 逐音符锚定的 warp(谱面感知对齐)会让期望与实测同源、节奏分恒满分, 故不用。
+        if not beat_map or len(beat_map) < 4:
+            raise ValueError("vamp-beat 模式需要 QM 拍点时间轴")
+        base_beat = measure_start_beats(xml)[start_measure]
+        beats = np.asarray(sorted(float(b) for b in beat_map))
+        med = float(np.median(np.diff(beats)))
+        detected_bpm = round(60 / med, 1) if med > 0 else None
+        anchor = int(np.argmin(np.abs(beats - onsets[0])))
+
+        def beat_time(rel_beat: float) -> float:  # noqa: F811
+            pos = anchor + rel_beat
+            if pos <= 0:
+                return float(beats[0] + pos * med)
+            if pos >= len(beats) - 1:
+                return float(beats[-1] + (pos - (len(beats) - 1)) * med)
+            i = int(pos)
+            f = pos - i
+            return float(beats[i] * (1 - f) + beats[i + 1] * f)
+
     if sync_mode == "metronome":
         # The client records the metronome downbeat of start_measure.
         # Trust it as the base timeline, then apply only a small bounded
@@ -291,15 +322,37 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     aligned = []
     pitch_errors, timing_errors = [], []
     for note_index, note in enumerate(notes):
-        expected = start + note["onsetBeat"] * sec_per_beat
+        if beat_time is not None:
+            expected = beat_time(note["onsetBeat"] - base_beat)
+        else:
+            expected = start + note["onsetBeat"] * sec_per_beat
         duration = note["durationBeat"] * sec_per_beat
         # 时间误差与稳态音高分开估计，避开擦弦、滑音和收尾。
         candidates = [t for t in onsets if abs(t - expected) <= min(0.22, duration * 0.35)]
         onset = min(candidates, key=lambda t: abs(t - expected)) if candidates else None
         mask = (times >= expected + min(0.12, duration * 0.28)) & (times <= expected + duration * 0.78)
         valid = mask & np.isfinite(pitches) & (confidence >= 0.7)
-        cents = round(float((np.median(pitches[valid]) - note["pitchMidi"]) * 100), 1) if np.count_nonzero(valid) >= 4 else None
-        quality = round(float(np.median(confidence[valid])), 2) if cents is not None else 0.0
+        if beat_time is not None and pitch_notes:
+            # 活网格模式: 音高窗口锚在 pYIN 音符段自身时间轴上(音频真值, 与速度无关)。
+            # 段匹配只看段首 proximity(HMM 切段，段首比段尾准；段尾常并入下一音)，
+            # 不做音高门控(无偏好，跑调照实报)
+            seg = None
+            cand = [(abs(sa - expected), sa, sb_)
+                    for (sa, sb_, _sm) in pitch_notes if abs(sa - expected) <= 0.5]
+            if cand:
+                seg = min(cand)[1:]
+            cents = None
+            quality = 0.0
+            if seg is not None and seg[1] - seg[0] >= 0.15:
+                lo = seg[0] + (seg[1] - seg[0]) * 0.28
+                hi = seg[1] - (seg[1] - seg[0]) * 0.22
+                svalid = (times >= lo) & (times <= hi) & np.isfinite(pitches) & (confidence >= 0.7)
+                if np.count_nonzero(svalid) >= 4:
+                    cents = round(float((np.median(pitches[svalid]) - note["pitchMidi"]) * 100), 1)
+                    quality = round(float(np.median(confidence[svalid])), 2)
+        else:
+            cents = round(float((np.median(pitches[valid]) - note["pitchMidi"]) * 100), 1) if np.count_nonzero(valid) >= 4 else None
+            quality = round(float(np.median(confidence[valid])), 2) if cents is not None else 0.0
         delta = round((onset - expected) * 1000) if onset is not None else None
         if cents is not None:
             pitch_errors.append(abs(cents))
@@ -336,7 +389,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         timing_accuracy_score = round(max(0, 100 - float(np.median(np.abs(timing_errors))) * .4))
         rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))
     duration_sec = round(float(len(signal) / rate), 3)
-    sensors = (["pyin-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
+    sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
                         "correctPitchNotes": correct_pitch_notes, "wrongPitchNotes": wrong_pitch_notes,
@@ -350,7 +403,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "syncMode": sync_mode,
                         "recordedFirstBeatSec": round(float(first_beat_audio_sec), 3) if first_beat_audio_sec is not None else None,
                         "estimatedLatencyMs": estimated_latency_ms,
-                        "coveredSec": duration_sec, "sensors": sensors},
+                        "coveredSec": duration_sec, "sensors": sensors,
+                        "detectedBpm": detected_bpm},
             "notes": aligned, "limitations": ["仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",
                                            "音高按十二平均律；首音作为时间零点，不计入节奏得分。"
                                            if sync_mode == "legacy" else
