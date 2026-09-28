@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+ABC/abc2svg → PDF 符头隔空投射的已验证算法、坐标公式和跨项目数据契约：见 [ABC-SVG-PDF-PROJECTION.md](ABC-SVG-PDF-PROJECTION.md)。
+
 ## Getting Started
 
 First, run the development server:
