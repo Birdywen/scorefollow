@@ -6,6 +6,7 @@ import {
   attachRecordingStart, createSession, deleteTakeBlob, loadTakeBlob, measureAndBeatAt,
   saveTakeBlob, validateTakeSync, type PracticeSession,
 } from "@/lib/practice-sync";
+import VisualReport, { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
 
 type Note = {
   id: string; measure: number; pitchMidi: number; expectedSec: number;
@@ -128,6 +129,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const [deviceId, setDeviceId] = useState("");
   const [busyTakeId, setBusyTakeId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [showDemo, setShowDemo] = useState(false);
+  const [mockNotes] = useState(makeMockNotes);
+  const [mockTakes] = useState<CompareTake[]>(makeMockTakes);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -423,6 +427,16 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const scoreMeasures = result?.summary.measureCount ?? result?.notes.reduce((max, note) => Math.max(max, note.measure), 0) ?? 0;
   const canJump = pdfMeasures > 0 && pdfMeasures === scoreMeasures;
   const issues = result?.notes.filter((note) => note.status !== "correct") ?? [];
+  const doneTakes = takes.filter((t) => t.result);
+  const compareTakes: CompareTake[] = doneTakes.map((t, i) => ({
+    name: zh ? `第 ${i + 1} 遍` : `Take ${i + 1}`,
+    pitch: t.result?.summary.pitchScore ?? null,
+    rhythm: t.result?.summary.rhythmScore ?? null,
+  }));
+  const selectedCompareName = (() => {
+    const idx = doneTakes.findIndex((t) => t.id === selectedId);
+    return idx >= 0 ? compareTakes[idx].name : undefined;
+  })();
   function replay(note: Note) {
     // performedSec is a recording timestamp, so seeking is exact for synced takes.
     if (player.current) {
@@ -529,15 +543,43 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           </div>
         ))}
       </div>}
+      {doneTakes.length > 0 && <TakeCompare
+        takes={compareTakes}
+        selectedName={selectedCompareName}
+        onSelect={(name) => {
+          const idx = compareTakes.findIndex((t) => t.name === name);
+          if (idx >= 0 && doneTakes[idx]) {
+            const take = doneTakes[idx];
+            setSelectedId(take.id);
+            setBpm(take.bpm); setStartMeasure(take.startMeasure);
+            setBeatsPerMeasure(take.beatsPerMeasure); setCountInBeats(take.countInBeats);
+          }
+        }}
+      />}
       {selected?.blob && <div className={styles.preview}><span>{selected.name}</span><audio ref={player} controls src={selected.url}
         onTimeUpdate={(e) => onTakePlaybackTime(e.currentTarget.currentTime, selected)} /></div>}
     </section>
 
     {(error) && <p role="alert" className={styles.error}>{error}</p>}
+    {!result && <section className={styles.omr} aria-label={zh ? "效果预览" : "Preview"}>
+      <h2>{zh ? "先看看效果（模拟数据）" : "Preview with sample data"}</h2>
+      <p className={styles.hint}>{zh ? "还没录音也能看：下面是假装拉完一遍的样子，点一点试试。" : "No recording needed: sample charts below. Click around to try."}</p>
+      <button className={styles.omrButton} onClick={() => setShowDemo((v) => !v)}>
+        {showDemo ? (zh ? "收起预览" : "Hide preview") : (zh ? "看模拟效果图" : "Show sample charts")}</button>
+      {showDemo && <div style={{ marginTop: 12 }}>
+        <VisualReport notes={mockNotes} onMeasureClick={(m) => onJump(m)} />
+        <TakeCompare takes={mockTakes} />
+      </div>}
+    </section>}
     {result && <section className={styles.report} aria-label={zh ? "分析报告" : "Analysis report"}>
       <h2>{zh ? "演奏报告" : "Performance report"}</h2>
       <div className={styles.scores}><div><b>{result.summary.pitchScore ?? "—"}</b>{zh ? "综合音高" : "Pitch"}</div>
         <div><b>{result.summary.rhythmScore ?? "—"}</b>{zh ? "跟拍" : "Timing"}</div></div>
+      <VisualReport
+        notes={result.notes}
+        onNoteClick={(vn) => { const full = result.notes.find((n) => n.id === vn.id); if (full) replay(full); }}
+        onMeasureClick={(m) => { if (canJump) onJump(m); }}
+      />
       <p className={styles.hint}>{zh ? "可判音符" : "Voiced"} {result.summary.voicedNotes}/{result.summary.noteCount} ·
         {zh ? "可判起音" : "Timed"} {result.summary.timedNotes}/{Math.max(0, result.summary.noteCount - 1)} ·
         {zh ? "波动" : "Spread"} {result.summary.timingSpreadMs ?? "—"} ms</p>
