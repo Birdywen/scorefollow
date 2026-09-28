@@ -141,6 +141,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const lastJumpMeasure = useRef(0);
   const player = useRef<HTMLAudioElement>(null);
   const alive = useRef(true);
+  const analyzeAbortRef = useRef<AbortController | null>(null);
   const takesRef = useRef<Take[]>([]);
   takesRef.current = takes;
   const zh = lang === "zh";
@@ -151,6 +152,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
 
   useEffect(() => { alive.current = true; return () => {
     alive.current = false;
+    analyzeAbortRef.current?.abort();
+    analyzeAbortRef.current = null;
     if (tickTimer.current) clearInterval(tickTimer.current);
     if (recordingStopTimer.current) clearTimeout(recordingStopTimer.current);
     if (recorder.current?.state === "recording") { try { recorder.current.stop(); } catch { /* noop */ } }
@@ -337,8 +340,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     const syncError = take.firstBeatAudioSec != null ? validateTakeSync(take.firstBeatAudioSec) : null;
     if (syncError) { setError(syncError); return; }
     if (xmlFile.size > 1_000_000) { setError("MusicXML > 1 MB"); return; }
+    const controller = new AbortController();
     try {
       const base = apiBase(api);
+      analyzeAbortRef.current?.abort();
+      analyzeAbortRef.current = controller;
       setBusyTakeId(take.id); setError("");
       updateTake(take.id, { jobStatus: "preparing", error: undefined });
       localStorage.setItem("sf-analysis-api", base);
@@ -348,22 +354,29 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         bpm: take.bpm, instrument, startMeasure: take.startMeasure,
         ...(take.firstBeatAudioSec != null ? { syncMode: "metronome", firstBeatAudioSec: take.firstBeatAudioSec } : {}),
       };
-      const response = await fetch(`${base}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await fetch(`${base}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       updateTake(take.id, { jobId: data.id, jobStatus: data.status });
       for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, 1500));
-        if (!alive.current) return;
-        const poll = await fetch(`${base}/jobs/${data.id}`);
+        if (!alive.current || controller.signal.aborted) return;
+        const poll = await fetch(`${base}/jobs/${data.id}`, { signal: controller.signal });
         const job = await poll.json();
         if (!poll.ok) throw new Error(job.error || `HTTP ${poll.status}`);
         updateTake(take.id, { jobStatus: job.status, error: job.error });
         if (job.status === "completed" && job.result) { updateTake(take.id, { result: job.result as Result }); break; }
         if (job.status === "failed") break;
       }
-    } catch (exc) { if (alive.current) { setError(exc instanceof Error ? exc.message : String(exc)); updateTake(take.id, { jobStatus: "failed" }); } }
-    finally { if (alive.current) setBusyTakeId(null); }
+    } catch (exc) {
+      if (alive.current && !(exc instanceof DOMException && exc.name === "AbortError")) {
+        setError(exc instanceof Error ? exc.message : String(exc));
+        updateTake(take.id, { jobStatus: "failed" });
+      }
+    } finally {
+      if (analyzeAbortRef.current?.signal === controller.signal) analyzeAbortRef.current = null;
+      if (alive.current) setBusyTakeId(null);
+    }
   }
 
   async function recognizePdf() {

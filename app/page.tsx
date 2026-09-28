@@ -492,6 +492,7 @@ export default function ScoreFollowPage() {
   const pageProxyRef = useRef<any>(null);
   const wijzerRef = useRef<Wijzer>(new Wijzer());
   const rafRef = useRef(0);
+  const countInTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const clockRef = useRef({ t0: 0, base: 0, running: false });
   const autoRef = useRef<Record<number, PageAnalysis>>({});
   // 上报用底图(页号→分析画布 PNG dataURL, 新谱面时随 autoRef 清空)
@@ -1119,7 +1120,7 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = `${BASE}/metro-engine.js?v=20260928-space-control`;
+    s.src = `${BASE}/metro-engine.js?v=20260928-robust`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
@@ -2054,6 +2055,10 @@ export default function ScoreFollowPage() {
   }, [mediaURL, speed, tick]);
 
   const doPause = useCallback(() => {
+    if (countInTimerRef.current) {
+      clearInterval(countInTimerRef.current);
+      countInTimerRef.current = null;
+    }
     const m = mediaRef.current as any;
     if (m && mediaURL) m.pause();
     else {
@@ -2066,15 +2071,21 @@ export default function ScoreFollowPage() {
   }, [mediaURL, now]);
 
   const doCountIn = useCallback(() => {
+    if (countInTimerRef.current) clearInterval(countInTimerRef.current);
     const beats = parseInt(String(opt.bpmsr).split("-")[0], 10) || 4;
     let i = 0;
     setStatus(`count-in: ${beats} beats ...`);
     const iv = setInterval(() => {
       i++;
-      setStatus(`count-in ${i}/${beats}`);
-      if (i >= beats) { clearInterval(iv); doPlay(); }
+      setStatus(`count-in: ${beats - i} beats ...`);
+      if (i >= beats) {
+        clearInterval(iv);
+        if (countInTimerRef.current === iv) countInTimerRef.current = null;
+        doPlay();
+      }
     }, 600);
-  }, [doPlay]);
+    countInTimerRef.current = iv;
+  }, [doPlay, opt.bpmsr]);
 
   const doTap = useCallback(() => {
     const e = wijzerRef.current.tap(now());

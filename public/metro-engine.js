@@ -365,27 +365,24 @@ function boot(){
     var spb=60/st.bpm, i=0, BT=Math.max(1, st.meter|0);
     info.textContent='count-in '+n+'...';
     (function tick(){
-      if(!st.playing){ setPlayBtn(false); return; }
+      if(!st.playing){ setPlayBtn(false); st._countInTimer=null; return; }
       click(i%BT===0);
       i++; info.textContent='count-in '+(n-i+1);
-      if(i>=n){ setTimeout(cb, spb*1000); }
-      else setTimeout(tick, spb*1000);
+      if(i>=n) st._countInTimer=setTimeout(function(){ st._countInTimer=null; cb(); }, spb*1000);
+      else st._countInTimer=setTimeout(function(){ st._countInTimer=null; tick(); }, spb*1000);
     })();
   }
 
   // ===== 播放: 有序列走序列, 否则走 loop/全曲 =====
   function nowMs(){ return (typeof performance!=='undefined'&&performance.now)?performance.now():Date.now(); }
   function start(){
-    // 启动瞬间 300ms 内的再次触发视为误触/连击直接吞掉, 否则首拍响一声就被自己掐停
     if(st.playing){ if(nowMs()-(st._startAt||0)<300) return; stop(); return; }
     if(!st.audio) st.audio=new (window.AudioContext||window.webkitAudioContext)();
-    if(st.audio.state==='suspended') st.audio.resume();
-    // 首次按空格可能早于 React 发出 metric-rendered；把这次用户操作
-    // 延迟到 metric 可用，而不是要求用户先点一下首小节来“唤醒”引擎。
+    if(st.audio.state==='suspended') void st.audio.resume().catch(function(err){
+      info.textContent='audio unavailable: '+(err&&err.message?err.message:'resume failed');
+    });
     if(!B.length){
       info.textContent='loading score...';
-      // React may have rendered the metric a moment after the engine booted.
-      // Consume it directly when available, otherwise wait for its bridge event.
       var live=runtimeMetric();
       if(live&&applyResponsiveMetric(live)&&B.length){ start(); return; }
       if(st._waitingStart) return;
@@ -407,7 +404,6 @@ function boot(){
     var seq=parseSeq(st.seqText);
     doCountIn(function(){
       if(!st.playing) return;
-      // Explicit loop mode overrides any sequence text.
       if(st.loopOn){ st._seq=null; playLoop(); } else if(seq){ playSequence(seq); } else { st._seq=null; playLoop(); }
     });
   }
@@ -465,6 +461,7 @@ function boot(){
   function finishAt(s0){ st.playing=false; if(st.raf)cancelAnimationFrame(st.raf);
     setPlayBtn(false); st.iSeq=s0; st._seq=null; lastRowY=-1; place(s0); }
   function stop(){ st.playing=false; if(st.raf)cancelAnimationFrame(st.raf);
+    if(st._countInTimer){ clearTimeout(st._countInTimer); st._countInTimer=null; }
     setPlayBtn(false); st._seq=null; info.textContent='stopped'; }
 
   // 播放中跳转: 方向键/点谱/外部事件调用, 不停 playing, 从目标拍继续
@@ -617,8 +614,8 @@ function boot(){
   // 语义: ←/→ 按小节跳(同行内换小节, 到头顺延) · ↑/↓ 按行跳 ·
   // 播放中跳转不停止, 从目标拍继续; 未播放时只移动头 + 试音.
   function __metroKeydown(ev){
-    var target=ev.target, tn=(target&&target.tagName)||'';
-    if(['INPUT','SELECT','TEXTAREA','BUTTON'].indexOf(tn)>=0||(target&&target.isContentEditable)) return;
+    var focused=ev.target, tn=(focused&&focused.tagName)||'';
+    if(['INPUT','SELECT','TEXTAREA','BUTTON'].indexOf(tn)>=0||(focused&&focused.isContentEditable)) return;
     if(document.querySelector('[data-editing="true"]')) return;  // annotation editing owns arrow keys
     var k=ev.key, target=-1, i;
     if(k===' '||k==='Spacebar'){
