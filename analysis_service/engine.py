@@ -164,6 +164,22 @@ def track(signal: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray, np.nda
     return tuple(np.asarray(x) for x in (times, pitches, energies, confidences))
 
 
+def _hint_track(signal: np.ndarray, rate: int,
+                notes: list) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """把外部音符段(pYIN)铺到自研时间网格上: 段内取段平均音高, 段间按中点归属
+    (过渡就发生在这段静默里), 首尾之外留 NaN。能量网格沿用自研, 起音沿可比。"""
+    times, _, energy, _ = track(signal, rate)
+    starts = np.array([a for a, _, _ in notes])
+    ends = np.array([b for _, b, _ in notes])
+    midis = np.array([m for _, _, m in notes])
+    mids = (ends[:-1] + starts[1:]) / 2
+    j = np.searchsorted(mids, times, side="right")
+    outside = (times < starts[0]) | (times >= ends[-1])
+    pitches = np.where(outside, np.nan, midis[np.clip(j, 0, len(midis) - 1)])
+    conf = np.where(outside, 0.0, 0.95)
+    return times, pitches, energy, conf
+
+
 def measure_start_beats(xml: str) -> dict[int, float]:
     """Map 1-based measure number -> absolute downbeat in quarter-note beats.
 
@@ -204,7 +220,10 @@ def measure_start_beats(xml: str) -> dict[int, float]:
 
 
 def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: int = 1,
-            first_beat_audio_sec: float | None = None, sync_mode: str = "legacy") -> dict:
+            first_beat_audio_sec: float | None = None, sync_mode: str = "legacy",
+            pitch_notes: list | None = None, onset_hint: list | None = None) -> dict:
+    """pitch_notes: [(start_sec, end_sec, midi)] 外部基频传感器(pYIN); onset_hint: [sec]
+    外部起音传感器(QM)。两者都可选, 为空时退回自研检测, 打分逻辑不变。"""
     if instrument not in ("violin", "viola", "cello"):
         raise ValueError("不支持的乐器")
     if not 30 <= bpm <= 200:
@@ -224,7 +243,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         raise ValueError("开始小节没有可演奏音符")
     notes = [n for n in score_notes if n["measure"] >= start_measure]
     signal, rate = read_wav(wav)
-    times, pitches, energy, confidence = track(signal, rate)
+    times, pitches, energy, confidence = _hint_track(signal, rate, pitch_notes) if pitch_notes \
+        else track(signal, rate)
     if len(times) < 8:
         raise ValueError("有效录音过短")
     active = np.flatnonzero(energy > max(0.012, np.max(energy) * 0.10))
@@ -239,6 +259,12 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         attack = energy[i] > max(0.018, energy[i - 2] * 1.85) and energy[i] - energy[i - 2] > 0.008
         if (pitch_jump or attack) and times[i] - onsets[-1] > 0.09:
             onsets.append(float(times[i]))
+    if onset_hint:
+        # 外部起音传感器(QM)补入: 与已检出起音按 150 ms 并档去重, 只收编新沿
+        for h in sorted(float(o) for o in onset_hint):
+            if h > onsets[0] - 0.05 and all(abs(h - o) > 0.15 for o in onsets):
+                onsets.append(h)
+        onsets.sort()
     sec_per_beat = 60 / bpm
     estimated_latency_ms: int | None = None
     if sync_mode == "metronome":
@@ -310,6 +336,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         timing_accuracy_score = round(max(0, 100 - float(np.median(np.abs(timing_errors))) * .4))
         rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))
     duration_sec = round(float(len(signal) / rate), 3)
+    sensors = (["pyin-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
                         "correctPitchNotes": correct_pitch_notes, "wrongPitchNotes": wrong_pitch_notes,
@@ -323,7 +350,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "syncMode": sync_mode,
                         "recordedFirstBeatSec": round(float(first_beat_audio_sec), 3) if first_beat_audio_sec is not None else None,
                         "estimatedLatencyMs": estimated_latency_ms,
-                        "coveredSec": duration_sec},
+                        "coveredSec": duration_sec, "sensors": sensors},
             "notes": aligned, "limitations": ["仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",
                                            "音高按十二平均律；首音作为时间零点，不计入节奏得分。"
                                            if sync_mode == "legacy" else
