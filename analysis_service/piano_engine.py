@@ -76,13 +76,14 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> d
     extra = 0
     for idx, note in enumerate(score_notes):
         expected = start + note["onsetBeat"] * sec_per_beat
-        best, best_dt = -1, MATCH_WINDOW_SEC + 1.0
-        for j, (onset, _off, pitch, _vel) in enumerate(perf):
+        best, best_dt, best_vel = -1, MATCH_WINDOW_SEC + 1.0, -1.0
+        for j, (onset, _off, pitch, vel) in enumerate(perf):
             if used[j] or int(round(pitch)) != note["pitchMidi"]:
                 continue
             dt = abs(onset - expected)
-            if dt < best_dt:
-                best, best_dt = j, dt
+            # Closest onset wins; ties (pedal blur doubles) go to the stronger strike.
+            if dt < best_dt - 1e-9 or (abs(dt - best_dt) <= 1e-9 and vel > best_vel):
+                best, best_dt, best_vel = j, dt, vel
         if best < 0:
             aligned.append({**note, "id": f"n{idx + 1}", "expectedSec": round(expected, 3),
                             "performedSec": None, "pitchErrorCents": None, "timingErrorMs": None,
@@ -106,10 +107,13 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> d
                         "timingErrorMs": delta, "confidence": round(min(1.0, vel / 127.0), 2),
                         "pitchStatus": pitch_status, "timingStatus": timing_status,
                         "matchStatus": "matched", "status": status})
-    last_onset = perf[-1][0]
+    # Extras only count inside the excerpt window: pedal resonance and notes from
+    # outside the practiced passage must not inflate the score.
+    last_expected = start + score_notes[-1]["onsetBeat"] * sec_per_beat
     for j, (onset, _off, _p, _v) in enumerate(perf):
-        if not used[j] and onset <= last_onset:
+        if not used[j] and (start - 0.5) <= onset <= (last_expected + 1.0):
             extra += 1
+    last_onset = perf[-1][0]
     pitch_score = None
     correct = sum(n["pitchStatus"] == "correct" for n in aligned)
     wrong = sum(n["pitchStatus"] in ("sharp", "flat") for n in aligned)
