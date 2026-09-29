@@ -186,6 +186,18 @@ class EngineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "不应携带"):
             analyze(recording(), score(), 60, "violin", first_beat_audio_sec=0.5, sync_mode="legacy")
 
+    def test_octave_error_is_uncertain_not_wrong(self):
+        # 演奏高八度(A4)而谱面写低八度(A3): 音名对、八度错是跟踪器局限, 不得计错音。
+        xml = ('<score-partwise><part id="P1"><measure number="1">'
+               '<attributes><divisions>1</divisions></attributes>'
+               '<note><pitch><step>A</step><octave>3</octave></pitch><duration>1</duration></note>'
+               '</measure></part></score-partwise>')
+        result = analyze(recording((69,)), xml, 60, "cello")
+        self.assertEqual(result["notes"][0]["pitchStatus"], "octave")
+        self.assertEqual(result["notes"][0]["status"], "octave_uncertain")
+        self.assertEqual(result["summary"]["wrongPitchNotes"], 0)
+        self.assertEqual(result["summary"]["octaveUncertainNotes"], 1)
+
     def test_leading_rest_does_not_shift_first_pitched_note(self):
         from .omr import restore_first_rest
         xml = restore_first_rest(score(), 4)
