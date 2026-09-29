@@ -68,8 +68,11 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> d
         raise ValueError("钢琴转录失败，请检查录音是否为清晰的独奏钢琴")
     perf = sorted(perf, key=lambda e: (e[0], e[2]))
     sec_per_beat = 60.0 / bpm
-    # Legacy-style anchor: first score note lands on the first transcribed onset.
-    start = perf[0][0] - score_notes[0]["onsetBeat"] * sec_per_beat
+    # Anchor on the first transcribed onset that plays the opening pitch, so a
+    # leading resonance ghost (different pitch) cannot drag the whole grid.
+    first_pitch = score_notes[0]["pitchMidi"]
+    anchor_onset = next((o for o, _a, p, _v in perf if int(round(p)) == first_pitch), perf[0][0])
+    start = anchor_onset - score_notes[0]["onsetBeat"] * sec_per_beat
     used = [False] * len(perf)
     aligned = []
     pitch_errors, timing_errors = [], []
