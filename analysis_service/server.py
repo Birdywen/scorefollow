@@ -145,8 +145,10 @@ class Handler(BaseHTTPRequestHandler):
                 first_beat = request.get("firstBeatAudioSec")
                 if instrument not in ("violin", "viola", "cello", "piano") or not 30 <= bpm <= 200:
                     raise ValueError("无效的乐器或 BPM")
-                if type(start_measure) is not int or not 1 <= start_measure <= notes[-1]["measure"]:
+                if type(start_measure) is not int or not 0 <= start_measure <= notes[-1]["measure"]:
                     raise ValueError("开始小节没有可演奏音符")
+                if start_measure == 0 and (instrument == "piano" or sync_mode == "metronome" or first_beat is not None):
+                    raise ValueError("自动定位仅支持未同步的单声部录音")
                 if sync_mode not in ("legacy", "metronome", "vamp-beat"):
                     raise ValueError("无效的同步模式")
                 if first_beat is not None and (not isinstance(first_beat, (int, float)) or

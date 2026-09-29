@@ -12,6 +12,8 @@ from decimal import Decimal, InvalidOperation
 
 import numpy as np
 
+from .alignment import locate_excerpt, usable_events
+
 VERSION = "string-mono-0.2"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
@@ -296,12 +298,26 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if sync_mode == "metronome" and first_beat_audio_sec is None:
         raise ValueError("metronome 模式需要 firstBeatAudioSec")
     score_notes = parse_score(xml)
-    if type(start_measure) is not int or start_measure < 1 or start_measure > score_notes[-1]["measure"]:
+    if type(start_measure) is not int or start_measure < 0 or start_measure > score_notes[-1]["measure"]:
         raise ValueError("开始小节没有可演奏音符")
-    notes = [n for n in score_notes if n["measure"] >= start_measure]
     signal, rate = read_wav(wav)
     # Guard: pYIN 只返回 1 音符时 _hint_track midis[clip(j,0,-1)] 会 IndexError
     pitch_notes = pitch_notes if pitch_notes and len(pitch_notes) >= 2 else None
+    auto_located = start_measure == 0
+    location_cost = None
+    if auto_located:
+        if sync_mode == "metronome" or first_beat_audio_sec is not None:
+            raise ValueError("自动定位仅支持未同步的单声部录音")
+        if not pitch_notes:
+            raise ValueError("自动定位需要 pYIN 音高传感器；请指定起始小节")
+        reliable_events = usable_events(pitch_notes)
+        index, location_cost = locate_excerpt(score_notes, pitch_notes,
+                                              beat_map=beat_map if sync_mode == "vamp-beat" else None)
+        location_anchor = reliable_events[0][0]
+        notes = score_notes[index:]
+        start_measure = notes[0]["measure"]
+    else:
+        notes = [n for n in score_notes if n["measure"] >= start_measure]
     times, pitches, energy, confidence = _hint_track(signal, rate, pitch_notes) if pitch_notes \
         else track(signal, rate)
     if len(times) < 8:
@@ -329,6 +345,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     detected_bpm: float | None = None
     beat_time = None
     base_beat = 0.0
+    if beat_map is not None:
+        beat_map = sorted(set(float(b) for b in beat_map if math.isfinite(float(b)) and float(b) >= 0))
     if sync_mode == "vamp-beat":
         # 活网格: 谱面相对拍 -> QM 实测拍点时间的分段线性映射, 越界用中位间隔外推。
         # 只用拍点时间戳(QM 的 beat number 相位不可信), 锚到首个有声起音最近的拍点。
@@ -338,21 +356,23 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             # Vamp 不可用时静默降级到 legacy 固定速度，前端无感
             sync_mode = "legacy"
         else:
-            base_beat = measure_start_beats(xml)[start_measure]
+            base_beat = notes[0]["onsetBeat"] if auto_located else measure_start_beats(xml)[start_measure]
             beats = np.asarray(sorted(float(b) for b in beat_map))
             med = float(np.median(np.diff(beats)))
             detected_bpm = round(60 / med, 1) if med > 0 else None
-            anchor = int(np.argmin(np.abs(beats - onsets[0])))
+            audio_anchor = location_anchor if auto_located else onsets[0]
+            anchor = int(np.argmin(np.abs(beats - audio_anchor)))
+            anchor_shift = audio_anchor - beats[anchor] if auto_located else 0.0
 
             def beat_time(rel_beat: float) -> float:  # noqa: F811
                 pos = anchor + rel_beat
                 if pos <= 0:
-                    return float(beats[0] + pos * med)
+                    return float(beats[0] + pos * med + anchor_shift)
                 if pos >= len(beats) - 1:
-                    return float(beats[-1] + (pos - (len(beats) - 1)) * med)
+                    return float(beats[-1] + (pos - (len(beats) - 1)) * med + anchor_shift)
                 i = int(pos)
                 f = pos - i
-                return float(beats[i] * (1 - f) + beats[i + 1] * f)
+                return float(beats[i] * (1 - f) + beats[i + 1] * f + anchor_shift)
 
     if sync_mode == "metronome":
         # The client records the metronome downbeat of start_measure.
@@ -368,11 +388,12 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     else:
         # Align the first pitched onset with the first written note, even if the
         # MusicXML starts with an all-rest measure. Silence before it is not scored.
-        start = onsets[0] - notes[0]["onsetBeat"] * sec_per_beat
+        start = (location_anchor if auto_located else onsets[0]) - notes[0]["onsetBeat"] * sec_per_beat
     # Score excerpts can start at any measure. Never count score notes beyond
     # the recording as missed notes, including when the full score is hours long.
     last_voiced = times[voiced[-1]]
-    notes = [n for n in notes if start + n["onsetBeat"] * sec_per_beat <= last_voiced + 0.06]
+    notes = [n for n in notes if (beat_time(n["onsetBeat"] - base_beat) if beat_time is not None
+                                else start + n["onsetBeat"] * sec_per_beat) <= last_voiced + 0.06]
     if not notes:
         raise ValueError("录音不足以覆盖所选开始小节")
     aligned = []
@@ -383,7 +404,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             expected = beat_time(note["onsetBeat"] - base_beat)
         else:
             expected = start + note["onsetBeat"] * sec_per_beat
-        duration = note["durationBeat"] * sec_per_beat
+        duration = (beat_time(note["onsetBeat"] - base_beat + note["durationBeat"]) - expected
+                    if auto_located and beat_time is not None else note["durationBeat"] * sec_per_beat)
         # 换把滑音需要更长的稳定时间: 与前音差 3 半音以上时, 音高窗跳过前 35%。
         shifted = note_index > 0 and abs(note["pitchMidi"] - notes[note_index - 1]["pitchMidi"]) >= 3
         # 时间误差与稳态音高分开估计，避开擦弦、滑音和收尾。
@@ -483,6 +505,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "timingOffsetMs": timing_offset, "timingSpreadMs": rhythm_spread,
                         "measureCount": len(ET.fromstring(xml).find("./{*}part").findall("./{*}measure")),
                         "startMeasure": notes[0]["measure"], "endMeasure": notes[-1]["measure"],
+                        "autoLocated": auto_located, "locationCost": location_cost,
                         "noteCount": len(notes), "voicedNotes": voiced_count, "timedNotes": len(timing_errors),
                         "confidence": "medium" if voiced_count / len(notes) >= .8 else "low",
                         "syncMode": sync_mode,

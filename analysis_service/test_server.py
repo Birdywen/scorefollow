@@ -71,6 +71,31 @@ class ApiTests(unittest.TestCase):
         else:
             self.fail("excerpt analysis did not complete")
 
+    def test_auto_excerpt_request_and_piano_rejection(self):
+        from unittest.mock import patch
+        from .test_alignment import PITCHES, xml_for
+        played = PITCHES[7:18]
+        body = {"scoreXml": xml_for(PITCHES), "startMeasure": 0,
+                "audioWavBase64": base64.b64encode(recording(played)).decode(),
+                "bpm": 60, "instrument": "violin"}
+        segments = [(i + .12, i + .85, float(m)) for i, m in enumerate(played)]
+        with patch("analysis_service.server.vamp_features.extract_all", return_value=(segments, None, None)):
+            status, _, data = self.request("POST", "/jobs", body)
+            self.assertEqual(status, 202)
+            for _ in range(40):
+                _, _, job = self.request("GET", "/jobs/" + data["id"])
+                if job["status"] in ("completed", "failed"):
+                    self.assertEqual(job["status"], "completed", job.get("error"))
+                    self.assertEqual(job["result"]["summary"]["startMeasure"], 8)
+                    break
+                time.sleep(.05)
+            else:
+                self.fail("auto excerpt analysis did not complete")
+        for overrides in ({"instrument": "piano"}, {"syncMode": "metronome", "firstBeatAudioSec": .5}):
+            status, _, result = self.request("POST", "/jobs", {**body, **overrides})
+            self.assertEqual(status, 400)
+            self.assertIn("自动定位", result["error"])
+
     def test_metronome_sync_over_http(self):
         status, _, data = self.request("POST", "/jobs", {"scoreXml": score(), "startMeasure": 3,
             "syncMode": "metronome", "firstBeatAudioSec": 0.5,

@@ -24,7 +24,8 @@ type Result = {
     timingOffsetMs: number | null; timingSpreadMs: number | null;
     noteCount: number; measureCount?: number; startMeasure?: number; endMeasure?: number;
     voicedNotes: number; timedNotes: number; confidence: string;
-    syncMode?: string; recordedFirstBeatSec?: number | null; estimatedLatencyMs?: number | null; coveredSec?: number };
+    syncMode?: string; recordedFirstBeatSec?: number | null; estimatedLatencyMs?: number | null; coveredSec?: number;
+    autoLocated?: boolean; locationCost?: number | null };
 };
 type Take = {
   id: string; name: string; createdAt: number; durationSec: number;
@@ -346,7 +347,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     if (recorder.current?.state === "recording") recorder.current.stop();
   }
 
-  async function analyzeTake(take: Take) {
+  async function analyzeTake(take: Take, autoLocate = false) {
     if (!take.blob || !xmlFile || !api) { setError(zh ? "请提供分析地址、MusicXML 与录音" : "Provide the API URL, MusicXML and audio"); return; }
     const syncError = take.firstBeatAudioSec != null ? validateTakeSync(take.firstBeatAudioSec) : null;
     if (syncError) { setError(syncError); return; }
@@ -357,12 +358,12 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       analyzeAbortRef.current?.abort();
       analyzeAbortRef.current = controller;
       setBusyTakeId(take.id); setError("");
-      updateTake(take.id, { jobStatus: "preparing", error: undefined });
+      updateTake(take.id, { jobStatus: "preparing", error: undefined, result: undefined });
       localStorage.setItem("sf-analysis-api", base);
       const xml = await xmlFile.text();
       const body = {
         scoreXml: xml, audioWavBase64: await toWav(take.blob),
-        bpm: take.bpm, instrument, startMeasure: take.startMeasure,
+        bpm: take.bpm, instrument, startMeasure: autoLocate ? 0 : take.startMeasure,
         syncMode: take.firstBeatAudioSec != null ? "metronome" : "vamp-beat",
         ...(take.firstBeatAudioSec != null ? { firstBeatAudioSec: take.firstBeatAudioSec } : {}),
       };
@@ -471,6 +472,15 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     if (canJump) onJump(note.measure);
   }
   function onTakePlaybackTime(sec: number, take: Take) {
+    if (take.result?.summary.autoLocated) {
+      if (!pdfMeasures || pdfMeasures !== take.result.summary.measureCount) return;
+      const note = [...take.result.notes].reverse().find((n) => n.expectedSec <= sec);
+      if (note && note.measure !== lastJumpMeasure.current) {
+        lastJumpMeasure.current = note.measure;
+        onJump(note.measure);
+      }
+      return;
+    }
     if (take.firstBeatAudioSec == null) return;
     const scoreSec = sec - take.firstBeatAudioSec;
     if (scoreSec < 0) return;
@@ -555,6 +565,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
             <div className={styles.takeRow}>
               <button className={styles.omrButton} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take)}>
                 {busyTakeId === take.id ? (zh ? "分析中…" : "Analyzing…") : (zh ? "分析这一遍" : "Analyze")}</button>
+              {take.firstBeatAudioSec == null && instrument !== "piano" &&
+                <button className={styles.omrButton} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take, true)}>
+                  {zh ? "自动定位片段" : "Find excerpt"}</button>}
               <button className={styles.omrButton} onClick={() => {
                 setTakes((prev) => prev.filter((t) => t.id !== take.id));
                 if (take.url) URL.revokeObjectURL(take.url);
@@ -562,7 +575,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
                 if (selectedId === take.id) setSelectedId(null);
               }}>{zh ? "删除" : "Delete"}</button>
               {take.jobStatus && <span className={styles.hint}>{take.jobStatus}</span>}
-              {take.result && <span className={styles.hint}>{zh ? "综合音高" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</span>}
+              {take.result && <span className={styles.hint}>
+                {take.result.summary.autoLocated && (zh ? `定位第 ${take.result.summary.startMeasure}–${take.result.summary.endMeasure} 小节 · ` : `Located m${take.result.summary.startMeasure}–${take.result.summary.endMeasure} · `)}
+                {zh ? "综合音高" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</span>}
             </div>
             {take.error && <p className={styles.error}>{take.error}</p>}
           </div>
