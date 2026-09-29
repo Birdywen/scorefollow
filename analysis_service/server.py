@@ -139,7 +139,9 @@ class Handler(BaseHTTPRequestHandler):
                 bpm = float(request["bpm"])
                 instrument = request["instrument"]
                 start_measure = request.get("startMeasure", 1)
-                sync_mode = request.get("syncMode", "legacy")
+                # Automatic Vamp beat tracking is the normal path. The user BPM
+                # remains the fallback when the optional beat detector is absent.
+                sync_mode = request.get("syncMode", "vamp-beat")
                 first_beat = request.get("firstBeatAudioSec")
                 if instrument not in ("violin", "viola", "cello", "piano") or not 30 <= bpm <= 200:
                     raise ValueError("无效的乐器或 BPM")

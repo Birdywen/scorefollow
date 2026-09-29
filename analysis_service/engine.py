@@ -223,6 +223,23 @@ def measure_start_beats(xml: str) -> dict[int, float]:
     return starts
 
 
+def seconds_per_quarter(xml: str, bpm: float) -> float:
+    """Convert the displayed tempo to the quarter-note beat used by notes.
+
+    In compound eighth meters the conventional tempo unit is a dotted quarter
+    (three eighths), while MusicXML durations and onsetBeat remain quarter
+    notes.  Keeping this conversion here prevents a 6/8 take from drifting 50%
+    slow against the score.
+    """
+    root = ET.fromstring(xml)
+    time = root.find("./{*}part/{*}measure/{*}attributes/{*}time")
+    beats = int(time.findtext("./{*}beats")) if time is not None else 4
+    beat_type = int(time.findtext("./{*}beat-type")) if time is not None else 4
+    if beat_type == 8 and beats in (6, 9, 12):
+        return 60.0 / bpm * (2.0 / 3.0)
+    return 60.0 / bpm
+
+
 def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: int = 1,
             first_beat_audio_sec: float | None = None, sync_mode: str = "legacy",
             pitch_notes: list | None = None, onset_hint: list | None = None,
@@ -273,7 +290,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             if h > onsets[0] - 0.05 and all(abs(h - o) > 0.15 for o in onsets):
                 onsets.append(h)
         onsets.sort()
-    sec_per_beat = 60 / bpm
+    sec_per_beat = seconds_per_quarter(xml, bpm)
     estimated_latency_ms: int | None = None
     detected_bpm: float | None = None
     beat_time = None

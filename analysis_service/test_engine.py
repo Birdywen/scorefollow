@@ -5,7 +5,7 @@ import wave
 
 import numpy as np
 
-from .engine import analyze, measure_start_beats, parse_score, track
+from .engine import analyze, measure_start_beats, parse_score, seconds_per_quarter, track
 
 
 def score(pitches=(69, 71, 72, 74, 76)):
@@ -49,7 +49,26 @@ def continuous_recording(midi=69, seconds=5.25):
     return output.getvalue()
 
 
+def compound_score(pitches=(69, 71, 72, 74, 76, 77)):
+    notes = "".join(
+        f'<note><pitch><step>{step}</step><octave>{octave}</octave></pitch>'
+        '<duration>1</duration><type>eighth</type></note>'
+        for pitch in pitches
+        for step, octave in [{69: ("A", 4), 71: ("B", 4), 72: ("C", 5),
+                              74: ("D", 5), 76: ("E", 5), 77: ("F", 5)}[pitch]]
+    )
+    return '<score-partwise><part id="P1"><measure number="1">' \
+        '<attributes><divisions>2</divisions><time><beats>6</beats>' \
+        '<beat-type>8</beat-type></time></attributes>' + notes + \
+        '</measure></part></score-partwise>'
+
+
 class EngineTests(unittest.TestCase):
+    def test_compound_meter_uses_dotted_quarter_tempo(self):
+        xml = compound_score()
+        self.assertAlmostEqual(seconds_per_quarter(xml, 112), 60 / 112 * 2 / 3)
+        self.assertAlmostEqual(seconds_per_quarter(score(), 112), 60 / 112)
+
     def test_parse_single_voice_and_reject_chords(self):
         self.assertEqual(len(parse_score(score())), 5)
         xml = '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">' + score()

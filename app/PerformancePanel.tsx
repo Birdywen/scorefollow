@@ -363,7 +363,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       const body = {
         scoreXml: xml, audioWavBase64: await toWav(take.blob),
         bpm: take.bpm, instrument, startMeasure: take.startMeasure,
-        ...(take.firstBeatAudioSec != null ? { syncMode: "metronome", firstBeatAudioSec: take.firstBeatAudioSec } : {}),
+        syncMode: take.firstBeatAudioSec != null ? "metronome" : "vamp-beat",
+        ...(take.firstBeatAudioSec != null ? { firstBeatAudioSec: take.firstBeatAudioSec } : {}),
       };
       const response = await fetch(`${base}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const data = await readJsonResponse<AnalysisJob>(response);
