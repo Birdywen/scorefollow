@@ -495,7 +495,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     <label className={styles.field}>{zh ? "乐器" : "Instrument"}
       <select value={instrument} onChange={(e) => setInstrument(e.target.value)}>
         <option value="violin">{zh ? "小提琴" : "Violin"}</option><option value="viola">{zh ? "中提琴" : "Viola"}</option>
-        <option value="cello">{zh ? "大提琴" : "Cello"}</option>
+        <option value="cello">{zh ? "大提琴" : "Cello"}</option><option value="piano">{zh ? "钢琴" : "Piano"}</option>
       </select></label>
     <label className={styles.field}>BPM <input type="number" min={30} max={200} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} /></label>
     <label className={styles.field}>{zh ? "录音从第几小节开始" : "Start measure"}
