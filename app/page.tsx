@@ -30,6 +30,7 @@ import {
 } from "@/lib/synpdf-core";
 import { Wijzer, buildMeasures } from "@/lib/synpdf-wijzer";
 import PerformancePanel from "./PerformancePanel";
+import TunerPanel from "./TunerPanel";
 import styles from "./page.module.css";
 
 const DEFAULT_ADV: Record<string, number> = {
@@ -74,6 +75,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   lowConf: { zh: "低置信", en: "low-conf" },
   pageUnit: { zh: "页", en: " pages" },
   close: { zh: "关闭", en: "Close" },
+  tuner: { zh: "调音器", en: "Tuner" },
   closePanel: { zh: "关闭面板", en: "Close panel" },
   practice: { zh: "练习控制", en: "Practice controls" },
   measureOps: { zh: "小节操作", en: "Measure actions" },
@@ -568,6 +570,7 @@ export default function ScoreFollowPage() {
   const [fullScreen, setFullScreen] = useState(false);
   const [darkTheme, setDarkTheme] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [tunerOpen, setTunerOpen] = useState(false);
   const [preloadPreview, setPreloadPreview] = useState<{ head: string; truncated: boolean; lines: number; bytes: number } | null>(null);
   const preloadFullRef = useRef<string>("");
   const previewCloseRef = useRef<HTMLButtonElement>(null);
@@ -3232,6 +3235,7 @@ export default function ScoreFollowPage() {
         <button className={styles.tbBtn} onClick={() => void openCamera()} title={tx("takePhoto")}>📷</button>
         <button className={`${styles.tbBtn} ${mediaURL ? styles.tbBtnOn : ""}`} onClick={() => mediaInputRef.current?.click()} title={mediaName || tx("loadMedia")}>🎵 {mediaName ? (mediaName.length > 16 ? mediaName.slice(0, 14) + "…" : mediaName) : tx("media")}</button>
         <button className={styles.tbBtn} onClick={() => preloadInputRef.current?.click()} title={tx("loadPreload")}>📥</button>
+        <button className={styles.tbBtn} onClick={() => setTunerOpen(true)} title={tx("tuner")}>🎚</button>
         <input ref={pdfInputRef} type="file" accept=".pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPdfFile(f); e.target.value = ""; }} />
         <input ref={imgInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
         <input ref={camInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
@@ -3354,6 +3358,7 @@ export default function ScoreFollowPage() {
          </section>
        </div>}
 
+        {tunerOpen && <TunerPanel lang={lang} onClose={() => setTunerOpen(false)} />}
         {reportOpen && <div className={styles.modalBackdrop} onClick={() => setReportOpen(false)}>
           <section className={styles.exportDialog} role="dialog" aria-modal="true" aria-label={tx("reportTitle")} onClick={(e) => e.stopPropagation()}>
             <div className={styles.exportHead}>
