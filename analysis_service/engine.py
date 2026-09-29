@@ -184,6 +184,24 @@ def _hint_track(signal: np.ndarray, rate: int,
     return times, pitches, energy, conf
 
 
+def classify_pitch(cents: float | None, detected_midi: float | None) -> str:
+    """Cents 判音: 物理不可能 Verdict uncertain, 差整八度单列 octave,
+    ±50 音分内 correct, 之外 sharp/flat。MIDI 只做存储, 判定全是 cents
+    (1 半音=100, 1 八度=1200)。"""
+    if cents is None:
+        return "uncertain"
+    if detected_midi is not None and (detected_midi < 36 or detected_midi > 96):
+        # 大提琴最低空弦 C2=36, 谱面域上限 96: 超出则跟踪器谐波/次谐波误判。
+        return "uncertain"
+    if abs(abs(cents) - 1200) <= 80:
+        return "octave"
+    if cents > 50:
+        return "sharp"
+    if cents < -50:
+        return "flat"
+    return "correct"
+
+
 def measure_start_beats(xml: str) -> dict[int, float]:
     """Map 1-based measure number -> absolute downbeat in quarter-note beats.
 
@@ -343,16 +361,20 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         raise ValueError("录音不足以覆盖所选开始小节")
     aligned = []
     pitch_errors, timing_errors = [], []
+    measured_count = 0
     for note_index, note in enumerate(notes):
         if beat_time is not None:
             expected = beat_time(note["onsetBeat"] - base_beat)
         else:
             expected = start + note["onsetBeat"] * sec_per_beat
         duration = note["durationBeat"] * sec_per_beat
+        # 换把滑音需要更长的稳定时间: 与前音差 3 半音以上时, 音高窗跳过前 35%。
+        shifted = note_index > 0 and abs(note["pitchMidi"] - notes[note_index - 1]["pitchMidi"]) >= 3
         # 时间误差与稳态音高分开估计，避开擦弦、滑音和收尾。
         candidates = [t for t in onsets if abs(t - expected) <= min(0.22, duration * 0.35)]
         onset = min(candidates, key=lambda t: abs(t - expected)) if candidates else None
-        mask = (times >= expected + min(0.12, duration * 0.28)) & (times <= expected + duration * 0.78)
+        skip = duration * 0.35 if shifted else min(0.12, duration * 0.28)
+        mask = (times >= expected + skip) & (times <= expected + duration * 0.78)
         valid = mask & np.isfinite(pitches) & (confidence >= 0.7)
         if beat_time is not None and pitch_notes:
             # 活网格模式: 音高窗口锚在 pYIN 音符段自身时间轴上(音频真值, 与速度无关)。
@@ -372,27 +394,36 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                     seg = (sa, sb_)
             cents = None
             quality = 0.0
+            detected = None
             if seg is not None and seg[1] - seg[0] >= 0.15:
                 lo = seg[0] + (seg[1] - seg[0]) * 0.28
                 hi = seg[1] - (seg[1] - seg[0]) * 0.22
                 lo = max(lo, expected)
+                if shifted:
+                    lo = max(lo, expected + duration * 0.35)
                 hi = min(hi, note_end)
                 svalid = (times >= lo) & (times <= hi) & np.isfinite(pitches) & (confidence >= 0.7)
                 if np.count_nonzero(svalid) >= 4:
-                    cents = round(float((np.median(pitches[svalid]) - note["pitchMidi"]) * 100), 1)
+                    detected = float(np.median(pitches[svalid]))
+                    cents = round((detected - note["pitchMidi"]) * 100, 1)
                     quality = round(float(np.median(confidence[svalid])), 2)
         else:
-            cents = round(float((np.median(pitches[valid]) - note["pitchMidi"]) * 100), 1) if np.count_nonzero(valid) >= 4 else None
+            detected = float(np.median(pitches[valid])) if np.count_nonzero(valid) >= 4 else None
+            cents = round((detected - note["pitchMidi"]) * 100, 1) if detected is not None else None
             quality = round(float(np.median(confidence[valid])), 2) if cents is not None else 0.0
         delta = round((onset - expected) * 1000) if onset is not None else None
-        # 低音弦乐泛音强, 自相关/pYIN 易差整整一个八度(音名对、八度错)。
-        # 这是跟踪器局限, 不是演奏错音: 单列 octave_uncertain, 不计入错音与音高分。
-        is_octave = cents is not None and abs(abs(cents) - 1200) <= 80
-        if cents is not None and not is_octave:
+        if cents is not None:
+            measured_count += 1
+        # 无起音的短音差三度以上: 窗内多半是邻音, 无分段不指控。
+        # (覆盖率仍计入 measured: 测到了帧, 只是不敢判。)
+        if onset is None and duration < 0.25 and cents is not None and abs(cents) > 200:
+            cents = None
+            quality = 0.0
+        pitch_status = classify_pitch(cents, detected)
+        if cents is not None and pitch_status in ("sharp", "flat", "correct"):
             pitch_errors.append(abs(cents))
         if delta is not None and note_index > 0:
             timing_errors.append(delta)
-        pitch_status = "uncertain" if cents is None else "octave" if is_octave else "sharp" if cents > 50 else "flat" if cents < -50 else "correct"
         timing_status = "unscored" if note_index == 0 else "uncertain" if delta is None else "late" if delta > 80 else "early" if delta < -80 else "correct"
         status = "uncertain" if cents is None else "octave_uncertain" if pitch_status == "octave" else "wrong_pitch" if pitch_status in ("sharp", "flat") else \
             "timing_uncertain" if note_index > 0 and delta is None else timing_status if timing_status in ("late", "early") else "correct"
@@ -406,7 +437,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     correct_pitch_notes = sum(n["pitchStatus"] == "correct" for n in aligned)
     wrong_pitch_notes = sum(n["pitchStatus"] in ("sharp", "flat") for n in aligned)
     octave_uncertain_notes = sum(n["pitchStatus"] == "octave" for n in aligned)
-    voiced_count = len(pitch_errors) + octave_uncertain_notes
+    voiced_count = measured_count
     if pitch_errors and voiced_count / len(notes) >= .6:
         # Capped mean keeps one noisy frame bounded, but unlike a median it cannot
         # hide a substantial minority of clearly wrong notes.

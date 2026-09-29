@@ -5,7 +5,7 @@ import wave
 
 import numpy as np
 
-from .engine import analyze, measure_start_beats, parse_score, seconds_per_quarter, track
+from .engine import analyze, classify_pitch, measure_start_beats, parse_score, seconds_per_quarter, track
 
 
 def score(pitches=(69, 71, 72, 74, 76)):
@@ -197,6 +197,43 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["notes"][0]["status"], "octave_uncertain")
         self.assertEqual(result["summary"]["wrongPitchNotes"], 0)
         self.assertEqual(result["summary"]["octaveUncertainNotes"], 1)
+
+    def test_classify_pitch_uses_cents_and_physics_range(self):
+        self.assertEqual(classify_pitch(None, None), "uncertain")
+        self.assertEqual(classify_pitch(0.0, 69.0), "correct")
+        self.assertEqual(classify_pitch(50.0, 69.0), "correct")
+        self.assertEqual(classify_pitch(51.0, 69.0), "sharp")
+        self.assertEqual(classify_pitch(-51.0, 69.0), "flat")
+        self.assertEqual(classify_pitch(1200.0, 69.0), "octave")
+        self.assertEqual(classify_pitch(-1190.0, 48.0 - 11.9), "octave")
+        # 大提琴最低 C2=36: 实测低于此是次谐波误判, 不得计错音。
+        self.assertEqual(classify_pitch(-1866.0, 35.3), "uncertain")
+        self.assertEqual(classify_pitch(1300.0, 97.0), "uncertain")
+
+    def test_shift_slide_does_not_count_as_wrong(self):
+        # E3 滑到 G3(差 3 半音): 前 0.15s 是滑音, 稳定段是准的, 应判 correct。
+        rate = 22050
+        pre, glide, hold = int(0.6 * rate), int(0.15 * rate), int(1.2 * rate)
+        t = np.arange(pre + glide + hold) / rate
+        freq = np.concatenate([np.full(pre, 440 * 2 ** ((52 - 69) / 12)),
+                               np.linspace(440 * 2 ** ((52 - 69) / 12), 440 * 2 ** ((55 - 69) / 12), glide),
+                               np.full(hold, 440 * 2 ** ((55 - 69) / 12))])
+        audio = np.zeros(int(2.4 * rate), dtype=np.float32)
+        start = int(0.12 * rate)
+        audio[start:start + len(t)] = 0.32 * np.sin(2 * math.pi * np.cumsum(freq) / rate)
+        output = io.BytesIO()
+        with wave.open(output, "wb") as wav:
+            wav.setparams((1, 2, rate, len(audio), "NONE", "not compressed"))
+            wav.writeframes((audio * 32767).astype("<i2").tobytes())
+        xml = ('<score-partwise><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<note><pitch><step>E</step><octave>3</octave></pitch><duration>1</duration></note></measure>'
+               '<measure number="2">'
+               '<note><pitch><step>G</step><octave>3</octave></pitch><duration>1</duration></note>'
+               '</measure></part></score-partwise>')
+        result = analyze(output.getvalue(), xml, 60, "cello")
+        self.assertEqual(result["notes"][1]["pitchStatus"], "correct")
+        self.assertEqual(result["summary"]["wrongPitchNotes"], 0)
 
     def test_leading_rest_does_not_shift_first_pitched_note(self):
         from .omr import restore_first_rest
