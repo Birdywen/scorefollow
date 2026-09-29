@@ -369,7 +369,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       const data = await readJsonResponse<AnalysisJob>(response);
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       updateTake(take.id, { jobId: data.id, jobStatus: data.status });
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < 240; i++) {
         await new Promise((r) => setTimeout(r, 1500));
         if (!alive.current || controller.signal.aborted) return;
         const poll = await fetch(`${base}/jobs/${data.id}`, { signal: controller.signal });

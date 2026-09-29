@@ -13,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 import numpy as np
 
 VERSION = "string-mono-0.2"
-MAX_SECONDS = 90
+MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
@@ -113,7 +113,7 @@ def read_wav(data: bytes) -> tuple[np.ndarray, int]:
                 raise ValueError("请上传单声道 16-bit PCM WAV (8–48 kHz)")
             frames = wav.getnframes()
             if frames / rate > MAX_SECONDS or frames / rate < 0.4:
-                raise ValueError("录音长度须为 0.4–90 秒")
+                raise ValueError("录音长度须为 0.4–300 秒")
             signal = np.frombuffer(wav.readframes(frames), dtype="<i2").astype(np.float32) / 32768
     except (wave.Error, EOFError) as exc:
         raise ValueError("WAV 格式无效") from exc
