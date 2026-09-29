@@ -19,13 +19,15 @@ from . import vamp_features
 from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score
 from .omr import MAX_PDF, recognize
 
-MAX_BODY = 8_000_000
+MAX_BODY = 16_000_000
 MAX_OMR_BODY = 21_000_000
 TTL = 3600
 jobs: dict[str, dict] = {}
 lock = threading.Lock()
 pool = ThreadPoolExecutor(max_workers=2)
 allowed_origins = set(os.getenv("ANALYSIS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","))
+# Shared secret for the store relay (X-Analysis-Token header). Empty = open (local dev/tests).
+API_TOKEN = os.environ.get("ANALYSIS_API_TOKEN", "")
 
 
 def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_measure: int,
@@ -72,6 +74,11 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def authorized(self) -> bool:
+        if not API_TOKEN:
+            return True
+        return self.headers.get("X-Analysis-Token") == API_TOKEN
+
     def respond(self, code: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
         self.send_response(code)
@@ -98,6 +105,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if not self.cors():
             return
+        if not self.authorized():
+            self.respond(401, {"error": "未授权"})
+            return
         path = urlsplit(self.path).path
         if path not in ("/jobs", "/omr/jobs"):
             self.respond(404, {"error": "Not found"})
@@ -117,8 +127,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("补回整休止需要 1–16 个四分音符拍")
             else:
                 audio = base64.b64decode(request["audioWavBase64"], validate=True)
-                if len(audio) > 5_000_000:
-                    raise ValueError("音频超过 5 MB")
+                if len(audio) > 10_000_000:
+                    raise ValueError("音频超过 10 MB")
                 xml = request["scoreXml"]
                 if not isinstance(xml, str):
                     raise ValueError("请上传 MusicXML")
@@ -167,6 +177,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/health":
             self.respond(200, {"status": "ok"})
+            return
+        if not self.authorized():
+            self.respond(401, {"error": "未授权"})
             return
         if not path.startswith(("/jobs/", "/omr/jobs/")):
             self.respond(404, {"error": "Not found"})
