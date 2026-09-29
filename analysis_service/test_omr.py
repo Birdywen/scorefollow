@@ -59,6 +59,15 @@ class OmrTests(unittest.TestCase):
         decimal = restore_first_rest(score((69,)).replace("<divisions>1</divisions>", "<divisions>1.0</divisions>"), 4)
         self.assertEqual(parse_score(decimal)[0]["onsetBeat"], 4)
 
+    def test_restore_without_attributes_is_a_clear_failure(self):
+        bare = '<score-partwise><part id="P1"><measure number="1"><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration></note></measure></part></score-partwise>'
+        with self.assertRaisesRegex(ValueError, "divisions"):
+            restore_first_rest(bare, 4)
+        with self.assertRaisesRegex(ValueError, "没有可补回"):
+            restore_first_rest('<score-partwise></score-partwise>', 4)
+        with self.assertRaisesRegex(ValueError, "1–16"):
+            restore_first_rest(bare, 0)
+
     def test_missing_key_is_a_clear_failure(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ValueError, "HALBESTUNDE_OMR_API_KEY"):

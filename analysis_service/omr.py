@@ -63,7 +63,7 @@ def restore_first_rest(xml: str, beats: int) -> str:
     tag = lambda name: f"{{{ns}}}{name}" if ns else name
     part = root.find(tag("part"))
     first = part.find(tag("measure")) if part is not None else None
-    if first is None:
+    if part is None or first is None:
         raise ValueError("OMR MusicXML 没有可补回的小节")
     divisions = first.findtext(f"./{tag('attributes')}/{tag('divisions')}")
     if not divisions or musicxml_number(divisions, "divisions") <= 0:
@@ -72,6 +72,8 @@ def restore_first_rest(xml: str, beats: int) -> str:
     # Move score-wide clef/key/time/divisions to the restored opening measure.
     # They remain in force for the former first (now second) measure.
     attrs = first.find(tag("attributes"))
+    if attrs is None:
+        raise ValueError("补回整休止需要首小节包含 MusicXML attributes")
     first.remove(attrs)
     first_rest.append(attrs)
     note = ET.SubElement(first_rest, tag("note"))

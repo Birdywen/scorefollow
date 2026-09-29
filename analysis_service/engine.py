@@ -28,15 +28,21 @@ def musicxml_number(text: str | None, label: str) -> Decimal:
     return value
 
 
+def xml_root(xml: str, label: str = "MusicXML") -> ET.Element:
+    """共享的 XML 入口防护: 大小上限 + 实体声明拒绝 + 解析错误转 ValueError。"""
+    if not isinstance(xml, str) or len(xml) > 1_000_000 or "<!ENTITY" in xml.upper() or (
+            "<!DOCTYPE" in xml.upper() and "[" in xml.split(">", 1)[0]):
+        raise ValueError(f"{label}过大或包含不支持的实体声明")
+    try:
+        return ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise ValueError(f"{label}无法解析") from exc
+
+
 def parse_score(xml: str) -> list[dict]:
     # Standard MusicXML often includes an external PUBLIC DTD. ElementTree does
     # not resolve it; forbid internal entity definitions, not the normal header.
-    if len(xml) > 1_000_000 or "<!ENTITY" in xml.upper() or ("<!DOCTYPE" in xml.upper() and "[" in xml.split(">", 1)[0]):
-        raise ValueError("MusicXML 过大或包含不支持的实体声明")
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError as exc:
-        raise ValueError("MusicXML 无法解析") from exc
+    root = xml_root(xml)
     if root.tag.rsplit("}", 1)[-1] != "score-partwise":
         raise ValueError("仅支持 score-partwise MusicXML")
     parts = root.findall("./{*}part")
@@ -47,6 +53,7 @@ def parse_score(xml: str) -> list[dict]:
     notes = []
     beat = 0.0
     divisions = Decimal(1)
+    meter_signature = None
     voices = set()
     staves = set()
     for index, measure in enumerate(parts[0].findall("./{*}measure"), 1):
@@ -57,11 +64,20 @@ def parse_score(xml: str) -> list[dict]:
             divisions = musicxml_number(attr.text, "divisions")
             if divisions <= 0:
                 raise ValueError("MusicXML divisions 无效")
+        sig = measure.find("./{*}attributes/{*}time")
+        if sig is not None:
+            meter = (sig.findtext("./{*}beats"), sig.findtext("./{*}beat-type"))
+            if meter_signature is None:
+                meter_signature = meter
+            elif meter != meter_signature:
+                raise ValueError("中途变拍暂不支持，请按拍号分段分析")
         for item in measure:
             tag = item.tag.rsplit("}", 1)[-1]
             if tag in ("backup", "forward"):
                 raise ValueError("多声部/交错时间轴暂不支持")
             if tag != "note":
+                continue
+            if item.find("./{*}grace") is not None:
                 continue
             if item.find("./{*}chord") is not None:
                 raise ValueError("双音/和弦暂不支持")
@@ -209,12 +225,7 @@ def measure_start_beats(xml: str) -> dict[int, float]:
     cursor and the metronome-anchored analysis share one definition of
     "measure N beat 1".
     """
-    if len(xml) > 1_000_000 or "<!ENTITY" in xml.upper():
-        raise ValueError("MusicXML 过大或包含不支持的实体声明")
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError as exc:
-        raise ValueError("MusicXML 无法解析") from exc
+    root = xml_root(xml)
     parts = root.findall("./{*}part")
     if len(parts) != 1:
         raise ValueError("第一版只支持单个乐器声部")
@@ -234,6 +245,8 @@ def measure_start_beats(xml: str) -> dict[int, float]:
                 raise ValueError("多声部/交错时间轴暂不支持")
             if tag != "note":
                 continue
+            if item.find("./{*}grace") is not None:
+                continue
             duration = item.findtext("./{*}duration")
             if duration is None:
                 raise ValueError("仅支持有明确 duration 的音符和休止符")
@@ -249,10 +262,13 @@ def seconds_per_quarter(xml: str, bpm: float) -> float:
     notes.  Keeping this conversion here prevents a 6/8 take from drifting 50%
     slow against the score.
     """
-    root = ET.fromstring(xml)
+    root = xml_root(xml)
     time = root.find("./{*}part/{*}measure/{*}attributes/{*}time")
-    beats = int(time.findtext("./{*}beats")) if time is not None else 4
-    beat_type = int(time.findtext("./{*}beat-type")) if time is not None else 4
+    try:
+        beats = int(time.findtext("./{*}beats")) if time is not None else 4
+        beat_type = int(time.findtext("./{*}beat-type")) if time is not None else 4
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MusicXML 拍号无效") from exc
     if beat_type == 8 and beats in (6, 9, 12):
         return 60.0 / bpm * (2.0 / 3.0)
     return 60.0 / bpm
@@ -456,6 +472,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         timing_accuracy_score = round(max(0, 100 - float(np.median(np.abs(timing_errors))) * .4))
         rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))
     duration_sec = round(float(len(signal) / rate), 3)
+    clipped = bool(np.max(np.abs(signal)) >= 0.999)
     sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
@@ -472,7 +489,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "recordedFirstBeatSec": round(float(first_beat_audio_sec), 3) if first_beat_audio_sec is not None else None,
                         "estimatedLatencyMs": estimated_latency_ms,
                         "coveredSec": duration_sec, "sensors": sensors,
-                        "detectedBpm": detected_bpm},
+                        "clipped": clipped, "detectedBpm": detected_bpm},
             "notes": aligned, "limitations": ["仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",
                                            "音高按十二平均律；首音作为时间零点，不计入节奏得分。"
                                            if sync_mode == "legacy" else

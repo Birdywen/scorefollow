@@ -235,6 +235,38 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["notes"][1]["pitchStatus"], "correct")
         self.assertEqual(result["summary"]["wrongPitchNotes"], 0)
 
+    def test_grace_notes_are_skipped_not_rejected(self):
+        xml = score().replace("<note><pitch>", "<note><grace slash=\"yes\"/><pitch><step>G</step><octave>4</octave></pitch></note><note><pitch>", 1)
+        notes = parse_score(xml)
+        self.assertEqual(len(notes), 5)
+        self.assertEqual(notes[0]["pitchMidi"], 69)
+        starts = measure_start_beats(xml)
+        self.assertEqual(starts[1], 0.0)
+
+    def test_mid_piece_meter_change_is_rejected(self):
+        xml = score().replace('<measure number="1"><attributes><divisions>1</divisions></attributes>',
+                              '<measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>', 1)
+        xml = xml.replace('<measure number="3"><attributes><divisions>1</divisions></attributes>',
+                          '<measure number="3"><attributes><divisions>1</divisions><time><beats>6</beats><beat-type>8</beat-type></time></attributes>', 1)
+        with self.assertRaisesRegex(ValueError, "变拍"):
+            parse_score(xml)
+
+    def test_garbage_time_signature_is_rejected(self):
+        xml = score().replace("<divisions>1</divisions>", "<divisions>1</divisions><time><beats>x</beats><beat-type>4</beat-type></time>", 1)
+        with self.assertRaisesRegex(ValueError, "拍号"):
+            seconds_per_quarter(xml, 112)
+
+    def test_clipping_is_flagged_in_summary(self):
+        data = recording()
+        rate, buf = 22050, io.BytesIO()
+        with wave.open(buf, "wb") as wav:
+            wav.setparams((1, 2, rate, 22050, "NONE", "not compressed"))
+            wav.writeframes((np.full(22050, 32767, dtype=np.int16)).tobytes())
+        loud = analyze(buf.getvalue(), score((69,)), 60, "violin")
+        self.assertTrue(loud["summary"]["clipped"])
+        clean = analyze(data, score(), 60, "violin")
+        self.assertFalse(clean["summary"]["clipped"])
+
     def test_leading_rest_does_not_shift_first_pitched_note(self):
         from .omr import restore_first_rest
         xml = restore_first_rest(score(), 4)
