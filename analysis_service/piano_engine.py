@@ -5,55 +5,75 @@ note events (onset/offset/pitch/velocity) and matched note-by-note against the
 score. No Vamp/pYIN hints are involved; transcription IS the sensor.
 """
 import io
-import tempfile
-import threading
+import json
+import os
+import time
+import urllib.request
+import uuid
 
-from .engine import parse_score, read_wav
+from .engine import parse_score
 
-VERSION = "piano-midi-0.1"
-SAMPLE_RATE = 16000
+VERSION = "piano-midi-0.2"
 MATCH_WINDOW_SEC = 0.30
-_transcriptor = None
-_lock = threading.Lock()
+# 5090 transcription service (Tailscale). Override with env; old public IP is dead (CGNAT).
+PIANO_API_URL = os.environ.get("PIANO_API_URL", "http://100.88.202.126:7777").rstrip("/")
+POLL_TIMEOUT_SEC = 400
 
 
-def _get_transcriptor():
-    global _transcriptor
-    if _transcriptor is None:
-        from piano_transcription_inference import PianoTranscription
-        _transcriptor = PianoTranscription(device="cpu")
-    return _transcriptor
+def _api(path: str, body: bytes | None = None, headers: dict | None = None, timeout: int = 30) -> bytes:
+    req = urllib.request.Request(PIANO_API_URL + path, data=body, headers=headers or {}, method="POST" if body else "GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def _post_audio(wav: bytes) -> str:
+    boundary = uuid.uuid4().hex
+    head = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"take.wav\"\r\n"
+            f"Content-Type: audio/wav\r\n\r\n").encode()
+    tail = f"\r\n--{boundary}--\r\n".encode()
+    data = json.loads(_api("/api/jobs", body=head + wav + tail,
+                            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}, timeout=60))
+    job_id = data.get("job_id")
+    if not job_id:
+        raise ValueError(f"transcribe rejected: {data}")
+    return job_id
+
+
+def _parse_midi(data: bytes) -> list:
+    import mido
+    mid = mido.MidiFile(file=io.BytesIO(data))
+    abs_time, open_notes, out = 0.0, {}, []
+    for msg in mid:  # merged across tracks, msg.time in seconds (delta)
+        abs_time += msg.time
+        if msg.type == "note_on" and msg.velocity > 0:
+            open_notes.setdefault((msg.channel, msg.note), []).append((abs_time, msg.velocity))
+        elif msg.type in ("note_off",) or (msg.type == "note_on"):
+            stack = open_notes.get((msg.channel, msg.note))
+            if stack:
+                start, vel = stack.pop(0)
+                if abs_time > start:
+                    out.append((start, abs_time, float(msg.note), float(vel)))
+    return sorted(out, key=lambda e: (e[0], e[2]))
 
 
 def transcribe_notes(wav: bytes) -> list | None:
-    """WAV bytes -> [(onset_sec, offset_sec, midi_float, velocity)] or None."""
+    """WAV bytes -> [(onset_sec, offset_sec, midi_float, velocity)] via 5090, or None."""
     try:
-        import librosa
-        import numpy as np
-        signal, rate = read_wav(wav)
-        audio = np.asarray(signal, dtype=np.float32)
-        if rate != SAMPLE_RATE:
-            audio = librosa.resample(audio, orig_sr=rate, target_sr=SAMPLE_RATE)
-        with _lock:
-            transcriptor = _get_transcriptor()
-            with tempfile.NamedTemporaryFile(suffix=".mid") as tmp:
-                out = transcriptor.transcribe(audio, tmp.name)
-        events = out.get("est_note_events") or []
-        notes = []
-        for ev in events:
-            try:
-                if isinstance(ev, dict):
-                    # piano_transcription_inference: {'onset_time','offset_time','midi_note','velocity'}
-                    onset = float(ev["onset_time"])
-                    offset = float(ev["offset_time"])
-                    pitch = float(ev["midi_note"])
-                    vel = float(ev.get("velocity", 64.0))
-                else:
-                    onset, offset, pitch = float(ev[0]), float(ev[1]), float(ev[2])
-                    vel = float(ev[3]) if len(ev) > 3 else 64.0
-            except (IndexError, KeyError, TypeError, ValueError):
-                continue
-            notes.append((onset, offset, pitch, vel))
+        job_id = _post_audio(wav)
+        deadline = time.time() + POLL_TIMEOUT_SEC
+        midi_path = None
+        while time.time() < deadline:
+            job = json.loads(_api(f"/api/jobs/{job_id}", timeout=30))
+            status = job.get("status")
+            if status == "done":
+                midi_path = job.get("midi_url") or f"/api/jobs/{job_id}/midi"
+                break
+            if status in ("failed", "error") or job.get("error"):
+                return None
+            time.sleep(1.0)
+        if not midi_path:
+            return None
+        notes = _parse_midi(_api(midi_path, timeout=60))
         return notes or None
     except Exception:
         return None

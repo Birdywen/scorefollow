@@ -68,6 +68,23 @@ class PianoTests(unittest.TestCase):
         self.assertAlmostEqual(result["notes"][1]["performedSec"], 1.14, places=2)
         self.assertEqual(result["notes"][1]["status"], "correct")
 
+    def test_parse_midi_round_trip(self):
+        import io as _io
+        import mido
+        mid = mido.MidiFile(ticks_per_beat=480)
+        track = mido.MidiTrack()
+        track.append(mido.Message("note_on", note=69, velocity=90, time=0))
+        track.append(mido.Message("note_off", note=69, velocity=0, time=480))
+        track.append(mido.Message("note_on", note=72, velocity=70, time=0))
+        track.append(mido.Message("note_on", note=72, velocity=0, time=240))
+        mid.tracks.append(track)
+        buf = _io.BytesIO()
+        mid.save(file=buf)
+        notes = piano_engine._parse_midi(buf.getvalue())
+        self.assertEqual(len(notes), 2)
+        self.assertEqual([int(n[2]) for n in notes], [69, 72])
+        self.assertGreater(notes[0][1], notes[0][0])
+
     def test_failed_transcription_raises_chinese_error(self):
         piano_engine.transcribe_notes = lambda wav: None
         try:
