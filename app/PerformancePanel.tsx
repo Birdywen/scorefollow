@@ -35,6 +35,7 @@ type Take = {
 };
 type OmrResult = { musicXml: string; compatible: boolean; reason?: string | null; noteCount: number; measureCount: number; restoredFirstRest: boolean };
 type OmrJob = { id: string; status: string; progress?: number; error?: string; result?: OmrResult };
+type AnalysisJob = { id: string; status: string; error?: string; result?: Result };
 
 const LOCAL_API = "http://127.0.0.1:8765";
 const TAKES_KEY = "sf-takes-meta-v1";
@@ -53,6 +54,16 @@ function apiBase(value: string): string {
   if (!["http:", "https:"].includes(url.protocol) || (location.protocol === "https:" && url.protocol !== "https:"))
     throw new Error("HTTPS 页面需要 HTTPS 分析服务 / HTTPS page requires an HTTPS API");
   return url.href.replace(/\/+$/, "");
+}
+
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const kind = text.trimStart().startsWith("<") ? "HTML" : "non-JSON data";
+    throw new Error(`分析服务返回 ${kind}（HTTP ${response.status}），请检查服务地址与访问权限 / Analysis API returned ${kind}; check its URL and access rules`);
+  }
 }
 
 function encodeBase64(bytes: Uint8Array): string {
@@ -355,14 +366,14 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         ...(take.firstBeatAudioSec != null ? { syncMode: "metronome", firstBeatAudioSec: take.firstBeatAudioSec } : {}),
       };
       const response = await fetch(`${base}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
-      const data = await response.json();
+      const data = await readJsonResponse<AnalysisJob>(response);
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       updateTake(take.id, { jobId: data.id, jobStatus: data.status });
       for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, 1500));
         if (!alive.current || controller.signal.aborted) return;
         const poll = await fetch(`${base}/jobs/${data.id}`, { signal: controller.signal });
-        const job = await poll.json();
+        const job = await readJsonResponse<AnalysisJob>(poll);
         if (!poll.ok) throw new Error(job.error || `HTTP ${poll.status}`);
         updateTake(take.id, { jobStatus: job.status, error: job.error });
         if (job.status === "completed" && job.result) { updateTake(take.id, { result: job.result as Result }); break; }
@@ -402,7 +413,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       const response = await fetch(`${base}/omr/jobs`, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pdfBase64: encodeBase64(new Uint8Array(bytes)), filename: omrPdf?.name || pdfName || "score.pdf",
           ...(removedFirstRest ? { prependRestBeats: removedBeats } : {}) }) });
-      const data = await response.json();
+      const data = await readJsonResponse<OmrJob>(response);
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       if (alive.current) setOmrJob(data);
     } catch (exc) { if (alive.current) setError(exc instanceof Error ? exc.message : String(exc)); }
@@ -415,7 +426,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     const timer = setInterval(async () => {
       try {
         const response = await fetch(`${apiBase(api)}/omr/jobs/${omrJob.id}`, { signal: controller.signal });
-        const data: OmrJob = await response.json();
+        const data = await readJsonResponse<OmrJob>(response);
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         if (!alive.current) return;
         setOmrJob(data);

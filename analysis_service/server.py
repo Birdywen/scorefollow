@@ -25,7 +25,10 @@ TTL = 3600
 jobs: dict[str, dict] = {}
 lock = threading.Lock()
 pool = ThreadPoolExecutor(max_workers=2)
-allowed_origins = set(os.getenv("ANALYSIS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","))
+allowed_origins = set(os.getenv(
+    "ANALYSIS_ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,http://150.136.51.61,https://ezmusicstore.com",
+).split(","))
 # Shared secret for the store relay (X-Analysis-Token header). Empty = open (local dev/tests).
 API_TOKEN = os.environ.get("ANALYSIS_API_TOKEN", "")
 
