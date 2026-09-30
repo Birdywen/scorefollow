@@ -74,16 +74,25 @@
 .helpHero p:last-child { max-width: 590px; margin: 8px 0 0; color: rgba(255,255,255,.8); font-size: 13px; line-height: 1.6; }
 .helpClose { align-self: flex-start; margin-left: auto; padding: 2px 8px; border: 0; border-radius: 9px; color: #fff; background: rgba(255,255,255,.14); font-size: 25px; line-height: 1; cursor: pointer; }
 .helpClose:hover { background: rgba(255,255,255,.25); }
-.helpBody { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; overflow: auto; padding: 22px 30px 14px; }
+.helpBody { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 22px 30px 14px; }
 .helpCard { display: flex; gap: 13px; min-height: 145px; padding: 17px; border: 1px solid var(--sf-border); border-radius: 16px; background: var(--sf-elevated); }
 .helpCardAccent { border-color: #9dbbfa; background: linear-gradient(145deg, #f0f6ff, var(--sf-elevated)); }
 .helpCardIcon { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 11px; color: #2563eb; background: #dce9ff; font-weight: 800; }
 .helpCard h3, .helpShortcuts h3 { margin: 0; color: var(--sf-ink); font-size: 14px; }
-.helpCard p { margin: 8px 0 13px; color: var(--sf-muted); font-size: 12px; line-height: 1.65; }
+.helpCard p { margin: 8px 0 13px; color: var(--sf-muted); font-size: 14px; line-height: 1.7; }
 .helpCard kbd, .shortcutGrid kbd { display: inline-block; min-width: 25px; margin: 0 4px 0 0; padding: 3px 7px; border: 1px solid var(--sf-border); border-bottom-width: 2px; border-radius: 6px; color: var(--sf-ink); background: var(--sf-surface); font: 700 11px ui-monospace, monospace; text-align: center; }
 .helpMeta { margin-left: 3px; color: var(--sf-muted); font-size: 11px; }
 .helpTag { display: inline-block; padding: 4px 9px; border-radius: 999px; color: #087f78; background: #d9f5ef; font-size: 11px; font-weight: 700; }
 .helpShortcuts { grid-column: 1 / -1; padding: 16px 17px; border-top: 1px solid var(--sf-border); }
+.analysisHelp { grid-column: 1 / -1; min-width: 0; padding: 17px; border: 1px solid var(--sf-border); border-radius: 16px; background: var(--sf-elevated); }
+.analysisHelp h3 { margin: 0; color: var(--sf-ink); font-size: 14px; }
+.analysisHelp p { margin: 10px 0; color: var(--sf-muted); font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.analysisHelp details { padding: 12px 0; border-top: 1px solid var(--sf-border); }
+.analysisHelp summary { color: var(--sf-ink); font-size: 13px; font-weight: 700; cursor: pointer; }
+.analysisHelp summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 4px; border-radius: 3px; }
+.helpClose { min-width: 44px; min-height: 44px; }
+.helpDialog :is(button, summary):focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.helpHero .helpClose:focus-visible { outline-color: #fff; }
 .shortcutGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-top: 12px; color: var(--sf-muted); font-size: 12px; }
 .helpFooter { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 30px 20px; border-top: 1px solid var(--sf-border); color: var(--sf-muted); font-size: 11px; }
 .page[data-theme="dark"] .helpCardAccent { border-color: #3865ad; background: linear-gradient(145deg, #192c4b, var(--sf-elevated)); }

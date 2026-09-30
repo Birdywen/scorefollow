@@ -17,9 +17,10 @@ type Note = {
   matchStatus?: "matched" | "uncertain";
 };
 type Result = {
-  version: string; notes: Note[]; limitations: string[];
+  version: string; instrument?: string; notes: Note[]; limitations: string[];
   summary: { pitchScore: number | null; rhythmScore: number | null;
     intonationScore?: number | null; correctPitchNotes?: number; wrongPitchNotes?: number;
+    pitchScoreMethod?: string; missedNotes?: number; extraNotes?: number;
     timingAccuracyScore?: number | null; rhythmStabilityScore?: number | null;
     timingOffsetMs: number | null; timingSpreadMs: number | null;
     noteCount: number; measureCount?: number; startMeasure?: number; endMeasure?: number;
@@ -41,7 +42,7 @@ type AnalysisJob = { id: string; status: string; error?: string; result?: Result
 const LOCAL_API = "http://127.0.0.1:8765";
 const TAKES_KEY = "sf-takes-meta-v1";
 const MAX_TAKES = 3;
-// Keep encoded duration safely below the server's hard 90-second WAV limit.
+// Keep browser recordings below this page's 90-second conversion limit.
 const MAX_RECORDING_MS = 89_500;
 
 type PracticeMetro = {
@@ -565,9 +566,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
             <div className={styles.takeRow}>
               <button className={styles.omrButton} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take)}>
                 {busyTakeId === take.id ? (zh ? "分析中…" : "Analyzing…") : (zh ? "分析这一遍" : "Analyze")}</button>
-              {take.firstBeatAudioSec == null && instrument !== "piano" &&
-                <button className={styles.omrButton} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take, true)}>
-                  {zh ? "自动定位片段" : "Find excerpt"}</button>}
+              <button className={styles.omrButton}
+                disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false || instrument === "piano" || take.firstBeatAudioSec != null}
+                title={instrument === "piano" ? (zh ? "自动定位暂不支持钢琴" : "Excerpt location is not available for piano") : take.firstBeatAudioSec != null ? (zh ? "已同步录音不能自动定位" : "Synced takes cannot use automatic excerpt location") : undefined}
+                onClick={() => void analyzeTake(take, true)}>
+                {zh ? "自动定位片段" : "Find excerpt"}</button>
               <button className={styles.omrButton} onClick={() => {
                 setTakes((prev) => prev.filter((t) => t.id !== take.id));
                 if (take.url) URL.revokeObjectURL(take.url);
@@ -633,7 +636,10 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       </p>}
       {result.summary.syncMode === "metronome" && <p className={styles.hint}>
         {zh ? `节拍器同步 · 第一拍 ${result.summary.recordedFirstBeatSec}s · 延迟微调 ${result.summary.estimatedLatencyMs} ms` : `Metronome sync · first beat ${result.summary.recordedFirstBeatSec}s · latency ${result.summary.estimatedLatencyMs} ms`}</p>}
-      {result.summary.startMeasure && <p className={styles.hint}>{zh ? `本次分析：第 ${result.summary.startMeasure}–${result.summary.endMeasure} 小节（后续未录到的小节不计分）` : `Analyzed measures ${result.summary.startMeasure}–${result.summary.endMeasure}; later measures were not scored.`}</p>}
+      {result.summary.startMeasure && <p className={styles.hint}>{zh ? `本次分析：第 ${result.summary.startMeasure}–${result.summary.endMeasure} 小节` : `Analyzed measures ${result.summary.startMeasure}–${result.summary.endMeasure}`}{result.instrument !== "piano" || result.summary.pitchScoreMethod === "note-f1" ? (zh ? "（录音结束后的谱面音符不计分）" : "; score notes beyond the recording end were excluded.") : (zh ? "（旧版钢琴未裁去录音结束后的谱面音符）" : "; this older piano report includes score notes beyond the recording end.")}</p>}
+      {result.instrument === "piano" && <p className={styles.hint}>{result.summary.pitchScoreMethod === "note-f1"
+        ? (zh ? `钢琴音符匹配分（F1）· 漏音 ${result.summary.missedNotes ?? "—"} · 多音 ${result.summary.extraNotes ?? "—"}；两者均影响分数。录音内静音仍计入覆盖范围。` : `Piano note F1 · Missed ${result.summary.missedNotes ?? "—"} · Extra ${result.summary.extraNotes ?? "—"}; both affect the score. Recorded silence remains in scope.`)
+        : (zh ? "旧版钢琴音高分仅评价已匹配音符，不含漏音、多音扣分；请更新服务后重新分析。" : "Older piano scores evaluate matched notes only, without missed/extra penalties; update the service and reanalyze.")}</p>}
       {pdfMeasures > 0 && !canJump && <p className={styles.error}>{zh ? `谱面有 ${pdfMeasures} 小节、MusicXML 有 ${scoreMeasures} 小节；请核对后再映射到 PDF。` : `PDF has ${pdfMeasures} measures; MusicXML has ${scoreMeasures}. Verify alignment before mapping.`}</p>}
       <h3>{zh ? "复习片段" : "Review moments"} ({issues.length})</h3>
       {issues.length === 0 && <p className={styles.hint}>{zh ? "没有明确的问题；请检查可判比例。" : "No definite issues; check coverage above."}</p>}

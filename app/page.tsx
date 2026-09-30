@@ -30,6 +30,7 @@ import {
 } from "@/lib/synpdf-core";
 import { Wijzer, buildMeasures } from "@/lib/synpdf-wijzer";
 import PerformancePanel from "./PerformancePanel";
+import AnalysisHelp from "./AnalysisHelp";
 import TunerPanel from "./TunerPanel";
 import styles from "./page.module.css";
 
@@ -570,6 +571,49 @@ export default function ScoreFollowPage() {
   const [fullScreen, setFullScreen] = useState(false);
   const [darkTheme, setDarkTheme] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const helpDialogRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!helpOpen) return;
+    const dialog = helpDialogRef.current;
+    if (!dialog) return;
+    const returnTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.getClientRects().length > 0);
+    const focusFirst = () => (focusable()[0] ?? dialog).focus();
+    focusFirst();
+    const onFocus = (event: FocusEvent) => {
+      if (event.target instanceof Node && !dialog.contains(event.target)) focusFirst();
+    };
+    const onTab = (event: KeyboardEvent) => {
+      // Embedded tools also listen for shortcuts. Isolate modal key events
+      // before they reach those listeners, preserving native summary/button keys.
+      event.stopPropagation();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setHelpOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      const first = elements[0], last = elements[elements.length - 1];
+      if (!first || (event.shiftKey && document.activeElement === first) ||
+          (!event.shiftKey && document.activeElement === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last ?? dialog : first ?? dialog).focus();
+      }
+    };
+    document.addEventListener("focusin", onFocus);
+    document.addEventListener("keydown", onTab, true);
+    return () => {
+      document.removeEventListener("focusin", onFocus);
+      document.removeEventListener("keydown", onTab, true);
+      document.body.style.overflow = previousOverflow;
+      if (returnTarget?.isConnected) returnTarget.focus();
+    };
+  }, [helpOpen]);
   const [tunerOpen, setTunerOpen] = useState(false);
   const [preloadPreview, setPreloadPreview] = useState<{ head: string; truncated: boolean; lines: number; bytes: number } | null>(null);
   const preloadFullRef = useRef<string>("");
@@ -2957,11 +3001,12 @@ export default function ScoreFollowPage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (helpOpen) { e.preventDefault(); setHelpOpen(false); return; }
         if (preloadPreview) { closePreview(); return; }
         setHelpOpen(false); setMenuOpen(false); setAdvOpen(false); setPie(null);
         return;
       }
-      if (preloadPreview) return;
+      if (preloadPreview || helpOpen) return;
       const target = e.target as HTMLElement | null;
       if (target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "")) return;
       // 焦点在按钮时保留快捷键；只有空格/回车留给按钮原生激活，避免双触发播放。
@@ -3039,7 +3084,7 @@ export default function ScoreFollowPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast, correctMode, deleteSelectedBar, doUndo, doRedo, placeCursor, stepSystem, pageNum, numPages, renderPage, applyAdv, toggleCleanView, selectedBar, splitSelectedMeasure, mergeSelectedMeasure, preloadPreview, closePreview]);
+    }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast, correctMode, deleteSelectedBar, doUndo, doRedo, placeCursor, stepSystem, pageNum, numPages, renderPage, applyAdv, toggleCleanView, selectedBar, splitSelectedMeasure, mergeSelectedMeasure, preloadPreview, closePreview, helpOpen]);
 
   useEffect(() => {
     const m = mediaRef.current as any;
@@ -3341,7 +3386,7 @@ export default function ScoreFollowPage() {
         </div>}
 
        {helpOpen && <div className={styles.helpBackdrop} onClick={() => setHelpOpen(false)}>
-         <section className={styles.helpDialog} role="dialog" aria-modal="true" aria-label={lang === "zh" ? "帮助与快捷键" : "Help and shortcuts"} onClick={(e) => e.stopPropagation()}>
+          <section ref={helpDialogRef} tabIndex={-1} className={styles.helpDialog} role="dialog" aria-modal="true" aria-label={lang === "zh" ? "帮助与快捷键" : "Help and shortcuts"} onClick={(e) => e.stopPropagation()}>
            <header className={styles.helpHero}>
              <div className={styles.helpHeroIcon}>♪</div>
              <div><p className={styles.helpEyebrow}>SCOREFOLLOW GUIDE</p><h2>{lang === "zh" ? "把练习变成一条清晰的路" : "A clearer path through practice"}</h2><p>{lang === "zh" ? "从载入谱面，到节拍器跟随，再到演奏分析，这里是你的快速地图。" : "From loading a score to following the beat and reviewing a take, here is your quick map."}</p></div>
@@ -3352,7 +3397,8 @@ export default function ScoreFollowPage() {
              <section className={styles.helpCard}><span className={styles.helpCardIcon}>⌁</span><div><h3>{lang === "zh" ? "跟着节拍练" : "Practice with the beat"}</h3><p>{lang === "zh" ? "点击任意小节可移动起点；播放中点击会带预备拍从该小节重新开始。" : "Click a measure to move the start point. While playing, it restarts there with a count-in."}</p><kbd>← →</kbd><kbd>↑ ↓</kbd><span className={styles.helpMeta}>{lang === "zh" ? "小节 / 系统" : "measure / system"}</span></div></section>
              <section className={styles.helpCard}><span className={styles.helpCardIcon}>◌</span><div><h3>{lang === "zh" ? "建立同步" : "Build sync"}</h3><p>{lang === "zh" ? "播放录音时按 B 记录拍点；Backspace 撤回一个点，逗号和句号微调时值。" : "While listening, press B to mark beats. Backspace removes one; comma and period fine-tune duration."}</p><div><kbd>B</kbd><kbd>⌫</kbd><kbd>, .</kbd></div></div></section>
              <section className={styles.helpCard}><span className={styles.helpCardIcon}>✦</span><div><h3>{lang === "zh" ? "查看演奏分析" : "Review your take"}</h3><p>{lang === "zh" ? "打开“演奏分析”，上传练习录音，查看音准、节奏、稳定性与需要回听的小节。" : "Open Analyze and upload a take to see pitch, rhythm, stability, and measures worth revisiting."}</p><span className={styles.helpTag}>{lang === "zh" ? "练习报告" : "practice report"}</span></div></section>
-             <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "设置" : "settings"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
+              <AnalysisHelp lang={lang} />
+              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "设置" : "settings"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
            </div>
            <footer className={styles.helpFooter}><span>{lang === "zh" ? "提示：按钮也可以直接点击，快捷键适合专注演奏时使用。" : "Tip: every shortcut also has a button, so you can stay focused on the music."}</span><button className={styles.practicePlay} onClick={() => setHelpOpen(false)}>{lang === "zh" ? "开始练习" : "Start practicing"}</button></footer>
          </section>

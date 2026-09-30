@@ -1,12 +1,13 @@
 import io
 import unittest
 import wave
+from unittest.mock import patch
 
 import numpy as np
 
 from . import piano_engine
 from .engine import parse_score
-from .test_engine import recording, score
+from .test_engine import continuous_recording, recording, score
 
 
 def fake_perf(*events):
@@ -14,6 +15,63 @@ def fake_perf(*events):
 
 
 class PianoTests(unittest.TestCase):
+    def setUp(self):
+        # Existing fixtures assign/delete the sensor; always restore the real
+        # function so later tests cannot accidentally lose the service adapter.
+        sensor_patch = patch.object(piano_engine, "transcribe_notes")
+        sensor_patch.start()
+        self.addCleanup(sensor_patch.stop)
+
+    def test_wrong_notes_reduce_f1(self):
+        with patch.object(piano_engine, "transcribe_notes", return_value=fake_perf(
+                *[(i + .12, 69 if i < 6 else 71) for i in range(10)])):
+            result = piano_engine.analyze_piano(recording((69,) * 10), score((69,) * 10), 60)
+        summary = result["summary"]
+        self.assertEqual((summary["missedNotes"], summary["extraNotes"]), (4, 4))
+        self.assertEqual(summary["pitchScore"], 60)
+        self.assertEqual(summary["pitchScoreMethod"], "note-f1")
+
+    def test_audio_end_clips_score_but_silent_tail_does_not(self):
+        events = fake_perf((.12, 69), (1.12, 71))
+        with patch.object(piano_engine, "transcribe_notes", return_value=events):
+            short = piano_engine.analyze_piano(recording((69, 71)), score(), 60)
+            # Same first two notes, but five seconds of actual recorded audio:
+            # the remaining silence must not be treated as an early file end.
+            short_wav = recording((69, 71))
+            with wave.open(io.BytesIO(short_wav), "rb") as source:
+                pcm = source.readframes(source.getnframes())
+            output = io.BytesIO()
+            with wave.open(output, "wb") as target:
+                target.setparams((1, 2, 22050, 0, "NONE", "not compressed"))
+                target.writeframes(pcm + bytes(3 * 22050 * 2))
+            long = piano_engine.analyze_piano(output.getvalue(), score(), 60)
+        # 2.25s includes the expected third attack at 2.12s.
+        self.assertEqual(short["summary"]["noteCount"], 3)
+        self.assertEqual(short["summary"]["missedNotes"], 1)
+        self.assertTrue(short["summary"]["truncatedByAudioEnd"])
+        self.assertEqual(long["summary"]["noteCount"], 5)
+        self.assertEqual(long["summary"]["missedNotes"], 3)
+        self.assertEqual(long["summary"]["pitchScore"], 57)
+        self.assertEqual(long["summary"]["coveredSec"], 5.25)
+
+    def test_exact_file_end_excludes_next_note(self):
+        with patch.object(piano_engine, "transcribe_notes", return_value=fake_perf((.12, 69), (1.12, 71))):
+            result = piano_engine.analyze_piano(continuous_recording(seconds=2.12), score(), 60)
+        self.assertEqual(result["summary"]["noteCount"], 2)
+        self.assertEqual(result["summary"]["pitchScore"], 100)
+
+    def test_late_same_pitch_cannot_match_outside_window(self):
+        with patch.object(piano_engine, "transcribe_notes", return_value=fake_perf((.12, 69), (1.8, 71))):
+            result = piano_engine.analyze_piano(recording(), score(), 60)
+        self.assertEqual(result["notes"][1]["status"], "missed")
+        self.assertEqual(result["summary"]["extraNotes"], 1)
+
+    def test_invalid_wav_rejected_before_transcription(self):
+        with patch.object(piano_engine, "transcribe_notes") as sensor:
+            with self.assertRaises(ValueError):
+                piano_engine.analyze_piano(b"not WAV", score(), 60)
+            sensor.assert_not_called()
+
     def test_perfect_take_scores_full(self):
         piano_engine.transcribe_notes = lambda wav: fake_perf(
             (0.12, 69), (1.12, 71), (2.12, 72), (3.12, 74), (4.12, 76))
@@ -24,6 +82,9 @@ class PianoTests(unittest.TestCase):
         self.assertEqual(result["summary"]["noteCount"], 5)
         self.assertEqual(result["summary"]["correctPitchNotes"], 5)
         self.assertEqual(result["summary"]["missedNotes"], 0)
+        self.assertEqual(result["summary"]["pitchScore"], 100)
+        self.assertEqual(result["summary"]["timedNotes"], 4)
+        self.assertIsNone(result["notes"][0]["timingErrorMs"])
         self.assertEqual(result["summary"]["sensors"], ["piano-transcribe"])
         self.assertTrue(all(n["status"] == "correct" for n in result["notes"]))
 

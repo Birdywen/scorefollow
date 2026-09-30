@@ -11,9 +11,9 @@ import time
 import urllib.request
 import uuid
 
-from .engine import parse_score
+from .engine import parse_score, read_wav
 
-VERSION = "piano-midi-0.2"
+VERSION = "piano-midi-0.3"
 MATCH_WINDOW_SEC = 0.30
 # 5090 transcription service (Tailscale). Override with env; old public IP is dead (CGNAT).
 PIANO_API_URL = os.environ.get("PIANO_API_URL", "http://100.88.202.126:7777").rstrip("/")
@@ -80,30 +80,40 @@ def transcribe_notes(wav: bytes) -> list | None:
 
 
 def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> dict:
+    signal, rate = read_wav(wav)
+    audio_sec = len(signal) / rate
     score_notes = [n for n in parse_score(xml) if n["measure"] >= start_measure]
     if not score_notes:
         raise ValueError("开始小节没有可演奏音符")
     perf = transcribe_notes(wav)
     if not perf:
         raise ValueError("钢琴转录失败，请检查录音是否为清晰的独奏钢琴")
-    perf = sorted(perf, key=lambda e: (e[0], e[2]))
+    perf = sorted((e for e in perf if 0 <= e[0] < audio_sec), key=lambda e: (e[0], e[2]))
+    if not perf:
+        raise ValueError("钢琴转录未返回录音范围内的音符")
     sec_per_beat = 60.0 / bpm
     # Anchor on the first transcribed onset that plays the opening pitch, so a
     # leading resonance ghost (different pitch) cannot drag the whole grid.
     first_pitch = score_notes[0]["pitchMidi"]
     anchor_onset = next((o for o, _a, p, _v in perf if int(round(p)) == first_pitch), perf[0][0])
     start = anchor_onset - score_notes[0]["onsetBeat"] * sec_per_beat
+    # Use the WAV end, not the last detected note: recorded silence can
+    # contain genuinely missed notes and must remain in the denominator.
+    original_count = len(score_notes)
+    score_notes = [n for n in score_notes if start + n["onsetBeat"] * sec_per_beat < audio_sec]
     used = [False] * len(perf)
     aligned = []
     pitch_errors, timing_errors = [], []
     extra = 0
     for idx, note in enumerate(score_notes):
         expected = start + note["onsetBeat"] * sec_per_beat
-        best, best_dt, best_vel = -1, MATCH_WINDOW_SEC + 1.0, -1.0
+        best, best_dt, best_vel = -1, MATCH_WINDOW_SEC, -1.0
         for j, (onset, _off, pitch, vel) in enumerate(perf):
             if used[j] or int(round(pitch)) != note["pitchMidi"]:
                 continue
             dt = abs(onset - expected)
+            if dt > MATCH_WINDOW_SEC:
+                continue
             # Closest onset wins; ties (pedal blur doubles) go to the stronger strike.
             if dt < best_dt - 1e-9 or (abs(dt - best_dt) <= 1e-9 and vel > best_vel):
                 best, best_dt, best_vel = j, dt, vel
@@ -118,34 +128,33 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> d
         cents = round((pitch - note["pitchMidi"]) * 100, 1)
         delta = round((onset - expected) * 1000)
         pitch_errors.append(abs(cents))
-        timing_errors.append(delta)
+        if idx > 0:
+            timing_errors.append(delta)
         pitch_status = "correct" if abs(cents) <= 50 else ("sharp" if cents > 0 else "flat")
-        timing_status = "late" if delta > 80 else ("early" if delta < -80 else "correct")
+        timing_status = "unscored" if idx == 0 else "late" if delta > 80 else ("early" if delta < -80 else "correct")
         if pitch_status != "correct":
             status = "wrong_pitch"
         else:
             status = timing_status if timing_status in ("late", "early") else "correct"
         aligned.append({**note, "id": f"n{idx + 1}", "expectedSec": round(expected, 3),
                         "performedSec": round(onset, 3), "pitchErrorCents": cents,
-                        "timingErrorMs": delta, "confidence": round(min(1.0, vel / 127.0), 2),
+                        "timingErrorMs": delta if idx > 0 else None, "confidence": round(min(1.0, vel / 127.0), 2),
                         "pitchStatus": pitch_status, "timingStatus": timing_status,
                         "matchStatus": "matched", "status": status})
     # Extras only count inside the excerpt window: pedal resonance and notes from
     # outside the practiced passage must not inflate the score.
     last_expected = start + score_notes[-1]["onsetBeat"] * sec_per_beat
     for j, (onset, _off, _p, _v) in enumerate(perf):
-        if not used[j] and (start - 0.5) <= onset <= (last_expected + 1.0):
+        if not used[j] and (anchor_onset - 0.5) <= onset <= (last_expected + 1.0):
             extra += 1
-    last_onset = perf[-1][0]
-    pitch_score = None
     correct = sum(n["pitchStatus"] == "correct" for n in aligned)
     wrong = sum(n["pitchStatus"] in ("sharp", "flat") for n in aligned)
-    if pitch_errors and len(pitch_errors) / len(score_notes) >= .6:
-        import numpy as np
-        pitch_score = round(max(0, 100 - float(np.mean(np.minimum(
-            np.array(pitch_errors, dtype=float), 100))) * 1.2))
+    # Note F1 balances recall (missed notes) and precision (extra notes).
+    # Events outside the practiced window do not enter either denominator.
+    performed_count = len(pitch_errors) + extra
+    pitch_score = round(200 * correct / (len(score_notes) + performed_count))
     rhythm_score = timing_accuracy = stability = spread = offset = None
-    if len(timing_errors) >= 3 and len(timing_errors) / max(1, len(score_notes)) >= .6:
+    if len(timing_errors) >= 3 and len(timing_errors) / max(1, len(score_notes) - 1) >= .6:
         import numpy as np
         arr = np.array(timing_errors, dtype=float)
         offset = round(float(np.median(arr)))
@@ -160,7 +169,9 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> d
             "summary": {"pitchScore": pitch_score, "intonationScore": None,
                         "correctPitchNotes": correct, "wrongPitchNotes": wrong,
                         "missedNotes": sum(n["status"] == "missed" for n in aligned),
-                        "extraNotes": extra,
+                        "extraNotes": extra, "performedNoteCount": performed_count,
+                        "pitchScoreMethod": "note-f1",
+                        "truncatedByAudioEnd": len(score_notes) < original_count,
                         "rhythmScore": rhythm_score, "timingAccuracyScore": timing_accuracy,
                         "rhythmStabilityScore": stability, "timingOffsetMs": offset,
                         "timingSpreadMs": spread,
@@ -171,8 +182,8 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> d
                         "timedNotes": len(timing_errors),
                         "confidence": "medium" if len(pitch_errors) / len(score_notes) >= .8 else "low",
                         "syncMode": "legacy", "recordedFirstBeatSec": None,
-                        "estimatedLatencyMs": None, "coveredSec": round(float(last_onset), 3),
+                        "estimatedLatencyMs": None, "coveredSec": round(audio_sec, 3),
                         "sensors": ["piano-transcribe"], "detectedBpm": None},
             "notes": aligned,
-            "limitations": ["仅支持独奏钢琴；多弹的音符计入 extraNotes，不逐个列出。",
+            "limitations": ["仅支持独奏钢琴；音高分为音符 F1，漏音和多音均影响分数；多音不逐个列出。",
                             "以首个转录起音为时间零点；首音不参与节奏分母。"]}

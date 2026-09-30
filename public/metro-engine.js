@@ -614,6 +614,8 @@ function boot(){
   // 语义: ←/→ 按小节跳(同行内换小节, 到头顺延) · ↑/↓ 按行跳 ·
   // 播放中跳转不停止, 从目标拍继续; 未播放时只移动头 + 试音.
   function __metroKeydown(ev){
+    // Modal controls own keyboard input, including native details/summary.
+    if(document.querySelector('[role="dialog"][aria-modal="true"]')) return;
     var focused=ev.target, tn=(focused&&focused.tagName)||'';
     if(['INPUT','SELECT','TEXTAREA','BUTTON'].indexOf(tn)>=0||(focused&&focused.isContentEditable)) return;
     if(document.querySelector('[data-editing="true"]')) return;  // annotation editing owns arrow keys
