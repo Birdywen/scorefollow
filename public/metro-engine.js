@@ -848,7 +848,7 @@ function boot(){
   document.getElementById('sgBg').onchange=function(){ applyBg(this.value); };
   try{ var __sb=localStorage.getItem('sga_bg'); if(__sb&&BGF[__sb]!=null){ document.getElementById('sgBg').value=__sb; applyBg(__sb); } }catch(e){}
   // ===== 亮/暗主题切换 =====
-  document.getElementById('sgTheme').onclick=function(){ __theme=(__theme==='dark'?'light':'dark'); try{ localStorage.setItem('sga_theme',__theme); }catch(e){} mountPanel(); };
+  document.getElementById('sgTheme').onclick=function(){ __theme=(__theme==='dark'?'light':'dark'); try{ localStorage.setItem('sga_theme',__theme); }catch(e){} mountPanel(); applySgaConfig(st); window.dispatchEvent(new CustomEvent('sf-theme-change',{detail:__theme})); };
   document.getElementById('sgLangBtn').onclick=function(){ st.lang = (st.lang==='en')?'zh':'en'; applyLang(); };
   // 回填当前 st 状态到控件(重建面板时不丢已调参数)
   (function(){ function S(id){return document.getElementById(id);} 
@@ -1196,6 +1196,13 @@ function boot(){
   }
   // React 常驻走带按钮用: 与面板播放同一套状态机, idle 点播从当前头起播(含预备拍)
   window.__sgaMetroControl={
+    setTheme: function(value){
+      if((value==='dark'||value==='light')&&value!==__theme){
+        __theme=value;
+        try{localStorage.setItem('sga_theme',value);}catch(e){}
+        mountPanel(); applySgaConfig(st);
+      }
+    },
     play: function(fromM){
       if(st.playing) return false;
       if(fromM!=null){

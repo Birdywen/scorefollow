@@ -31,6 +31,7 @@ import {
 import { Wijzer, buildMeasures } from "@/lib/synpdf-wijzer";
 import PerformancePanel from "./PerformancePanel";
 import AnalysisHelp from "./AnalysisHelp";
+import MetroDock from "./MetroDock";
 import TunerPanel from "./TunerPanel";
 import styles from "./page.module.css";
 
@@ -570,6 +571,30 @@ export default function ScoreFollowPage() {
   const [embedMetro, setEmbedMetro] = useState(true);
   const [fullScreen, setFullScreen] = useState(false);
   const [darkTheme, setDarkTheme] = useState(false);
+  const [themeReady, setThemeReady] = useState(false);
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem("sf-theme"); } catch { /* private browsing */ }
+    setDarkTheme(saved === "dark" || (saved !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches));
+    setThemeReady(true);
+    const update = (event: Event) => setDarkTheme((event as CustomEvent).detail === "dark");
+    window.addEventListener("sf-theme-change", update);
+    return () => window.removeEventListener("sf-theme-change", update);
+  }, []);
+  useEffect(() => {
+    if (!themeReady) return;
+    const theme = darkTheme ? "dark" : "light";
+    document.documentElement.style.colorScheme = theme;
+    document.documentElement.dataset.sfTheme = theme;
+    try { localStorage.setItem("sf-theme", theme); localStorage.setItem("sga_theme", theme); } catch { /* private browsing */ }
+    const apply = () => {
+      const control = (window as unknown as { __sgaMetroControl?: { setTheme?: (value: string) => void } }).__sgaMetroControl;
+      control?.setTheme?.(theme);
+    };
+    apply();
+    window.addEventListener("synpdf:metro-state", apply);
+    return () => window.removeEventListener("synpdf:metro-state", apply);
+  }, [darkTheme, themeReady]);
   const [helpOpen, setHelpOpen] = useState(false);
   const helpDialogRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -3272,6 +3297,7 @@ export default function ScoreFollowPage() {
 
   return (
     <main className={styles.page} data-fullscreen={fullScreen ? "true" : "false"} data-theme={darkTheme ? "dark" : "light"} data-mode={correctMode ? "correct" : diagnosticMode ? "diagnostic" : "practice"}>
+      <MetroDock lang={lang} hidden={helpOpen || correctMode || !!preloadPreview || tunerOpen} />
       {!chromeOpen && <button className={styles.showui} onClick={() => setChromeOpen(true)} title="Show toolbar (T)">UI</button>}
       {chromeOpen && <header className={styles.topbar}>
         <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>SMART-METRO</span>
@@ -3295,6 +3321,7 @@ export default function ScoreFollowPage() {
          <span className={styles.tbTitle} title={pdfName}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
         <span className={styles.tbSpacer} />
         <span className={styles.tbMenuWrap}>
+          <button className={styles.tbBtn} aria-label={lang === "zh" ? "夜间模式" : "Night mode"} aria-pressed={darkTheme} onClick={() => setDarkTheme((value) => !value)} title={lang === "zh" ? "切换昼夜主题" : "Switch day/night theme"}>{darkTheme ? "☀" : "☾"}</button>
           <button className={styles.tbBtn} onClick={toggleLang} title="语言 / Language">{lang === "zh" ? "En" : "中"}</button>
            <button className={styles.tbBtn} onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen} aria-controls="sf-settings" title={`${tx("settings")} (F)`}>⚙ {tx("settings")}</button>
            {menuOpen && <div className={styles.tbMenu} id="sf-settings" role="region" aria-label={tx("settings")}>
@@ -3394,7 +3421,7 @@ export default function ScoreFollowPage() {
            </header>
            <div className={styles.helpBody}>
              <section className={styles.helpCard + " " + styles.helpCardAccent}><span className={styles.helpCardIcon}>▶</span><div><h3>{lang === "zh" ? "开始播放" : "Start playing"}</h3><p>{lang === "zh" ? "谱面载入并显示后，直接按空格即可播放。首次按键若正在准备识别，应用会自动等小节数据就绪。" : "Once the score is visible, press Space to play. If recognition is still settling, the app waits for the measure map automatically."}</p><kbd>Space</kbd><span className={styles.helpMeta}>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span></div></section>
-             <section className={styles.helpCard}><span className={styles.helpCardIcon}>⌁</span><div><h3>{lang === "zh" ? "跟着节拍练" : "Practice with the beat"}</h3><p>{lang === "zh" ? "点击任意小节可移动起点；播放中点击会带预备拍从该小节重新开始。" : "Click a measure to move the start point. While playing, it restarts there with a count-in."}</p><kbd>← →</kbd><kbd>↑ ↓</kbd><span className={styles.helpMeta}>{lang === "zh" ? "小节 / 系统" : "measure / system"}</span></div></section>
+              <section className={styles.helpCard}><span className={styles.helpCardIcon}>⌁</span><div><h3>{lang === "zh" ? "跟着节拍练" : "Practice with the beat"}</h3><p>{lang === "zh" ? "右下角 BPM 按钮展开节拍器圆盘，可播放、调速、切换预备拍和音色。闲置 4 秒自动收起；键盘操作时保留展开。完整设置保留循环、拍号等功能。顶部月亮按钮切换夜间模式并记住选择。点击谱面小节可移动起点。" : "Open the bottom-right BPM dial for playback, tempo, count-in and sound. It folds after 4 seconds idle and stays open during keyboard use. Full settings retain loops and meter controls. The toolbar moon switches and remembers night mode. Click a score measure to move the start."}</p><kbd>← →</kbd><kbd>↑ ↓</kbd><span className={styles.helpMeta}>{lang === "zh" ? "小节 / 系统" : "measure / system"}</span></div></section>
              <section className={styles.helpCard}><span className={styles.helpCardIcon}>◌</span><div><h3>{lang === "zh" ? "建立同步" : "Build sync"}</h3><p>{lang === "zh" ? "播放录音时按 B 记录拍点；Backspace 撤回一个点，逗号和句号微调时值。" : "While listening, press B to mark beats. Backspace removes one; comma and period fine-tune duration."}</p><div><kbd>B</kbd><kbd>⌫</kbd><kbd>, .</kbd></div></div></section>
              <section className={styles.helpCard}><span className={styles.helpCardIcon}>✦</span><div><h3>{lang === "zh" ? "查看演奏分析" : "Review your take"}</h3><p>{lang === "zh" ? "打开“演奏分析”，上传练习录音，查看音准、节奏、稳定性与需要回听的小节。" : "Open Analyze and upload a take to see pitch, rhythm, stability, and measures worth revisiting."}</p><span className={styles.helpTag}>{lang === "zh" ? "练习报告" : "practice report"}</span></div></section>
               <AnalysisHelp lang={lang} />

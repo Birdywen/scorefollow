@@ -11,7 +11,7 @@
 .preview audio { width: 100%; }
 .primary { width: 100%; min-height: 42px; margin: 16px 0 4px; border: 0; border-radius: 9px; background: #215dd4; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .primary:disabled { opacity: .5; cursor: not-allowed; }
-.error { padding: 8px; border-radius: 7px; background: #fff2e8; color: #7b3618; line-height: 1.4; overflow-wrap: anywhere; }
+.error { padding: 10px 12px; border-radius: 10px; background: var(--sf-error-bg, #fff2e8); color: var(--sf-error-ink, #7b3618); line-height: 1.6; overflow-wrap: anywhere; }
 .report { margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--sf-border); }
 .report h2 { font-size: 16px; margin: 0 0 12px; }
 .report h3 { font-size: 13px; }
@@ -33,5 +33,13 @@
 .take { padding: 10px; border: 1px solid var(--sf-border); border-radius: 10px; background: var(--sf-surface); font-size: 12px; line-height: 1.5; }
 .take label { display: block; cursor: pointer; }
 .takeRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.head { padding-bottom: 14px; border-bottom: 1px solid var(--sf-border); letter-spacing: -.02em; }
+.head button { min-height: 40px; min-width: 40px; border-radius: 10px; }
+.omr, .take { border-radius: 14px; padding: 14px; }
+.scores div { background: linear-gradient(145deg, var(--sf-accent-soft), var(--sf-surface)); padding: 18px 10px; border-radius: 14px; }
+.scores b { font-size: 36px; font-variant-numeric: tabular-nums; letter-spacing: -.05em; }
+.hint { font-size: 13px; line-height: 1.7; }
+.omrButton, .takeRow button { min-height: 40px; }
+.panel { overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--sf-border) transparent; }
 @media (max-width: 900px) { .panel { position: absolute; inset: 0 auto 0 0; width: min(360px, 100%); box-shadow: var(--sf-shadow); } }
 @media (max-width: 680px) { .panel { inset: auto 0 0; width: 100%; max-height: min(75vh, 720px); border: 1px solid var(--sf-border); border-radius: 16px 16px 0 0; } }
