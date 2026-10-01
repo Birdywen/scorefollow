@@ -320,6 +320,24 @@ class EngineTests(unittest.TestCase):
                 self.assertLess(abs(result["notes"][0]["expectedSec"] - 0.12), 0.05)
                 self.assertEqual([n["status"] for n in result["notes"]], ["correct"] * 3)
 
+    def test_vamp_beat_grid_with_wrong_beat_unit_falls_back_to_legacy(self):
+        # 拍点跟踪器锁在双倍速: 网格单位不是四分音符, 不能拿它评分。
+        segments = [(0.13 + i, 0.89 + i, float(m)) for i, m in enumerate((69, 71, 72, 74, 76))]
+        for pitch_notes in (None, segments):
+            with self.subTest(pyin=pitch_notes is not None):
+                result = analyze(recording(), score(), 60, "violin", sync_mode="vamp-beat",
+                                 pitch_notes=pitch_notes, beat_map=[0.12 + 0.5 * i for i in range(11)])
+                self.assertEqual(result["summary"]["syncMode"], "legacy")
+                self.assertTrue(result["summary"]["tempoMismatch"])
+                self.assertEqual(result["summary"]["detectedBpm"], 120.0)
+                self.assertEqual([n["status"] for n in result["notes"]], ["correct"] * 5)
+
+    def test_vamp_beat_grid_near_panel_tempo_is_kept(self):
+        result = analyze(recording(), score(), 60, "violin", sync_mode="vamp-beat",
+                         beat_map=[0.12 + i for i in range(6)])
+        self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
+        self.assertFalse(result["summary"]["tempoMismatch"])
+
 
 if __name__ == "__main__":
     unittest.main()

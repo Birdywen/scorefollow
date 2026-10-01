@@ -303,6 +303,19 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     signal, rate = read_wav(wav)
     # Guard: pYIN 只返回 1 音符时 _hint_track midis[clip(j,0,-1)] 会 IndexError
     pitch_notes = pitch_notes if pitch_notes and len(pitch_notes) >= 2 else None
+    sec_per_beat = seconds_per_quarter(xml, bpm)
+    # 拍点网格的单位必须是四分音符: 跟踪器锁在倍速/半速或跟附点四分/二分时,
+    # 中位间隔与面板速度差很远; 此时不用网格评分/定位, 退回固定速度并显式标出。
+    tempo_mismatch = False
+    mismatch_bpm = None
+    if sync_mode == "vamp-beat" and beat_map:
+        grid = sorted(set(float(b) for b in beat_map if math.isfinite(float(b)) and float(b) >= 0))
+        if len(grid) >= 4:
+            interval = float(np.median(np.diff(grid)))
+            if interval > 0 and not 0.8 <= interval / sec_per_beat <= 1.25:
+                tempo_mismatch = True
+                mismatch_bpm = round(60 / interval, 1)
+                beat_map = None
     auto_located = start_measure == 0
     location_cost = None
     if auto_located:
@@ -514,7 +527,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "recordedFirstBeatSec": round(float(first_beat_audio_sec), 3) if first_beat_audio_sec is not None else None,
                         "estimatedLatencyMs": estimated_latency_ms,
                         "coveredSec": duration_sec, "sensors": sensors,
-                        "clipped": clipped, "detectedBpm": detected_bpm},
+                        "clipped": clipped, "detectedBpm": detected_bpm if detected_bpm is not None else mismatch_bpm,
+                        "tempoMismatch": tempo_mismatch},
             "notes": aligned, "limitations": ["仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",
                                            "音高按十二平均律；首音作为时间零点，不计入节奏得分。"
                                            if sync_mode == "legacy" else
