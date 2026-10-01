@@ -39,3 +39,19 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 3. 加入谱面音符时间轴的声部/连音/休止/反复标准化，识别 MusicXML 和 PDF 小节对应关系；接入 ABC 投射后才提供音符级 PDF 高亮。
 4. 用稳健基频候选、谱音约束和单调序列对齐/DTW 替换简单固定时间窗；先识别漏音/多余音及整体延迟，再推出音乐性评分，明确阈值与置信度校准。
 5. 将临时任务迁移到持久化异步基础设施，再提供线上服务；随后评估自由速度、伴奏分离、双音、揉弦与滑音，最后才并入综合评分。
+
+## 开发记录（分支 analysis-opt，2026-10-01）
+
+每条修复均先写失败测试、再改代码，全量 `npm run analysis-test` 通过后单独提交。
+
+- **vamp-beat 起始小节以休止开头整体晚一拍**（`Fix vamp-beat grid phase…`）：网格锚在首个发声，`base_beat` 统一取首个谱面音符而非小节线。回归：`test_vamp_beat_later_measure_with_leading_rest_keeps_grid_phase`。
+- **拍点单位不是四分音符**（`Reject vamp-beat grids…`）：拍点中位间隔 / 面板四分音符时长 ∉ [0.8, 1.25] 时弃用网格，退回 legacy；summary 新增 `tempoMismatch`，`detectedBpm` 照报。回归：`test_vamp_beat_grid_with_wrong_beat_unit_falls_back_to_legacy`、`test_vamp_beat_grid_near_panel_tempo_is_kept`。倍速/附点自动换算（方案 B）待真实标注集。
+- **速度漂移误报错音**（`Track tempo drift…`）：legacy/metronome 搜索窗跟随已测起音线性趋势；起音单调一一匹配；趋势窗落空才回退固定网格窗，两处都落空时音高窗仍跟随趋势；计时误差仍对固定网格。实验：连奏音阶慢 5%/10% 错音 7/11 → 0。回归：`test_steady_slow_tempo_is_reported_as_late_not_wrong_pitch`，并保持 `test_timing_variation_reduces_stability`。
+  - 迭代教训：只跟随趋势 → 随机抖动把中心带偏（抖动测试挂）；无条件回退 → 回退窗抓到前一音符起音、漏检时音高窗被拉回旧网格（慢速重新误报）。
+
+未决：
+
+- 半音连奏（B↔C）起音漏检，导致慢 15% 仍误报（#11）。
+- 稳定地慢时 `rhythmStabilityScore` 为 0，评分规则待定。
+- `tempoMismatch` 只在报告摘要显示，演奏面板不显示（产品决定）。
+- 音符时长在 vamp-beat+指定小节时仍按面板 BPM（±25% 内无可复现失败，随方案 B 处理）。
