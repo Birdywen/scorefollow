@@ -49,7 +49,7 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - **速度漂移误报错音**（`Track tempo drift…`）：legacy/metronome 搜索窗跟随已测起音线性趋势；起音单调一一匹配；趋势窗落空才回退固定网格窗，两处都落空时音高窗仍跟随趋势；计时误差仍对固定网格。实验：连奏音阶慢 5%/10% 错音 7/11 → 0。回归：`test_steady_slow_tempo_is_reported_as_late_not_wrong_pitch`，并保持 `test_timing_variation_reduces_stability`。
   - 迭代教训：只跟随趋势 → 随机抖动把中心带偏（抖动测试挂）；无条件回退 → 回退窗抓到前一音符起音、漏检时音高窗被拉回旧网格（慢速重新误报）。
 
-未决：
+已完成：
 
 - 已修 #9（`Use a capped mean for timing accuracy`）：timingAccuracyScore 由中位数改为截断均值（单音 ≤250 ms）。证据：准确度（稳定/单音+400 ms/抖动）97/95/51 → 96/70/51。回归：`test_one_badly_timed_note_lowers_accuracy`。XML 重复解析（parse_score/measure_start_beats/seconds_per_quarter/measureCount）在 300 s 上限下耗时可忽略，不改。
 - 结论 #10（不改）：`notes[].measure` 用小节序号而非 `number` 属性是有意的——前端 `onJump(note.measure)` 按 PDF 小节序号跳转，`canJump` 要求 `pdfMeasures === measureCount`；弱起谱改用 `number`（=0）会让 PDF 跳转差一。若要显示印刷小节号，应另加 `measureLabel` 字段。
@@ -62,4 +62,7 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 已修 #11（`Detect semitone legato onsets…`）：半音过渡 2 帧差仅 ~0.78 半音（阈值 0.85），补"前后段各自平稳、中位数差 ≥0.6 半音"阶跃判据。回归：`test_semitone_legato_onsets_are_detected`；揉弦对照（±30 音分 5.5 Hz 持续音）可判起音数不增加。风险：宽幅慢揉弦（>±30 音分）未经真实录音验证。
 - 已定（产品决定）：稳定地慢只扣 `timingAccuracyScore`；`rhythmStabilityScore` 对去除线性速度趋势后的残差计算（≥6 个起音才去趋势）。回归：`test_steady_slow_tempo_costs_accuracy_not_stability`。
 - 已实现：`tempoMismatch` 在报告摘要区（PerformancePanel 结果区，startMeasure 行之前）显示检测 BPM；录音面板不显示（产品决定）。
+
+未决：
+
 - 音符时长在 vamp-beat+指定小节时仍按面板 BPM（±25% 内无可复现失败，随方案 B 处理）。
