@@ -53,5 +53,5 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 
 - 半音连奏（B↔C）起音漏检，导致慢 15% 仍误报（#11）。
 - 稳定地慢时 `rhythmStabilityScore` 为 0，评分规则待定。
-- `tempoMismatch` 只在报告摘要显示，演奏面板不显示（产品决定）。
+- 已实现：`tempoMismatch` 在报告摘要区（PerformancePanel 结果区，startMeasure 行之前）显示检测 BPM；录音面板不显示（产品决定）。
 - 音符时长在 vamp-beat+指定小节时仍按面板 BPM（±25% 内无可复现失败，随方案 B 处理）。

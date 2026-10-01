@@ -25,7 +25,7 @@ type Result = {
     timingOffsetMs: number | null; timingSpreadMs: number | null;
     noteCount: number; measureCount?: number; startMeasure?: number; endMeasure?: number;
     voicedNotes: number; timedNotes: number; confidence: string;
-    syncMode?: string; recordedFirstBeatSec?: number | null; estimatedLatencyMs?: number | null; coveredSec?: number;
+    syncMode?: string; tempoMismatch?: boolean; detectedBpm?: number | null; recordedFirstBeatSec?: number | null; estimatedLatencyMs?: number | null; coveredSec?: number;
     autoLocated?: boolean; locationCost?: number | null };
 };
 type Take = {
@@ -636,6 +636,10 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       </p>}
       {result.summary.syncMode === "metronome" && <p className={styles.hint}>
         {zh ? `节拍器同步 · 第一拍 ${result.summary.recordedFirstBeatSec}s · 延迟微调 ${result.summary.estimatedLatencyMs} ms` : `Metronome sync · first beat ${result.summary.recordedFirstBeatSec}s · latency ${result.summary.estimatedLatencyMs} ms`}</p>}
+      {/* 拍点网格与设定速度差 >25% 时后端弃用网格、按固定速度评分 (engine.py tempoMismatch) */}
+      {result.summary.tempoMismatch && <p className={styles.hint}>{zh
+        ? `检测速度约 ${result.summary.detectedBpm ?? "—"} BPM，与设定速度差别较大，已按固定速度评分`
+        : `Detected tempo ≈ ${result.summary.detectedBpm ?? "—"} BPM differs strongly from the set tempo; scored at fixed tempo`}</p>}
       {result.summary.startMeasure && <p className={styles.hint}>{zh ? `本次分析：第 ${result.summary.startMeasure}–${result.summary.endMeasure} 小节` : `Analyzed measures ${result.summary.startMeasure}–${result.summary.endMeasure}`}{result.instrument !== "piano" || result.summary.pitchScoreMethod === "note-f1" ? (zh ? "（录音结束后的谱面音符不计分）" : "; score notes beyond the recording end were excluded.") : (zh ? "（旧版钢琴未裁去录音结束后的谱面音符）" : "; this older piano report includes score notes beyond the recording end.")}</p>}
       {result.instrument === "piano" && <p className={styles.hint}>{result.summary.pitchScoreMethod === "note-f1"
         ? (zh ? `钢琴音符匹配分（F1）· 漏音 ${result.summary.missedNotes ?? "—"} · 多音 ${result.summary.extraNotes ?? "—"}；两者均影响分数。录音内静音仍计入覆盖范围。` : `Piano note F1 · Missed ${result.summary.missedNotes ?? "—"} · Extra ${result.summary.extraNotes ?? "—"}; both affect the score. Recorded silence remains in scope.`)
