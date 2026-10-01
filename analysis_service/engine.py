@@ -414,6 +414,22 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     aligned = []
     pitch_errors, timing_errors = [], []
     measured_count = 0
+    # legacy/metronome 是固定网格: 整体偏慢/偏快时误差逐音累积, 几小节后搜索窗
+    # 落到邻音上, 把速度问题误报成错音。只让"去哪儿找"跟随已测起音的线性趋势;
+    # 计时误差仍对固定网格计算, 拖慢照实报 late, 期望与实测不同源。
+    drift_obs: list[tuple[float, float]] = []
+    last_onset = -1.0
+
+    def predicted_drift(at: float) -> float:
+        if beat_time is not None or not drift_obs:
+            return 0.0
+        xs = np.array([x for x, _ in drift_obs[-8:]])
+        ds = np.array([d for _, d in drift_obs[-8:]])
+        if len(xs) < 3 or float(np.ptp(xs)) <= 0:
+            return float(np.median(ds))
+        slope = max(-0.25, min(0.25, float(np.polyfit(xs, ds, 1)[0])))
+        return float(np.mean(ds) + slope * (at - np.mean(xs)))
+
     for note_index, note in enumerate(notes):
         if beat_time is not None:
             expected = beat_time(note["onsetBeat"] - base_beat)
@@ -424,10 +440,27 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # 换把滑音需要更长的稳定时间: 与前音差 3 半音以上时, 音高窗跳过前 35%。
         shifted = note_index > 0 and abs(note["pitchMidi"] - notes[note_index - 1]["pitchMidi"]) >= 3
         # 时间误差与稳态音高分开估计，避开擦弦、滑音和收尾。
-        candidates = [t for t in onsets if abs(t - expected) <= min(0.22, duration * 0.35)]
-        onset = min(candidates, key=lambda t: abs(t - expected)) if candidates else None
+        center = expected + predicted_drift(expected)
+        reach = min(0.22, duration * 0.35)
+        # 固定网格模式下起音单调且一一匹配: 前一音符已占用的起音不可复用,
+        # 否则回退窗会把前一音的起音当成本音 (拖慢时尤甚)。
+        free = [t for t in onsets if beat_time is not None or t > last_onset + 0.05]
+        # 先在趋势预测处找; 落空再回固定网格窗 (随机抖动时预测会偏)。
+        # 两处都落空时音高窗仍跟随趋势: 漏检起音(如半音连奏)不把音高窗拉回旧网格。
+        ref = center
+        candidates = [t for t in free if abs(t - center) <= reach]
+        if not candidates and center != expected:
+            fallback = [t for t in free if abs(t - expected) <= reach]
+            if fallback:
+                ref = expected
+                candidates = fallback
+        onset = min(candidates, key=lambda t: abs(t - ref)) if candidates else None
+        if onset is not None:
+            last_onset = onset
+            if beat_time is None:
+                drift_obs.append((expected, onset - expected))
         skip = duration * 0.35 if shifted else min(0.12, duration * 0.28)
-        mask = (times >= expected + skip) & (times <= expected + duration * 0.78)
+        mask = (times >= ref + skip) & (times <= ref + duration * 0.78)
         valid = mask & np.isfinite(pitches) & (confidence >= 0.7)
         if beat_time is not None and pitch_notes:
             # 活网格模式: 音高窗口锚在 pYIN 音符段自身时间轴上(音频真值, 与速度无关)。

@@ -94,6 +94,37 @@ def timed_recording(events, seconds):
     return output.getvalue()
 
 
+LEGATO_NAMES = {69: ("A", 4), 71: ("B", 4), 72: ("C", 5), 74: ("D", 5), 76: ("E", 5)}
+
+
+def legato_score(pitches):
+    measures = []
+    for m in range(0, len(pitches), 4):
+        attrs = ('<attributes><divisions>1</divisions><time><beats>4</beats>'
+                 '<beat-type>4</beat-type></time></attributes>') if m == 0 else ''
+        body = ''.join('<note><pitch><step>%s</step><octave>%d</octave></pitch>'
+                       '<duration>1</duration></note>' % LEGATO_NAMES[x] for x in pitches[m:m + 4])
+        measures.append('<measure number="%d">%s%s</measure>' % (m // 4 + 1, attrs, body))
+    return '<score-partwise><part id="P1">' + ''.join(measures) + '</part></score-partwise>'
+
+
+def legato_recording(pitches, spacing):
+    # 音与音之间无空隙的连奏, spacing 秒一个音。
+    rate = 22050
+    audio = np.zeros(int((0.12 + len(pitches) * spacing + 0.3) * rate), dtype=np.float32)
+    n = int(spacing * rate)
+    t = np.arange(n) / rate
+    envelope = np.minimum(1, t * 60) * np.minimum(1, (spacing - t) * 80)
+    for i, midi in enumerate(pitches):
+        s = int((0.12 + i * spacing) * rate)
+        audio[s:s + n] += 0.32 * envelope * np.sin(2 * math.pi * 440 * 2 ** ((midi - 69) / 12) * t)
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setparams((1, 2, rate, len(audio), "NONE", "not compressed"))
+        wav.writeframes((np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes())
+    return output.getvalue()
+
+
 class EngineTests(unittest.TestCase):
     def test_compound_meter_uses_dotted_quarter_tempo(self):
         xml = compound_score()
@@ -337,6 +368,18 @@ class EngineTests(unittest.TestCase):
                          beat_map=[0.12 + i for i in range(6)])
         self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
         self.assertFalse(result["summary"]["tempoMismatch"])
+
+    def test_steady_slow_tempo_is_reported_as_late_not_wrong_pitch(self):
+        # 连奏音阶整体慢 5%/10%: 误差逐音累积, 不能把速度问题判成错音。
+        pitches = [69, 71, 72, 74, 76, 74, 72, 71] * 2
+        for slow in (1.05, 1.10):
+            with self.subTest(slow=slow):
+                result = analyze(legato_recording(pitches, 0.5 * slow), legato_score(pitches), 120, "violin")
+                statuses = [n["status"] for n in result["notes"]]
+                self.assertEqual(statuses.count("wrong_pitch"), 0, statuses)
+                self.assertGreaterEqual(result["summary"]["pitchScore"], 90)
+                late = sum(n["timingStatus"] == "late" for n in result["notes"])
+                self.assertGreaterEqual(late, 5, statuses)
 
 
 if __name__ == "__main__":
