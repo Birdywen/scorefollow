@@ -408,6 +408,27 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(statuses.count("wrong_pitch"), 0, statuses)
         self.assertEqual([n["timingStatus"] for n in result["notes"][1:]], ["late", "late", "early", "early"])
 
+    def test_quiet_recording_is_analyzed_like_a_normal_one(self):
+        # 绝对能量阈值 (#6): 峰值 0.012 (-38 dBFS) 的录音报"无法检测到演奏", 且 0.02~0.32 间
+        # 节奏分随电平漂移。结果必须与录音电平无关, 低电平也不能被标成削波。
+        pitches = [69, 71, 72, 74, 76, 74, 72, 71] * 2
+        xml = legato_score(pitches)
+        loud_wav = legato_recording(pitches, 0.5)
+        with wave.open(io.BytesIO(loud_wav)) as w:
+            params = w.getparams()
+            pcm = np.frombuffer(w.readframes(params.nframes), dtype="<i2").astype(np.float32)
+        output = io.BytesIO()
+        with wave.open(output, "wb") as w:
+            w.setparams(params)
+            w.writeframes(np.round(pcm * (0.012 / 0.32)).astype("<i2").tobytes())
+        loud = analyze(loud_wav, xml, 120, "violin")["summary"]
+        quiet = analyze(output.getvalue(), xml, 120, "violin")["summary"]
+        self.assertEqual(quiet["voicedNotes"], loud["voicedNotes"])
+        self.assertEqual(quiet["timedNotes"], loud["timedNotes"])
+        self.assertEqual(quiet["pitchScore"], loud["pitchScore"])
+        self.assertLessEqual(abs(quiet["rhythmScore"] - loud["rhythmScore"]), 3)
+        self.assertFalse(quiet["clipped"])
+
 
 if __name__ == "__main__":
     unittest.main()

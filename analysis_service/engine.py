@@ -123,6 +123,10 @@ def parse_score(xml: str) -> list[dict]:
     return notes
 
 
+# analyze 内部工作电平: 所有能量阈值都相对这个峰值标定。
+NORMALIZED_PEAK = 0.5
+
+
 def read_wav(data: bytes) -> tuple[np.ndarray, int]:
     try:
         with wave.open(io.BytesIO(data), "rb") as wav:
@@ -301,6 +305,11 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if type(start_measure) is not int or start_measure < 0 or start_measure > score_notes[-1]["measure"]:
         raise ValueError("开始小节没有可演奏音符")
     signal, rate = read_wav(wav)
+    # 削波必须在原始电平上判定; 随后把峰值归一化到固定电平, 让下游的绝对能量
+    # 阈值 (0.008/0.012/0.018) 与录音电平无关 (#6: -38 dBFS 录音曾报"无法检测到演奏",
+    # 0.02~0.32 间节奏分随电平漂移)。read_wav 已拒绝峰值 < 0.005 的录音。
+    raw_clipped = bool(np.max(np.abs(signal)) >= 0.999)
+    signal = (signal * (NORMALIZED_PEAK / float(np.max(np.abs(signal))))).astype(np.float32)
     # Guard: pYIN 只返回 1 音符时 _hint_track midis[clip(j,0,-1)] 会 IndexError
     pitch_notes = pitch_notes if pitch_notes and len(pitch_notes) >= 2 else None
     sec_per_beat = seconds_per_quarter(xml, bpm)
@@ -584,7 +593,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         timing_accuracy_score = round(max(0, 100 - float(np.median(np.abs(timing_errors))) * .4))
         rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))
     duration_sec = round(float(len(signal) / rate), 3)
-    clipped = bool(np.max(np.abs(signal)) >= 0.999)
+    clipped = raw_clipped  # 归一化前测得, 见 read_wav 调用处
     sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,

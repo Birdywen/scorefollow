@@ -51,6 +51,7 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 
 未决：
 
+- 已修 #6（`Normalize recording level before analysis`）：analyze 先在原始电平判定削波，再把峰值归一化到 `NORMALIZED_PEAK=0.5`，绝对能量阈值与录音电平无关；read_wav（钢琴/Vamp 复用）不变。实验：峰值 0.012 修复前报"无法检测到演奏"，0.02~0.32 节奏分 89/93/96/90 漂移。回归：`test_quiet_recording_is_analyzed_like_a_normal_one`。
 - 已修 #5（`Score large timing errors instead of dropping them`）：常规窗（±min(0.22 s, 35%)）落空时启用宽窗，每侧 ≤ 相邻音符时长 45%、≤0.4 s，起音单调一一匹配，命中后音高窗锚到实测起音。回归：`test_large_timing_errors_are_scored_not_dropped`（±300 ms 修复前 timed=1 不出分）。
   - 迭代教训：宽窗命中最初也喂给漂移趋势，两个 +300 ms 离群点让线性外推冲到 +500 ms，第 3 音抓到第 4 音起音（误报错音）；改为只有常规窗命中才进入趋势观测。
   - 迭代教训：前音拖、后音抢时前音被挤到 0.4 s，固定 78% 时长的音高窗采到后一音（+198 音分误报错音）；音高窗改为不越过下一个实测起音（仅本音起音已测到时截断）。
