@@ -63,6 +63,37 @@ def compound_score(pitches=(69, 71, 72, 74, 76, 77)):
         '</measure></part></score-partwise>'
 
 
+def rest_note_score(pitches=(69, 72, 74, 76)):
+    # 每小节 = 四分休止 + 四分音符 (2/4)，第一个发声在小节第 2 拍。
+    names = {69: ("A", 4), 71: ("B", 4), 72: ("C", 5), 74: ("D", 5), 76: ("E", 5)}
+    measures = []
+    for n, pitch in enumerate(pitches, 1):
+        step, octave = names[pitch]
+        attrs = ('<attributes><divisions>1</divisions><time><beats>2</beats>'
+                 '<beat-type>4</beat-type></time></attributes>') if n == 1 else ''
+        measures.append(f'<measure number="{n}">{attrs}<note><rest/><duration>1</duration></note>'
+                        f'<note><pitch><step>{step}</step><octave>{octave}</octave></pitch>'
+                        '<duration>1</duration></note></measure>')
+    return '<score-partwise><part id="P1">' + ''.join(measures) + '</part></score-partwise>'
+
+
+def timed_recording(events, seconds):
+    rate = 22050
+    audio = np.zeros(int(seconds * rate), dtype=np.float32)
+    for start_sec, midi in events:
+        start = int(start_sec * rate)
+        length = int(.78 * rate)
+        t = np.arange(length) / rate
+        hz = 440 * 2 ** ((midi - 69) / 12)
+        envelope = np.minimum(1, t * 60) * np.minimum(1, (length / rate - t) * 30)
+        audio[start:start + length] = 0.32 * envelope * np.sin(2 * math.pi * hz * t)
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setparams((1, 2, rate, len(audio), "NONE", "not compressed"))
+        wav.writeframes((audio * 32767).astype("<i2").tobytes())
+    return output.getvalue()
+
+
 class EngineTests(unittest.TestCase):
     def test_compound_meter_uses_dotted_quarter_tempo(self):
         xml = compound_score()
@@ -274,6 +305,20 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["notes"][0]["measure"], 2)
         self.assertLess(result["notes"][0]["expectedSec"], 0.3)
         self.assertEqual(result["summary"]["measureCount"], 6)
+
+    def test_vamp_beat_later_measure_with_leading_rest_keeps_grid_phase(self):
+        # 指定起始小节且该小节以休止开头: 首个发声对齐的是首个谱面音符, 不是小节线。
+        audio = timed_recording([(0.12, 72), (2.12, 74), (4.12, 76)], 5.25)
+        segments = [(0.13, 0.89, 72.0), (2.13, 2.89, 74.0), (4.13, 4.89, 76.0)]
+        for pitch_notes in (None, segments):
+            with self.subTest(pyin=pitch_notes is not None):
+                result = analyze(audio, rest_note_score(), 60, "violin", start_measure=2,
+                                 sync_mode="vamp-beat", pitch_notes=pitch_notes,
+                                 beat_map=[0.12 + i for i in range(6)])
+                self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
+                self.assertEqual(result["summary"]["noteCount"], 3)
+                self.assertLess(abs(result["notes"][0]["expectedSec"] - 0.12), 0.05)
+                self.assertEqual([n["status"] for n in result["notes"]], ["correct"] * 3)
 
 
 if __name__ == "__main__":

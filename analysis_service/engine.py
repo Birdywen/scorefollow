@@ -356,7 +356,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             # Vamp 不可用时静默降级到 legacy 固定速度，前端无感
             sync_mode = "legacy"
         else:
-            base_beat = notes[0]["onsetBeat"] if auto_located else measure_start_beats(xml)[start_measure]
+            # 网格锚在首个发声上, 所以相对拍也必须从首个谱面音符算起;
+            # 用小节线会让以休止开头的起始小节整体错位。
+            base_beat = notes[0]["onsetBeat"]
             beats = np.asarray(sorted(float(b) for b in beat_map))
             med = float(np.median(np.diff(beats)))
             detected_bpm = round(60 / med, 1) if med > 0 else None
