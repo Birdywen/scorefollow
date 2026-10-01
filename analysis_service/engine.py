@@ -421,6 +421,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         raise ValueError("录音不足以覆盖所选开始小节")
     aligned = []
     pitch_errors, timing_errors = [], []
+    timing_at: list[float] = []
     measured_count = 0
     # legacy/metronome 是固定网格: 整体偏慢/偏快时误差逐音累积, 几小节后搜索窗
     # 落到邻音上, 把速度问题误报成错音。只让"去哪儿找"跟随已测起音的线性趋势;
@@ -518,6 +519,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             pitch_errors.append(abs(cents))
         if delta is not None and note_index > 0:
             timing_errors.append(delta)
+            timing_at.append(expected)
         timing_status = "unscored" if note_index == 0 else "uncertain" if delta is None else "late" if delta > 80 else "early" if delta < -80 else "correct"
         status = "uncertain" if cents is None else "octave_uncertain" if pitch_status == "octave" else "wrong_pitch" if pitch_status in ("sharp", "flat") else \
             "timing_uncertain" if note_index > 0 and delta is None else timing_status if timing_status in ("late", "early") else "correct"
@@ -545,7 +547,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     timing_offset = None
     if len(timing_errors) >= 3 and len(timing_errors) / max(1, len(notes) - 1) >= .6:
         timing_offset = round(float(np.median(timing_errors)))
-        rhythm_spread = round(float(np.median(np.abs(np.array(timing_errors) - timing_offset))))
+        # 稳定性只看去掉整体速度趋势后的残差: 稳定地慢/快由 timingAccuracyScore 扣分,
+        # 不算"不稳" (产品决定 2026-10-01)。至少 6 个起音才拟合趋势, 点太少时
+        # 线性拟合会吞掉随机抖动; 不足 6 个保持原算法。
+        residual = np.array(timing_errors, dtype=float) - timing_offset
+        if len(timing_errors) >= 6 and float(np.ptp(timing_at)) > 0:
+            fit = np.polyval(np.polyfit(timing_at, timing_errors, 1), timing_at)
+            residual = np.array(timing_errors, dtype=float) - fit
+            residual -= np.median(residual)
+        rhythm_spread = round(float(np.median(np.abs(residual))))
         rhythm_stability_score = round(max(0, 100 - rhythm_spread * .55))
         timing_accuracy_score = round(max(0, 100 - float(np.median(np.abs(timing_errors))) * .4))
         rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))

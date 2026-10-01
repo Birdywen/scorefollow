@@ -389,6 +389,14 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(statuses.count("timing_uncertain"), 0, statuses)
         self.assertEqual(result["summary"]["timedNotes"], len(pitches) - 1)
 
+    def test_steady_slow_tempo_costs_accuracy_not_stability(self):
+        # 稳定地慢: 扣准确度, 不扣稳定性 (产品决定 2026-10-01)。
+        pitches = [69, 71, 72, 74, 76, 74, 72, 71] * 2
+        steady = analyze(legato_recording(pitches, 0.5), legato_score(pitches), 120, "violin")["summary"]
+        slow = analyze(legato_recording(pitches, 0.5 * 1.05), legato_score(pitches), 120, "violin")["summary"]
+        self.assertGreaterEqual(slow["rhythmStabilityScore"], 85)
+        self.assertLessEqual(slow["timingAccuracyScore"], steady["timingAccuracyScore"] - 20)
+
 
 if __name__ == "__main__":
     unittest.main()
