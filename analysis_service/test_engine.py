@@ -429,6 +429,28 @@ class EngineTests(unittest.TestCase):
         self.assertLessEqual(abs(quiet["rhythmScore"] - loud["rhythmScore"]), 3)
         self.assertFalse(quiet["clipped"])
 
+    def test_missing_note_with_pyin_hint_is_uncertain_not_wrong_pitch(self):
+        # 漏奏 (#7): pYIN 段间静音曾被填上邻音音高 (置信 0.9), 漏奏的音判成 +200 音分错音。
+        audio = recording()
+        with wave.open(io.BytesIO(audio)) as w:
+            params = w.getparams()
+            pcm = np.frombuffer(w.readframes(params.nframes), dtype="<i2").copy()
+        pcm[int(2.05 * 22050):int(3.05 * 22050)] = 0
+        output = io.BytesIO()
+        with wave.open(output, "wb") as w:
+            w.setparams(params)
+            w.writeframes(pcm.tobytes())
+        segments = [(0.13 + i, 0.89 + i, float(m)) for i, m in enumerate((69, 71, 72, 74, 76)) if i != 2]
+        result = analyze(output.getvalue(), score(), 60, "violin", pitch_notes=segments)
+        self.assertEqual([n["status"] for n in result["notes"]],
+                         ["correct", "correct", "uncertain", "correct", "correct"])
+
+    def test_unsorted_pitch_hint_is_rejected_without_auto_location(self):
+        # 指定小节路径也必须校验传感器事件 (#7), 与自动定位一致。
+        segments = [(0.13 + i, 0.89 + i, float(m)) for i, m in enumerate((69, 71, 72, 74, 76))]
+        with self.assertRaises(ValueError):
+            analyze(recording(), score(), 60, "violin", pitch_notes=segments[::-1])
+
 
 if __name__ == "__main__":
     unittest.main()

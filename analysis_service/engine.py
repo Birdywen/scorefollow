@@ -189,16 +189,16 @@ def track(signal: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray, np.nda
 def _hint_track(signal: np.ndarray, rate: int,
                 notes: list) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """融合基频: 自研原始跟踪打底(对短促偏差更敏感), pYIN 音符段只补自研
-    无声/低置信的盲区。段间按中点归属, 首尾之外留 NaN, 能量网格沿用自研。"""
+    无声/低置信的盲区。只补段内帧, 段间与首尾之外留 NaN, 能量网格沿用自研。"""
     times, self_p, energy, self_c = track(signal, rate)
     starts = np.array([a for a, _, _ in notes])
     ends = np.array([b for _, b, _ in notes])
     midis = np.array([m for _, _, m in notes])
-    mids = (ends[:-1] + starts[1:]) / 2
-    j = np.searchsorted(mids, times, side="right")
-    outside = (times < starts[0]) | (times >= ends[-1])
-    # silence inherits neighbor pitch; voiced gated by energy in caller
-    pyin_p = np.where(outside, np.nan, midis[np.clip(j, 0, len(midis) - 1)])
+    # 只在 pYIN 段内部补盲区; 段间静音留 NaN (#7: 漏奏的音曾被填上邻音音高,
+    # 判成 +200 音分错音)。要求段已排序且不重叠, analyze 入口用 usable_events 校验。
+    k = np.searchsorted(starts, times, side="right") - 1
+    inside = (k >= 0) & (times < ends[np.clip(k, 0, len(ends) - 1)])
+    pyin_p = np.where(inside, midis[np.clip(k, 0, len(midis) - 1)], np.nan)
     # 自研高置信帧优先, 盲区才用 pYIN 补
     use_self = np.isfinite(self_p) & (self_c >= 0.7)
     pitches = np.where(use_self, self_p, pyin_p)
@@ -312,6 +312,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     signal = (signal * (NORMALIZED_PEAK / float(np.max(np.abs(signal))))).astype(np.float32)
     # Guard: pYIN 只返回 1 音符时 _hint_track midis[clip(j,0,-1)] 会 IndexError
     pitch_notes = pitch_notes if pitch_notes and len(pitch_notes) >= 2 else None
+    # 所有路径都校验传感器事件 (#7): 原先只有自动定位走 usable_events, 指定小节时
+    # 乱序/重叠事件直接进入 _hint_track 的 searchsorted。
+    if pitch_notes:
+        usable_events(pitch_notes)
     sec_per_beat = seconds_per_quarter(xml, bpm)
     # 拍点网格的单位必须是四分音符: 跟踪器锁在倍速/半速或跟附点四分/二分时,
     # 中位间隔与面板速度差很远; 此时不用网格评分/定位, 退回固定速度并显式标出。
