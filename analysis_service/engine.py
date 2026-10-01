@@ -428,6 +428,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     # 计时误差仍对固定网格计算, 拖慢照实报 late, 期望与实测不同源。
     drift_obs: list[tuple[float, float]] = []
     last_onset = -1.0
+    prev_duration: float | None = None
 
     def predicted_drift(at: float) -> float:
         if beat_time is not None or not drift_obs:
@@ -464,12 +465,35 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 ref = expected
                 candidates = fallback
         onset = min(candidates, key=lambda t: abs(t - ref)) if candidates else None
+        wide_hit = False
+        if onset is None:
+            # 幸存者偏差 (#5): 偏差超出常规窗的音若被丢弃, 节奏越乱可判起音越少,
+            # 剩下的反而越"准"。常规窗落空时用宽窗再找一次: 每侧不超过相邻音符
+            # 时长的 45% (不越过中点, 抓不到邻音的起音), 上限 0.4 s; 起音单调
+            # 一一匹配。命中后音高窗锚到实测起音, 避免窗口落在前一音的尾部。
+            late_reach = min(0.40, duration * 0.45)
+            early_reach = min(0.40, (prev_duration or duration) * 0.45)
+            wide = [t for t in onsets if t > last_onset + 0.05 and expected - early_reach <= t <= expected + late_reach]
+            if wide:
+                onset = min(wide, key=lambda t: abs(t - expected))
+                ref = onset
+                wide_hit = True
+        prev_duration = duration
         if onset is not None:
             last_onset = onset
-            if beat_time is None:
+            # 宽窗命中是离群点, 喂给趋势会让线性外推冲过头、抓到下一音的起音。
+            if beat_time is None and not wide_hit:
                 drift_obs.append((expected, onset - expected))
         skip = duration * 0.35 if shifted else min(0.12, duration * 0.28)
-        mask = (times >= ref + skip) & (times <= ref + duration * 0.78)
+        # 音高窗不越过下一个实测起音: 本音拖、下音抢时两音被挤压, 固定 78% 时长
+        # 会采到下一音 (#5)。只在本音起音已测到时截断; 起音漏检时下一个
+        # 起音可能就是本音自己的, 截断会把窗口清空。
+        hi_edge = ref + duration * 0.78
+        if onset is not None:
+            nxt = min((t for t in onsets if t > onset + 0.05), default=None)
+            if nxt is not None:
+                hi_edge = min(hi_edge, nxt - 0.03)
+        mask = (times >= ref + skip) & (times <= hi_edge)
         valid = mask & np.isfinite(pitches) & (confidence >= 0.7)
         if beat_time is not None and pitch_notes:
             # 活网格模式: 音高窗口锚在 pYIN 音符段自身时间轴上(音频真值, 与速度无关)。

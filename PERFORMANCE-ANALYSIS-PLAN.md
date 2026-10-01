@@ -51,6 +51,9 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 
 未决：
 
+- 已修 #5（`Score large timing errors instead of dropping them`）：常规窗（±min(0.22 s, 35%)）落空时启用宽窗，每侧 ≤ 相邻音符时长 45%、≤0.4 s，起音单调一一匹配，命中后音高窗锚到实测起音。回归：`test_large_timing_errors_are_scored_not_dropped`（±300 ms 修复前 timed=1 不出分）。
+  - 迭代教训：宽窗命中最初也喂给漂移趋势，两个 +300 ms 离群点让线性外推冲到 +500 ms，第 3 音抓到第 4 音起音（误报错音）；改为只有常规窗命中才进入趋势观测。
+  - 迭代教训：前音拖、后音抢时前音被挤到 0.4 s，固定 78% 时长的音高窗采到后一音（+198 音分误报错音）；音高窗改为不越过下一个实测起音（仅本音起音已测到时截断）。
 - 已修 #11（`Detect semitone legato onsets…`）：半音过渡 2 帧差仅 ~0.78 半音（阈值 0.85），补"前后段各自平稳、中位数差 ≥0.6 半音"阶跃判据。回归：`test_semitone_legato_onsets_are_detected`；揉弦对照（±30 音分 5.5 Hz 持续音）可判起音数不增加。风险：宽幅慢揉弦（>±30 音分）未经真实录音验证。
 - 已定（产品决定）：稳定地慢只扣 `timingAccuracyScore`；`rhythmStabilityScore` 对去除线性速度趋势后的残差计算（≥6 个起音才去趋势）。回归：`test_steady_slow_tempo_costs_accuracy_not_stability`。
 - 已实现：`tempoMismatch` 在报告摘要区（PerformancePanel 结果区，startMeasure 行之前）显示检测 BPM；录音面板不显示（产品决定）。

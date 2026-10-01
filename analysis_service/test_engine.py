@@ -397,6 +397,17 @@ class EngineTests(unittest.TestCase):
         self.assertGreaterEqual(slow["rhythmStabilityScore"], 85)
         self.assertLessEqual(slow["timingAccuracyScore"], steady["timingAccuracyScore"] - 20)
 
+    def test_large_timing_errors_are_scored_not_dropped(self):
+        # 幸存者偏差 (#5): ±300 ms 的偏差落在 ±220 ms 搜索窗外, 被记成 timing_uncertain,
+        # 节奏越乱可判起音越少, 最终不出分。偏差大的音必须计入节奏统计。
+        result = analyze(recording(offsets=(0, .3, .3, -.3, -.3)), score(), 60, "violin")
+        summary = result["summary"]
+        statuses = [n["status"] for n in result["notes"]]
+        self.assertEqual(summary["timedNotes"], 4, statuses)
+        self.assertIsNotNone(summary["rhythmScore"])
+        self.assertEqual(statuses.count("wrong_pitch"), 0, statuses)
+        self.assertEqual([n["timingStatus"] for n in result["notes"][1:]], ["late", "late", "early", "early"])
+
 
 if __name__ == "__main__":
     unittest.main()
