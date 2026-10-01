@@ -451,6 +451,14 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             analyze(recording(), score(), 60, "violin", pitch_notes=segments[::-1])
 
+    def test_one_badly_timed_note_lowers_accuracy(self):
+        # 中位数掩盖 (#9): 4 个计时音里 1 个 +400 ms, 中位数式准确度仍有 90; 必须明显扣分。
+        steady = analyze(recording(), score(), 60, "violin")["summary"]
+        one_bad = analyze(recording(offsets=(0, 0, 0, .4, 0)), score(), 60, "violin")["summary"]
+        self.assertEqual(one_bad["timedNotes"], 4)
+        self.assertGreaterEqual(steady["timingAccuracyScore"], 90)
+        self.assertLessEqual(one_bad["timingAccuracyScore"], steady["timingAccuracyScore"] - 15)
+
 
 if __name__ == "__main__":
     unittest.main()

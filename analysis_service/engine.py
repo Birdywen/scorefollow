@@ -604,7 +604,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             residual -= np.median(residual)
         rhythm_spread = round(float(np.median(np.abs(residual))))
         rhythm_stability_score = round(max(0, 100 - rhythm_spread * .55))
-        timing_accuracy_score = round(max(0, 100 - float(np.median(np.abs(timing_errors))) * .4))
+        # 截断均值而非中位数 (#9): 中位数会掩盖少数严重偏差 (1/4 音 +400 ms 仍得 90)。
+        # 单音误差截断在 250 ms, 一个离群点有上限, 与 pitchScore 的截断均值同一思路。
+        timing_accuracy_score = round(max(0, 100 - float(np.mean(np.minimum(np.abs(timing_errors), 250))) * .4))
         rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))
     duration_sec = round(float(len(signal) / rate), 3)
     clipped = raw_clipped  # 归一化前测得, 见 read_wav 调用处

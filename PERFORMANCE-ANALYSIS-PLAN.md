@@ -51,6 +51,8 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 
 未决：
 
+- 已修 #9（`Use a capped mean for timing accuracy`）：timingAccuracyScore 由中位数改为截断均值（单音 ≤250 ms）。证据：准确度（稳定/单音+400 ms/抖动）97/95/51 → 96/70/51。回归：`test_one_badly_timed_note_lowers_accuracy`。XML 重复解析（parse_score/measure_start_beats/seconds_per_quarter/measureCount）在 300 s 上限下耗时可忽略，不改。
+- 结论 #10（不改）：`notes[].measure` 用小节序号而非 `number` 属性是有意的——前端 `onJump(note.measure)` 按 PDF 小节序号跳转，`canJump` 要求 `pdfMeasures === measureCount`；弱起谱改用 `number`（=0）会让 PDF 跳转差一。若要显示印刷小节号，应另加 `measureLabel` 字段。
 - 已做 #8（`Batch track() FFTs in chunks`）：track() 分块批量 rfft/irfft（`TRACK_CHUNK_FRAMES=128`），峰值挑选逻辑不变。证据：track 耗时 60s/22k 1.12s→0.56s；60s/48k 2.02s→1.07s；300s/22k 5.60s→2.78s；300s/48k 10.19s→5.41s；与逐帧版 7 类信号对比 times/energy 逐位一致、NaN 模式与门限零翻转、音高最大差 0.0036 音分（浮点舍入）。locate_excerpt DTW（400 音符×64 事件 0.48 s）不改。
 - 已修 #7（`Validate pitch hints on every path and stop filling gaps`）：指定小节路径也走 `usable_events` 校验（乱序/重叠报错）；`_hint_track` 只在 pYIN 段内部补盲区，段间静音留 NaN。实验：漏奏第 3 音 + pYIN 提示（legacy）修复前判 +200 音分错音、音高分 99→75。回归：`test_missing_note_with_pyin_hint_is_uncertain_not_wrong_pitch`、`test_unsorted_pitch_hint_is_rejected_without_auto_location`。
 - 已修 #6（`Normalize recording level before analysis`）：analyze 先在原始电平判定削波，再把峰值归一化到 `NORMALIZED_PEAK=0.5`，绝对能量阈值与录音电平无关；read_wav（钢琴/Vamp 复用）不变。实验：峰值 0.012 修复前报"无法检测到演奏"，0.02~0.32 节奏分 89/93/96/90 漂移。回归：`test_quiet_recording_is_analyzed_like_a_normal_one`。
