@@ -51,6 +51,7 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 
 未决：
 
+- 已做 #8（`Batch track() FFTs in chunks`）：track() 分块批量 rfft/irfft（`TRACK_CHUNK_FRAMES=128`），峰值挑选逻辑不变。证据：track 耗时 60s/22k 1.12s→0.56s；60s/48k 2.02s→1.07s；300s/22k 5.60s→2.78s；300s/48k 10.19s→5.41s；与逐帧版 7 类信号对比 times/energy 逐位一致、NaN 模式与门限零翻转、音高最大差 0.0036 音分（浮点舍入）。locate_excerpt DTW（400 音符×64 事件 0.48 s）不改。
 - 已修 #7（`Validate pitch hints on every path and stop filling gaps`）：指定小节路径也走 `usable_events` 校验（乱序/重叠报错）；`_hint_track` 只在 pYIN 段内部补盲区，段间静音留 NaN。实验：漏奏第 3 音 + pYIN 提示（legacy）修复前判 +200 音分错音、音高分 99→75。回归：`test_missing_note_with_pyin_hint_is_uncertain_not_wrong_pitch`、`test_unsorted_pitch_hint_is_rejected_without_auto_location`。
 - 已修 #6（`Normalize recording level before analysis`）：analyze 先在原始电平判定削波，再把峰值归一化到 `NORMALIZED_PEAK=0.5`，绝对能量阈值与录音电平无关；read_wav（钢琴/Vamp 复用）不变。实验：峰值 0.012 修复前报"无法检测到演奏"，0.02~0.32 节奏分 89/93/96/90 漂移。回归：`test_quiet_recording_is_analyzed_like_a_normal_one`。
 - 已修 #5（`Score large timing errors instead of dropping them`）：常规窗（±min(0.22 s, 35%)）落空时启用宽窗，每侧 ≤ 相邻音符时长 45%、≤0.4 s，起音单调一一匹配，命中后音高窗锚到实测起音。回归：`test_large_timing_errors_are_scored_not_dropped`（±300 ms 修复前 timed=1 不出分）。

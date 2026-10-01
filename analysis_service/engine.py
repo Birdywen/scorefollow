@@ -125,6 +125,8 @@ def parse_score(xml: str) -> list[dict]:
 
 # analyze 内部工作电平: 所有能量阈值都相对这个峰值标定。
 NORMALIZED_PEAK = 0.5
+# track() 每块 FFT 帧数: 128 帧 x 16384 点 complex128 约 16 MB。
+TRACK_CHUNK_FRAMES = 128
 
 
 def read_wav(data: bytes) -> tuple[np.ndarray, int]:
@@ -154,36 +156,44 @@ def track(signal: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray, np.nda
     lo = max(2, math.floor(rate / max_hz))
     hi = min(size // 2, math.ceil(rate / min_hz))
     window = np.hanning(size).astype(np.float32)
-    times, pitches, energies, confidences = [], [], [], []
-    for start in range(0, max(1, len(signal) - size + 1), hop):
-        frame = signal[start:start + size]
-        if len(frame) < size:
-            break
-        rms = float(np.sqrt(np.mean(frame ** 2)))
-        times.append((start + size / 2) / rate)
-        energies.append(rms)
-        if rms < 0.008:
-            pitches.append(float("nan"))
-            confidences.append(0.0)
+    # 分块批量 FFT (#8): 逐帧 rfft/irfft 在 300 s/48 kHz 录音上约 10 s。帧切分、能量门限、
+    # 峰值挑选与逐帧版一致 (等价性见 PERFORMANCE-ANALYSIS-PLAN.md #8), 只把 FFT 按块向量化。
+    if len(signal) < size:
+        return tuple(np.asarray([], dtype=float) for _ in range(4))
+    frames = np.lib.stride_tricks.sliding_window_view(signal, size)[::hop]
+    count = len(frames)
+    times = (np.arange(count) * hop + size / 2) / rate
+    energies = np.empty(count)
+    pitches = np.full(count, np.nan)
+    confidences = np.zeros(count)
+    norm = 1 - np.arange(lo, hi + 1) / size
+    for begin in range(0, count, TRACK_CHUNK_FRAMES):
+        block = frames[begin:begin + TRACK_CHUNK_FRAMES]
+        # float32 平方/均值与逐帧版相同; 门限在 float64 上比较。
+        energies[begin:begin + len(block)] = np.sqrt(np.mean(block ** 2, axis=1))
+        voiced = np.flatnonzero(energies[begin:begin + len(block)] >= 0.008)
+        if not len(voiced):
             continue
-        f = np.fft.rfft(frame * window, n=fft_size)
-        ac = np.fft.irfft(f * f.conj(), n=fft_size)[:size]
-        candidates = ac[lo:hi + 1] / (ac[0] * (1 - np.arange(lo, hi + 1) / size) + 1e-10)
-        peaks = np.where((candidates[1:-1] >= candidates[:-2]) & (candidates[1:-1] >= candidates[2:]))[0] + 1
-        maximum = float(np.max(candidates))
-        # 首个强峰偏向基频而非 2 倍周期；低置信片段不强行定音。
-        strong = peaks[candidates[peaks] >= max(0.7, maximum * 0.90)]
-        idx = int(strong[0]) if len(strong) else int(np.argmax(candidates))
-        confidence = float(candidates[idx])
-        lag = float(lo + idx)
-        if 0 < idx < len(candidates) - 1:
-            left, center, right = (float(candidates[idx - 1]), float(candidates[idx]), float(candidates[idx + 1]))
-            denominator = left - 2 * center + right
-            if abs(denominator) > 1e-9:
-                lag += max(-0.5, min(0.5, 0.5 * (left - right) / denominator))
-        confidences.append(confidence)
-        pitches.append(69 + 12 * math.log2(rate / lag / 440) if confidence >= 0.7 else float("nan"))
-    return tuple(np.asarray(x) for x in (times, pitches, energies, confidences))
+        spectrum = np.fft.rfft(block[voiced] * window, n=fft_size, axis=1)
+        ac = np.fft.irfft(spectrum * spectrum.conj(), n=fft_size, axis=1)[:, :size]
+        block_candidates = ac[:, lo:hi + 1] / (ac[:, :1] * norm + 1e-10)
+        for row, candidates in zip(voiced, block_candidates):
+            peaks = np.where((candidates[1:-1] >= candidates[:-2]) & (candidates[1:-1] >= candidates[2:]))[0] + 1
+            maximum = float(np.max(candidates))
+            # 首个强峰偏向基频而非 2 倍周期；低置信片段不强行定音。
+            strong = peaks[candidates[peaks] >= max(0.7, maximum * 0.90)]
+            idx = int(strong[0]) if len(strong) else int(np.argmax(candidates))
+            confidence = float(candidates[idx])
+            lag = float(lo + idx)
+            if 0 < idx < len(candidates) - 1:
+                left, center, right = (float(candidates[idx - 1]), float(candidates[idx]), float(candidates[idx + 1]))
+                denominator = left - 2 * center + right
+                if abs(denominator) > 1e-9:
+                    lag += max(-0.5, min(0.5, 0.5 * (left - right) / denominator))
+            confidences[begin + row] = confidence
+            if confidence >= 0.7:
+                pitches[begin + row] = 69 + 12 * math.log2(rate / lag / 440)
+    return times, pitches, energies, confidences
 
 
 def _hint_track(signal: np.ndarray, rate: int,
