@@ -381,6 +381,14 @@ class EngineTests(unittest.TestCase):
                 late = sum(n["timingStatus"] == "late" for n in result["notes"])
                 self.assertGreaterEqual(late, 5, statuses)
 
+    def test_semitone_legato_onsets_are_detected(self):
+        # 半音连奏 (B<->C) 2 帧音高差只有 ~0.8 半音, 低于 0.85 阈值, 起音漏检 (#11)。
+        pitches = [69, 71, 72, 74, 76, 74, 72, 71] * 2
+        result = analyze(legato_recording(pitches, 0.5), legato_score(pitches), 120, "violin")
+        statuses = [n["status"] for n in result["notes"]]
+        self.assertEqual(statuses.count("timing_uncertain"), 0, statuses)
+        self.assertEqual(result["summary"]["timedNotes"], len(pitches) - 1)
+
 
 if __name__ == "__main__":
     unittest.main()

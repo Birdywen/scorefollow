@@ -344,6 +344,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         if energy[i] < 0.012:
             continue
         pitch_jump = np.isfinite(pitches[i]) and np.isfinite(pitches[i - 2]) and abs(pitches[i] - pitches[i - 2]) >= 0.85
+        # 半音连奏: 过渡帧把 2 帧差摊薄到 ~0.8 半音, 漏检起音 (#11)。补一个稳定阶跃判据:
+        # 前段(i-6..i-3)与后段(i..i+2)各自平稳 (ptp<0.35), 中位数差 >= 0.6 半音。
+        # 两段都要求平稳, 揉弦 (连续摆动) 不满足; 风险见 PERFORMANCE-ANALYSIS-PLAN.md #11。
+        if not pitch_jump and 6 <= i <= len(times) - 3:
+            before, after = pitches[i - 6:i - 2], pitches[i:i + 3]
+            if np.isfinite(before).all() and np.isfinite(after).all() and \
+                    float(np.ptp(before)) < 0.35 and float(np.ptp(after)) < 0.35:
+                pitch_jump = abs(float(np.median(after)) - float(np.median(before))) >= 0.6
         attack = energy[i] > max(0.018, energy[i - 2] * 1.85) and energy[i] - energy[i - 2] > 0.008
         if (pitch_jump or attack) and times[i] - onsets[-1] > 0.09:
             onsets.append(float(times[i]))
