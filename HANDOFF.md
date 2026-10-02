@@ -1,5 +1,7 @@
 # HANDOFF · scorefollow 重建 (2026-09-21, Phase 2.1 full port)
 
+> 本文件是 2026-09-21 重建阶段的交接记录，未再更新。演奏分析（`analysis_service`）的当前进度见 `ANALYSIS-HANDOFF.md`。
+
 远端 `/home/user/agi-watch/scorefollow` 丢失, 按本地残件重建于 `/home/ubuntu/n/scorefollow`。
 路线: 全量 TypeScript 移植 + GPL 复用 vendor (用户 2026-09-21 裁决)。
 
