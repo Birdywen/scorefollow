@@ -39,6 +39,8 @@ for gtfile, score in [
     ('vivaldi-bajazet-sposa-son-disprezzata-aria-irenepdf.json', 'vivaldi-bajazet-sposa-son-disprezzata-aria-irene'),
     ('yradier_c_la_paloma_piano_beg.json', 'yradier_c_la_paloma_piano_beg'),
     (str(next(gt_root.glob('Tschaikowsky*')).name), 'tschaikowsky_rococo_gru_mmer_cello'),
+    ('Boek_1_19.json', 'boek_1_19'),
+    ('Saint_Saens_op_33_Mandozzi_Cello_solo_Vers_A.json', 'saint_saens_op_33_mandozzi_cello_solo_vers_a'),
 ]:
     gt = json.loads((gt_root / gtfile).read_text())
     ours = json.loads((gpu_root / score / 'ours.json').read_text())
