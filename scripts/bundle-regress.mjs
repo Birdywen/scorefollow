@@ -93,6 +93,55 @@ function pairSystems(fixedCxs, ourCxs) {
   return pairs;
 }
 
+/**
+ * 跨渲染器帧对齐 (pdfjs 分析 vs fitz 重渲染常差整体仿射; 扫描页还有浏览器 deskew 旋转,
+ * Boek p1 约 0.5°: sys1 x-5px, sys10 x+5px, 全局缩放修不好).
+ * 只用系统框四角拟合完整仿射, 不碰小节线:
+ *   返回 {ax, ay, bx, cx, cy, dx, rms} (fx=ax*ox+ay*oy+bx, fy=cx*ox+cy*oy+dx) 或 null.
+ * 旋转/缩放超 5%、残差 RMS > 6px → 不可信, 调用方标 UNALIGNED.
+ */
+function fitFrameTransform(fixedCxs, ourCxs, pairs) {
+  const solve = (pts) => {
+    // 最小二乘拟合 f = a*ox + b*oy + c
+    let sx = 0, sy = 0, sf = 0, n = pts.length;
+    if (n < 3) return null;
+    for (const p of pts) { sx += p[0]; sy += p[1]; sf += p[2]; }
+    const mx = sx / n, my = sy / n, mf = sf / n;
+    let xx = 0, xy = 0, yy = 0, xf = 0, yf = 0;
+    for (const [ox, oy, f] of pts) {
+      const dx = ox - mx, dy = oy - my, df = f - mf;
+      xx += dx * dx; xy += dx * dy; yy += dy * dy; xf += dx * df; yf += dy * df;
+    }
+    const det = xx * yy - xy * xy;
+    if (Math.abs(det) < 1e-9) return null;
+    const a = (xf * yy - yf * xy) / det, b = (yf * xx - xf * xy) / det;
+    return { a, b, c: mf - a * mx - b * my };
+  };
+  const good = pairs.filter(([, oi]) => oi >= 0);
+  if (good.length < 2) return null;
+  const xp = [], yp = [];
+  for (const [gi, oi] of good) {
+    const f = fixedCxs[gi], o = ourCxs[oi];
+    const ft = f.cs[0], fb = f.cs[f.cs.length - 1];
+    const ot = o.cs[0], ob = o.cs[o.cs.length - 1];
+    for (const [oy, fy] of [[ot, ft], [ob, fb]]) {
+      xp.push([o.xs.x1, oy, f.xs.x1]);
+      xp.push([o.xs.x2, oy, f.xs.x2]);
+      yp.push([o.xs.x1, oy, fy]);
+      yp.push([o.xs.x2, oy, fy]);
+    }
+  }
+  const fx = solve(xp), fy = solve(yp);
+  if (!fx || !fy) return null;
+  if (Math.abs(fx.a - 1) > 0.05 || Math.abs(fy.b - 1) > 0.05) return null;
+  if (Math.abs(fx.b) > 0.05 || Math.abs(fy.a) > 0.05) return null; // 旋转限 ~3°
+  const rms = Math.sqrt(
+    (xp.reduce((s, [ox, oy, f]) => s + (fx.a * ox + fx.b * oy + fx.c - f) ** 2, 0) +
+     yp.reduce((s, [ox, oy, f]) => s + (fy.a * ox + fy.b * oy + fy.c - f) ** 2, 0)) / (xp.length + yp.length));
+  if (rms > 6) return null;
+  return { ax: fx.a, ay: fx.b, bx: fx.c, cx: fy.a, cy: fy.b, dx: fy.c, rms };
+}
+
 function greedyMatch(want, got) {
   const used = new Array(got.length).fill(false);
   let tp = 0;
@@ -158,34 +207,75 @@ for (const dir of bundles) {
     const autoBars = ap ? ap.bxs : null;
     const sameAsAuto = autoBars && JSON.stringify(autoBars.map((r) => r.map(r3))) ===
       JSON.stringify(fp.bxs.map((r) => r.map(r3)));
-    const pairs = pairSystems(fp.cxs, res.cxs);
-    const paired = pairs.filter(([, oi]) => oi >= 0).length;
+    const pairs0 = pairSystems(fp.cxs, res.cxs);
+    let pairs = pairs0;
+    let alignNote = "";
+    let paired = pairs.filter(([, oi]) => oi >= 0).length;
+    if (paired * 2 < pairs.length && fp.cxs.length === res.cxs.length && fp.cxs.length >= 2) {
+      // 粗对齐: 中位顶差平移后重配 (跨渲染器整体偏移)
+      const dys = fp.cxs.map((f, i) => res.cxs[i].cs[0] - f.cs[0]).sort((a, b) => a - b);
+      const dy = dys[Math.floor(dys.length / 2)];
+      const shifted = res.cxs.map((s) => ({ cs: s.cs.map((y) => y - dy), xs: s.xs }));
+      const p2 = pairSystems(fp.cxs, shifted);
+      if (p2.filter(([, oi]) => oi >= 0).length * 2 >= p2.length) {
+        pairs = p2;
+        alignNote += ` dy=${Math.round(dy)}`;
+      }
+    }
+    paired = pairs.filter(([, oi]) => oi >= 0).length;
     if (paired * 2 < pairs.length) {
       unaligned++;
       console.log(`  p${n}: UNALIGNED (paired ${paired}/${pairs.length}), excluded`);
       continue;
     }
-    let pTp = 0, pFp = 0, pFn = 0;
-    for (const [gi, oi] of pairs) {
-      if (oi < 0) { pFn += internal(fp.bxs[gi]).length; continue; }
-      const m = greedyMatch(internal(fp.bxs[gi]), internal(ourBars[oi] ?? []));
-      pTp += m.tp; pFp += m.fp; pFn += m.fn;
+    // 精对齐: 系统框拟合完整仿射 (只用框, 不碰小节线), 小节线经变换后打分
+    // (旋转需 y: 取该行系统纵中线为 y)
+    let scoreBars = ourBars;
+    const tr = fitFrameTransform(fp.cxs, res.cxs, pairs);
+    if (tr) {
+      scoreBars = ourBars.map((row, oi) => {
+        const cs = res.cxs[oi] ? res.cxs[oi].cs : null;
+        const ym = cs ? (cs[0] + cs[cs.length - 1]) / 2 : 0;
+        return row.map((x) => tr.ax * x + tr.ay * ym + tr.bx);
+      });
+      const rot = (Math.atan2(tr.ay, tr.ax) * 180 / Math.PI).toFixed(2);
+      alignNote += ` aff(rot${rot}° rms=${tr.rms.toFixed(2)})`;
     }
+    let pTp = 0, pFp = 0, pFn = 0;
+    const badSys = [];
+    for (const [gi, oi] of pairs) {
+      if (oi < 0) { pFn += internal(fp.bxs[gi]).length; badSys.push(`sys${gi + 1}: unpaired (+${internal(fp.bxs[gi]).length}fn)`); continue; }
+      const w = internal(fp.bxs[gi]), g = internal(scoreBars[oi] ?? []).map(r3);
+      const m = greedyMatch(w, g);
+      pTp += m.tp; pFp += m.fp; pFn += m.fn;
+      if (m.fp + m.fn > 0) {
+        // 漏检 = want 中未被匹配的, 误报 = got 中未被匹配的
+        const usedW = new Array(w.length).fill(false);
+        const usedG = new Array(g.length).fill(false);
+        w.forEach((x, wi) => {
+          let bi = -1, bd = TOL + 1e-9;
+          g.forEach((y, gi2) => { if (!usedG[gi2] && Math.abs(y - x) <= TOL && Math.abs(y - x) < bd) { bd = Math.abs(y - x); bi = gi2; } });
+          if (bi >= 0) { usedW[wi] = true; usedG[bi] = true; }
+        });
+        badSys.push(`sys${gi + 1}: fn[${w.filter((_, i) => !usedW[i]).map(Math.round)}] fp[${g.filter((_, i) => !usedG[i]).map(Math.round)}]`);
+      }
+    }
+    for (const b of badSys) console.log(`    ${b}`);
     if (sameAsAuto) {
       stablePages++;
-      // 稳定集: 当前输出必须与 fixed 逐位一致 (3 位小数)
-      const sameAsFixed = JSON.stringify(ourBars.map((r) => r.map(r3))) ===
+      // 稳定集: 当前输出 (经框仿射归一) 必须与 fixed 逐位一致 (3 位小数)
+      const sameAsFixed = JSON.stringify(scoreBars.map((r) => r.map(r3))) ===
         JSON.stringify(fp.bxs.map((r) => r.map(r3)));
       if (!sameAsFixed) {
         stableDiffs++;
-        console.log(`  p${n}: STABLE-DIFF tp=${pTp} fp=${pFp} fn=${pFn} (want ${JSON.stringify(fp.bxs)} got ${JSON.stringify(ourBars.map((r) => r.map(r3)))})`);
+        console.log(`  p${n}: STABLE-DIFF${alignNote} tp=${pTp} fp=${pFp} fn=${pFn} (want ${JSON.stringify(fp.bxs)} got ${JSON.stringify(scoreBars.map((r) => r.map(r3)))})`);
       } else {
-        console.log(`  p${n}: stable ok (${ourBars.flat().length} bars)`);
+        console.log(`  p${n}: stable ok${alignNote} (${scoreBars.flat().length} bars)`);
       }
     } else {
       changedPages++;
       tot.tp += pTp; tot.fp += pFp; tot.fn += pFn;
-      console.log(`  p${n}: accuracy tp=${pTp} fp=${pFp} fn=${pFn}`);
+      console.log(`  p${n}: accuracy${alignNote} tp=${pTp} fp=${pFp} fn=${pFn}`);
     }
   }
 }

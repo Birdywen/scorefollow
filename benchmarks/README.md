@@ -96,6 +96,15 @@
   PDF 复制到 PDF_TO_TEST; Saint-Saëns p2s9 补 268——像素为完整小节线, 用户确认保留, 报告中曾删）。
   11 谱 696/16/6 P0.978 R0.991（Boek 81/2/1, Saint-Saëns 77/6/0）; 原 9 谱 538/8/5 P0.985 R0.991 不变。
   两首新谱 GT 来自「算法结果+人工修改」, 可能偏乐观; 对外引用以原 9 谱为准。
+- algo v27（2026-10-04）：NMS 中位数漂移救回。Boek bundle p1s8 723（老师确认真线） plateau 列 725/728 全过 veto,
+  NMS 中位数落 727（符头蹭到, veto=true）→ keptF 复核静默丢弃。修：复核否决时在 ±2 内找同 plateau 候选替换
+  （`kept-nms-fallback`），替换列须「单点轻蹭」：noteheadProximity≤2 且每个 headSeg 高 ≤spatium。
+  约束来由：无约束版救回 Toccatta p3s5 706——用户已仲裁 705 非逻辑小节（D.S. 段首 brace 旁物理竖线，HOMR 可采纳），
+  706 列贴着调号/谱号簇（prox=3, h=12 高段），被 touch gate 拦下；Boek 替换列 prox=1/h=5 放行。
+  实测：Boek bundle 83/0/0（p1 42/0/0, p2 41/0/0）；GT 11 谱 696/16/6 与 v26 逐数一致；
+  HOMR 回到 FAIL(1)=Toccatta 167 既有；`npm run verify` 通过。
+  警告：touch gate 只在 2 个已仲裁样本上验证过（prox 1 vs 3），后遇到「单符头重蹭（h>sp）真线」或
+  「段首单点干净竖线」会反例，届时以仲裁为准调门限，不要硬保数字。
 - 数据再生：`python3 scripts/gpu-data.py [slug...]`（GPU 端点见脚本头）。
 
 ## HOMR 交叉验证 (`benchmarks/homr/`, `npm run homr`)
