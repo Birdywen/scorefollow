@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
-gt_root = Path('/home/ubuntu/n/scorefollow/benchmarks/gt')
-gpu_root = Path('/home/ubuntu/n/scorefollow/benchmarks/gpu')
+root = Path(__file__).resolve().parents[1]
+gt_root = root / 'benchmarks' / 'gt'
+gpu_root = root / 'benchmarks' / 'gpu'
 
 def match_systems(gt_sys, our_sys):
     pairs = []
@@ -37,7 +38,7 @@ for gtfile, score in [
     ('swan_cello_melody.json', 'swan_cello_melody'),
     ('vivaldi-bajazet-sposa-son-disprezzata-aria-irenepdf.json', 'vivaldi-bajazet-sposa-son-disprezzata-aria-irene'),
     ('yradier_c_la_paloma_piano_beg.json', 'yradier_c_la_paloma_piano_beg'),
-    (str(next(Path('/home/ubuntu/n/scorefollow/benchmarks/gt').glob('Tschaikowsky*')).name), 'tschaikowsky_rococo_gru_mmer_cello'),
+    (str(next(gt_root.glob('Tschaikowsky*')).name), 'tschaikowsky_rococo_gru_mmer_cello'),
 ]:
     gt = json.loads((gt_root / gtfile).read_text())
     ours = json.loads((gpu_root / score / 'ours.json').read_text())

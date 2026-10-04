@@ -64,6 +64,22 @@
   诊断工具：`gt-feat-profile.mjs`（GT 口径画像）、`nb-veto-check.mjs`
   （TP 邻域否决安全检查）、`pxdump.mjs`（像素 ASCII 图）、
   `rowscan.mjs`（逐行宽表）、`debugBarColumn()`。
+- algo v25（2026-10-04）：v24 基线复测（ours.json 停在 v22, v23/v24 对本集零变化）536/12/7 P0.978 R0.987。
+  逐条归因 7 FN（插桩 findBarLines 4 处静默 continue + barColumnVetoed 子句级标签, 复现与 ours.json 27 页逐系统一致）：
+  4 条为 NMS 前 `barColumnVetoed` 组合 return(L1183)误杀——C1 blob(Serenade p4s2 609/866)、
+  C7 横梁(Suzuki p1s4 555)、C2 近头(Suzuki p2s4 326)；真线 run 0.96~1.0/mid=3, 与同谱符干单列同形
+  (GT 全集 veto-pre 541 簇中 run≥0.95&mid≤3 的非真线 192 个), 单列几何不可分, 不改 veto。
+  上下文可分: 误杀线都落在异常宽空档(Serenade 458→941=3.1×med, Suzuki 354→757=2.0×med)。
+  既有 `rescueWideGapBars`(widrescue, 原默认关)实测零救回, 两道护栏: ①右端空档被当贴边跳过
+  (两例宽空档右端都是终线) ②mask 关时救回走全套 barColumnVetoed, 同一子句再杀一次。
+  修: 只跳过贴左边空档(谱号/调号/缩进); `barColumnVetoedRescue` mask 关时只留形状类 + run≥0.9;
+  widrescue 默认开。GT 538/12/5 P0.978 R0.991（Serenade 609、Suzuki 555 救回, FP 零增加）。
+  变体证伪: 全段搜索代替等分预测窗 539/14/4（+Serenade 866, 但 p4s2-710/p4s8-246 符干混入, F1 降）;
+  notemask=1 +11FP。剩余 FN: Serenade 866（二次等分预测 775≠866, 小节不等宽）、Suzuki p2s4 326
+  （空档 213 不宽, 无上下文证据）、Suzuki p1s1 331（定位 326 偏 5px, 同源 FP）、Rococo p2s3 524
+  （系统吸入 3 条外谱线, rel 0.60 未过强度门）、Vivaldi p5s1 423（对比门）。
+  HOMR 套件 61/0/1 与 v24 逐行一致, ADJUDICATION_FAIL(1)=Toccatta 167 待仲裁(既有, 见 AUDIT-REPORT)。
+  `scripts/gt-eval.py` 路径改相对仓库根(原写死 main worktree, 在 opt 评测会读到 main 的旧 fixture)。
 - 数据再生：`python3 scripts/gpu-data.py [slug...]`（GPU 端点见脚本头）。
 
 ## HOMR 交叉验证 (`benchmarks/homr/`, `npm run homr`)

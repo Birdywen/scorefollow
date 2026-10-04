@@ -36,12 +36,12 @@ export const legacyOpt: SynpdfOpt = {
   annot: 0, zwgrens: 0.7, voorna: 0.9, mtdrmpl: 0.85, dx: 3, fscr: 0, pagenum: 1, // mtdrmpl 原版默认 0.8, 本项目默认 0.85(用户指定)
   playbtn: 0, mmin: "", fixwd: 1000, lastSynced: -2, eerst: 0, sysprf: 0, onestf: 0,
   hd: 1, deskew: 1, // hd: 显示高清渲染(分析仍用 pagewd); deskew: 扫描偏斜自动转正
-  notemask: 0, widrescue: 0, // 逆向路线(默认关): notemask=先抠实心符头+符干再认线; widrescue=宽度先验抢救淡线
+  notemask: 0, widrescue: 1, // notemask(默认关)=先抠实心符头+符干再认线; widrescue(v25 默认开)=宽空档按间距先验救回被符干子句误杀的真线
   homrgate: 1, // HoMR 音符模板门(有门数据时 veto 符干; 无数据纯透传)
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 24;
+export const ALGO_VERSION = 25;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
@@ -440,7 +440,9 @@ export function rescueWideGapBars(f: any, bars: any[], stride: number, pix: any)
     for (let pass = 0; pass < 4; pass++) {
       const gaps: { i: number; w: number }[] = [];
       for (let i = 1; i < row.length; i++) {
-        if (row[i - 1] - x1 < 3 * sp || x2 - row[i] < 3 * sp) continue;
+        // 只跳过贴左边空档(谱号/调号/缩进使首小节天然不规则); v25 起右端空档参与:
+        // 末小节无谱号, 终线只是端点。Serenade p4s2 458→941 / Suzuki p1s4 354→757 即右端宽空档。
+        if (row[i - 1] - x1 < 3 * sp) continue;
         gaps.push({ i, w: row[i] - row[i - 1] });
       }
       if (gaps.length < 2) return row;
@@ -1215,13 +1217,15 @@ export function barRescueClean(sysIdx: number, x: number, rw0: number, rt0: numb
   return true;
 }
 
-/** rescue 专用否决: notemask 开启时符干已被删, 专杀符干的子句冗余且会
- * 误杀淡线(窄系统细竖线条款), 只保留宽度/形状类(过宽/升号双竖)。
- * mask 关闭时走全套 barColumnVetoed(保守)。 */
+/** rescue 专用否决: 只保留宽度/形状类(过宽/升号双竖)。
+ * notemask 开启时符干已被删, 专杀符干的子句冗余。v25: mask 关闭时也不走全套
+ * barColumnVetoed——宽空档内真线与符干单列几何不可分(GT 实测: 被 L1183 误杀的
+ * 真线 run 0.96~1.0/mid=3, 同谱符干同形), 救回已由间距先验(gap≥1.6×med)约束,
+ * 只追加 run≥0.9 纵贯门。 */
 export function barColumnVetoedRescue(sysIdx: number, x: number, rw0: number, rt0: number): boolean {
-  if (!legacyOpt.notemask) return barColumnVetoed(sysIdx, x, rw0, rt0);
   const sf0 = barStemFeatures(sysIdx, x);
   if (!sf0) return false;
+  if (!legacyOpt.notemask && sf0.runRatio < 0.9) return true;
   if (sf0.runRatio >= 0.6 && sf0.midWidth >= 6) return true;
   if (sf0.twinDist >= 4 && sf0.twinDist <= 6 && sf0.twinRel >= 0.55 && sf0.twinRel < 0.65) return true;
   return false;
