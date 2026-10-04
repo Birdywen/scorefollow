@@ -80,6 +80,18 @@
   （系统吸入 3 条外谱线, rel 0.60 未过强度门）、Vivaldi p5s1 423（对比门）。
   HOMR 套件 61/0/1 与 v24 逐行一致, ADJUDICATION_FAIL(1)=Toccatta 167 待仲裁(既有, 见 AUDIT-REPORT)。
   `scripts/gt-eval.py` 路径改相对仓库根(原写死 main worktree, 在 opt 评测会读到 main 的旧 fixture)。
+- algo v26（2026-10-04）：符干端点否决 `stemEndVeto`（findBarLines 合并相邻候选之后、写诊断之前）：
+  竖线一端停在谱表内 ≥0.3 间距、且该端旁符头墨量 ≥0.2 → 判符干丢弃, 诊断记 `dropped-stem-end`。
+  测法用单列严格阈值(384), 不用 barStemFeatures 的相邻两列宽阈值(~535, 邻符头被算进线, 端点测不准)。
+  谱线 y 不直接用 `sys.cs`: 每条在 ±4 行、左右 6sp 内局部重定位, 墨占比 <0.6 视为杂行剔除
+  (修 y 偏 1px 与杂行拉低底线两类误杀, 兼容倾斜扫描页)。
+  GT 538/8/5 P0.985 R0.991（去 Serenade p4s9 728、Suzuki p2 416/291/235, TP/FN 零变化）。
+  否决实验: 「伸出谱表+端点符头」FP -3/22 但误杀 TP 12/648(双谱表钢琴谱跨谱表小节线中段被算外伸);
+  宽阈值口径 A0.5/H0.3 误杀 12; 谱线门 0.45 与 0.6 结果相同, 保留 0.6。
+  新谱(用户报告 Boek_1_19 v17、Saint-Saëns op33 v18; 报告坐标逐页仿射配准到 1000 宽渲染,
+  Boek p1 残差 5px 需逐系统对齐; GT 暂在 /tmp/sf-new 未入库): 157/9/1；11 谱合计 695/17/6 P0.976 R0.991。
+  注意: 报告 GT 由算法结果+人工修改而来, 未察觉的错误会抬高分数。
+  HOMR 61/0/1 与 v25 逐行一致(Toccatta 167 既有); `npm run verify` 通过(71 tests OK, skipped=1)。
 - 数据再生：`python3 scripts/gpu-data.py [slug...]`（GPU 端点见脚本头）。
 
 ## HOMR 交叉验证 (`benchmarks/homr/`, `npm run homr`)
