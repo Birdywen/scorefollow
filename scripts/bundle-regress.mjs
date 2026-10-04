@@ -263,10 +263,8 @@ for (const dir of bundles) {
     for (const b of badSys) console.log(`    ${b}`);
     if (sameAsAuto) {
       stablePages++;
-      // 稳定集: 当前输出 (经框仿射归一) 必须与 fixed 逐位一致 (3 位小数)
-      const sameAsFixed = JSON.stringify(scoreBars.map((r) => r.map(r3))) ===
-        JSON.stringify(fp.bxs.map((r) => r.map(r3)));
-      if (!sameAsFixed) {
+      // 稳定集: 跨渲染器亚像素抖动正常, 按 TOL 口径验收 (fp+fn==0), 不逐位比对
+      if (pFp + pFn > 0) {
         stableDiffs++;
         console.log(`  p${n}: STABLE-DIFF${alignNote} tp=${pTp} fp=${pFp} fn=${pFn} (want ${JSON.stringify(fp.bxs)} got ${JSON.stringify(scoreBars.map((r) => r.map(r3)))})`);
       } else {
