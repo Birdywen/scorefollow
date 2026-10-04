@@ -3163,33 +3163,64 @@ export default function ScoreFollowPage() {
       setScoreMsg(lang === "zh" ? "先在上报区填写推送密钥（与直传服务器同一密钥）" : "Enter the upload secret first (same as server upload)");
       return;
     }
-    let path = scorePath.trim().replace(/^\/+/, "");
-    if (!path) {
+    // 三件套 bundle: 文件夹 Score/书名/曲名/ 下存 fixed.js(校正版) + auto.js(原始扫描版) + 原文件
+    let folder = scorePath.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+    if (!folder) {
       const base = (pdfName || "score").replace(/\.pdf$/i, "")
         .replace(/[^\w\-一-鿿]+/g, "_").slice(0, 40) || "score";
-      path = `Score/${base}.js`;
+      folder = `Score/${base}`;
     }
-    if (!/^Score\/[0-9A-Za-z\-_./]{1,110}\.js$/.test(path) || path.includes("..")) {
-      setScoreMsg(lang === "zh" ? "路径须形如 Score/书名/曲名.js（字母数字 - _ . /）" : "Path must look like Score/book/piece.js");
+    // 兼容旧习惯: 填了 .../曲名.js 就取目录部分
+    folder = folder.replace(/\/[^/]+\.js$/i, "");
+    if (!/^Score\/[0-9A-Za-z\-_./]{1,110}$/.test(folder) || folder.includes("..") || /\/$/.test(folder)) {
+      setScoreMsg(lang === "zh" ? "路径须形如 Score/书名/曲名（字母数字 - _ . /，会自动建文件夹）" : "Path must look like Score/book/piece (a folder is created)");
       return;
     }
-    const b = await buildReportBundle().catch(() => null);
-    if (!b?.fixedJs) {
+    const bpt = buildPreloadTextRef.current;
+    if (!bpt) {
       setScoreMsg(lang === "zh" ? "谱面导出失败" : "Export failed");
       return;
     }
+    setScoreMsg(lang === "zh" ? "生成校正版/原始版中…" : "Building fixed/auto bundles…");
+    const fixedJs = await bpt(true, false).catch(() => null);
+    if (!fixedJs) {
+      setScoreMsg(lang === "zh" ? "谱面导出失败" : "Export failed");
+      return;
+    }
+    const autoJs = await bpt(false, false).catch(() => null);
+    if (!autoJs) {
+      setScoreMsg(lang === "zh" ? "原始版导出失败" : "Auto export failed");
+      return;
+    }
+    // 原文件: 有 PDF 存原 PDF, 图片谱存分析底图 PNG(与分析同帧像素)
+    const originals: { name: string; blob: Blob }[] = [];
+    if (pdfBytesRef.current) {
+      originals.push({ name: "original.pdf", blob: new Blob([pdfBytesRef.current.slice(0)], { type: "application/pdf" }) });
+    } else {
+      for (let n = 1; n <= numPages; n++) {
+        const du = pagePngRef.current[n];
+        if (!du) continue;
+        try {
+          const blob = await (await fetch(du)).blob();
+          originals.push({ name: `original-p${n}.png`, blob });
+        } catch { /* 缺页跳过 */ }
+      }
+    }
+    const path = `${folder}/fixed.js`;
     const metro = readMetroCfg();
     setScoreBusy(true);
     setScoreMsg(lang === "zh" ? "推送公开谱库中…" : "Publishing to library…");
     try {
       const fd = new FormData();
       fd.append("secret", secret);
-      fd.append("target", "score");
-      fd.append("path", path);
-      fd.append("title", path.replace(/\.js$/i, "").split("/").pop() || path);
+      fd.append("target", "score-bundle");
+      fd.append("folder", folder);
+      fd.append("title", folder.split("/").pop() || folder);
       if (metro && typeof metro.bpm === "number") fd.append("bpm", String(metro.bpm));
       if (metro && typeof metro.meter === "string") fd.append("meter", metro.meter);
-      fd.append("file", new Blob([b.fixedJs], { type: "text/javascript" }), path.split("/").pop());
+      fd.append("fixed", new Blob([fixedJs], { type: "text/javascript" }), "fixed.js");
+      fd.append("auto", new Blob([autoJs], { type: "text/javascript" }), "auto.js");
+      originals.forEach((o, i) => fd.append(`orig${i}`, o.blob, o.name));
       // 级联: 本站 PHP(虚拟主机) 不通则试同源直收 report-server.py(本机 nginx+8931)
       const configured = reportEndpoint.trim() || `${BASE}/sf-report-upload.php`;
       const sameOrigin = `${window.location.origin}/sf-report-upload`;
@@ -3217,7 +3248,7 @@ export default function ScoreFollowPage() {
     } finally {
       setScoreBusy(false);
     }
-  }, [analysis, numPages, reportSecret, scorePath, pdfName, buildReportBundle, readMetroCfg, reportEndpoint, lang]);
+  }, [analysis, numPages, reportSecret, scorePath, pdfName, readMetroCfg, reportEndpoint, lang]);
 
   // URL 直载 preload(原版风格): ?曲名.js(裸文件名, 相对本站目录) 或 ?preload=曲名.js
   // 例: /scorefollow/?mytune.js / /scorefollow/?preload=mytune.js
@@ -3649,7 +3680,7 @@ export default function ScoreFollowPage() {
                 style={{ width: "100%" }}
                 value={scorePath}
                 onChange={(e) => setScorePath(e.target.value)}
-                placeholder={lang === "zh" ? "公开路径：Score/书名/曲名.js（空=自动）" : "Public path: Score/book/piece.js (empty=auto)"}
+                placeholder={lang === "zh" ? "公开路径：Score/书名/曲名（空=自动，发布存 fixed/auto/原文件三件套）" : "Public path: Score/book/piece (empty=auto; publishes fixed/auto/original bundle)"}
               />
             </div>
             <div className={styles.pillRow}>

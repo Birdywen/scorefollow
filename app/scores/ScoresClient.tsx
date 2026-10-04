@@ -10,6 +10,7 @@ type ScoreEntry = {
   title: string;
   bpm?: number | null;
   meter?: string | null;
+  bundle?: { auto?: string | null; original?: string[] | null } | null;
   updatedAt?: string;
 };
 
@@ -152,6 +153,11 @@ export default function ScoresClient() {
                 <a className={styles.play} href={`${BASE}/?preload=${encodeURIComponent(s.path)}`}>
                   {lang === "zh" ? "开始练习" : "Practice"}
                 </a>
+                {s.bundle?.auto ? (
+                  <a className={styles.copy} href={`${BASE}/?preload=${encodeURIComponent(s.bundle.auto)}`}>
+                    {lang === "zh" ? "原版对照" : "Raw scan"}
+                  </a>
+                ) : null}
                 <button className={styles.copy} onClick={() => void copy(link)}>
                   {copied === link
                     ? lang === "zh" ? "已复制 ✓" : "Copied ✓"

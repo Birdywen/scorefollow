@@ -81,6 +81,75 @@ if ((string)($_POST["target"] ?? "") === "score") {
   exit;
 }
 
+// 三件套发布(target=score-bundle): folder=Score/书名/曲名; fixed.js + auto.js 必需,
+// origN(原文件, 文件名白名单)可选; 目录单 path 指向 fixed.js, 与 report-server.py 同协议。
+if ((string)($_POST["target"] ?? "") === "score-bundle") {
+  $folder = (string)($_POST["folder"] ?? "");
+  if (!preg_match('#^Score/[0-9A-Za-z\-_./]{1,110}$#', $folder) || strpos($folder, "..") !== false || substr($folder, -1) === "/") {
+    fail(400, "bad folder (want Score/book/piece)");
+  }
+  $webroot = rtrim(dirname(__FILE__), "/");
+  $destDir = $webroot . "/" . $folder;
+  if (!is_dir($destDir) && !@mkdir($destDir, 0755, true)) fail(500, "mkdir failed");
+  $store = function ($field, $name) use ($destDir) {
+    if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) fail(400, "missing file: " . $field);
+    $f = $_FILES[$field];
+    if (($f["error"] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) fail(400, "upload error: " . $field);
+    if (($f["size"] ?? 0) <= 0 || ($f["size"] ?? 0) > 120 * 1024 * 1024) fail(400, "bad size: " . $field);
+    $dest = $destDir . "/" . $name;
+    if (!is_uploaded_file($f["tmp_name"]) || !@move_uploaded_file($f["tmp_name"], $dest)) fail(500, "store failed: " . $field);
+    @chmod($dest, 0644);
+  };
+  $store("fixed", "fixed.js");
+  $store("auto", "auto.js");
+  $originals = array();
+  foreach ($_FILES as $field => $f) {
+    if (!preg_match('/^orig[0-9]+$/', (string)$field) || !is_array($f)) continue;
+    $fn = basename((string)($f["name"] ?? ""));
+    if (!preg_match('/^original(\.pdf|-p[0-9]+\.(png|jpg|jpeg))$/', $fn)) fail(400, "bad original name");
+    if (($f["error"] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) fail(400, "upload error: " . $field);
+    if (($f["size"] ?? 0) <= 0 || ($f["size"] ?? 0) > 120 * 1024 * 1024) fail(400, "bad size: " . $field);
+    $dest = $destDir . "/" . $fn;
+    if (!is_uploaded_file($f["tmp_name"]) || !@move_uploaded_file($f["tmp_name"], $dest)) fail(500, "store failed: " . $field);
+    @chmod($dest, 0644);
+    $originals[] = $fn;
+  }
+  sort($originals);
+  $manifestFile = $webroot . "/Score/scores.json";
+  $manifest = array("scores" => array());
+  if (is_readable($manifestFile)) {
+    $old = json_decode((string)@file_get_contents($manifestFile), true);
+    if (is_array($old) && isset($old["scores"]) && is_array($old["scores"])) $manifest = $old;
+  }
+  $title = trim((string)($_POST["title"] ?? ""));
+  if ($title === "") $title = basename($folder);
+  $bpmRaw = trim((string)($_POST["bpm"] ?? ""));
+  $bpm = (isset($_POST["bpm"]) && preg_match('/^\d+$/', $bpmRaw)) ? max(20, min(300, (int)$_POST["bpm"])) : null;
+  $meterRaw = (string)($_POST["meter"] ?? "");
+  $meter = preg_match('/^\d{1,2}\/\d{1,2}$/', $meterRaw) ? $meterRaw : null;
+  $fixedPath = $folder . "/fixed.js";
+  $origPaths = array();
+  foreach ($originals as $n) $origPaths[] = $folder . "/" . $n;
+  $entry = array(
+    "path" => $fixedPath,
+    "title" => mb_substr($title, 0, 80),
+    "bpm" => $bpm,
+    "meter" => $meter,
+    "bundle" => array("auto" => $folder . "/auto.js", "original" => $origPaths),
+    "updatedAt" => gmdate("Y-m-d\TH:i:s\Z"),
+  );
+  $kept = array();
+  foreach ($manifest["scores"] as $s) {
+    if (is_array($s) && ($s["path"] ?? "") !== $fixedPath) $kept[] = $s;
+  }
+  array_unshift($kept, $entry);
+  $manifest["scores"] = array_slice($kept, 0, 500);
+  @file_put_contents($manifestFile, json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
+  @chmod($manifestFile, 0644);
+  echo json_encode(array("ok" => true, "path" => $fixedPath, "files" => array_merge(array("fixed.js", "auto.js"), $originals, array("scores.json"))), JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
 // 目录名白名单(前端形如 2026-09-26T10-30-00-曲名)
 $dir = (string)($_POST["dir"] ?? "");
 if (!preg_match('/^[0-9A-Za-z\-_]{1,80}$/', $dir)) fail(400, "bad dir");

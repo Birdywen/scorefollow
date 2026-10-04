@@ -20,6 +20,8 @@ MAX_FILE = 120 * 1024 * 1024
 # location /scorefollow/Score/ 直接 alias 对外(见 /etc/nginx/sites-enabled/default)
 SCORE_ROOT = "/home/ubuntu/scorefollow-scores"
 SCORE_PATH_RE = re.compile(r"^Score/[0-9A-Za-z\-_./]{1,110}\.js$")
+SCORE_FOLDER_RE = re.compile(r"^Score/[0-9A-Za-z\-_./]{1,110}$")
+SCORE_ORIG_RE = re.compile(r"^original(\.pdf|-p[0-9]+\.(png|jpg|jpeg))$")
 
 
 def get_secret() -> str:
@@ -149,6 +151,72 @@ class Handler(BaseHTTPRequestHandler):
             os.chmod(mf, 0o644)
             return self._json(200, {"ok": True, "path": p,
                                     "files": [os.path.basename(p), "scores.json"]})
+        # 三件套发布(target=score-bundle): folder=Score/书名/曲名; 文件 fixed.js + auto.js 必需,
+        # origN(原文件, 文件名白名单 original.pdf / original-pN.png|jpg)可选; 目录单 path 指向 fixed.js
+        if fields.get("target", (None, b""))[1].decode("utf-8", "replace") == "score-bundle":
+            import json
+            import time
+            folder = fields.get("folder", (None, b""))[1].decode("utf-8", "replace")
+            if not SCORE_FOLDER_RE.match(folder) or ".." in folder or folder.endswith("/"):
+                return self._json(400, {"ok": False, "error": "bad folder (want Score/book/piece)"})
+            want = {"fixed": "fixed.js", "auto": "auto.js"}
+            blobs = {}
+            for field, name in want.items():
+                if field not in fields or fields[field][0] is None:
+                    return self._json(400, {"ok": False, "error": "missing file: " + field})
+                data = fields[field][1]
+                if not data or len(data) > MAX_FILE:
+                    return self._json(400, {"ok": False, "error": "bad size on " + field})
+                blobs[name] = data
+            for key in sorted(fields):
+                if not re.match(r"^orig[0-9]+$", key) or fields[key][0] is None:
+                    continue
+                fn = fields[key][0] or ""
+                if not SCORE_ORIG_RE.match(fn):
+                    return self._json(400, {"ok": False, "error": "bad original name: " + fn[:40]})
+                data = fields[key][1]
+                if not data or len(data) > MAX_FILE:
+                    return self._json(400, {"ok": False, "error": "bad size on " + key})
+                blobs[fn] = data
+            for name, data in blobs.items():
+                dest = os.path.join(SCORE_ROOT, folder, name)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "wb") as f:
+                    f.write(data)
+                os.chmod(dest, 0o644)
+            title = fields.get("title", (None, b""))[1].decode("utf-8", "replace").strip()
+            if not title:
+                title = os.path.basename(folder)
+            bpm_raw = fields.get("bpm", (None, b""))[1].decode("utf-8", "replace").strip()
+            meter_raw = fields.get("meter", (None, b""))[1].decode("utf-8", "replace").strip()
+            try:
+                bpm = min(300, max(20, int(bpm_raw))) if bpm_raw else None
+            except ValueError:
+                bpm = None
+            meter = meter_raw if re.match(r"^\d{1,2}/\d{1,2}$", meter_raw) else None
+            mf = os.path.join(SCORE_ROOT, "Score", "scores.json")
+            manifest = {"scores": []}
+            if os.path.exists(mf):
+                try:
+                    with open(mf) as f:
+                        old = json.load(f)
+                    if isinstance(old, dict) and isinstance(old.get("scores"), list):
+                        manifest = old
+                except (ValueError, OSError):
+                    pass
+            p = folder + "/fixed.js"
+            originals = sorted(n for n in blobs if n not in ("fixed.js", "auto.js"))
+            entry = {"path": p, "title": title[:80], "bpm": bpm, "meter": meter,
+                     "bundle": {"auto": folder + "/auto.js",
+                                "original": [folder + "/" + n for n in originals]},
+                     "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+            manifest["scores"] = [entry] + [s for s in manifest["scores"]
+                                            if isinstance(s, dict) and s.get("path") != p][:499]
+            with open(mf, "w") as f:
+                json.dump(manifest, f, ensure_ascii=False, indent=1)
+            os.chmod(mf, 0o644)
+            return self._json(200, {"ok": True, "path": p,
+                                    "files": sorted(blobs) + ["scores.json"]})
         d = fields.get("dir", (None, b""))[1].decode("utf-8", "replace")
         if not DIR_RE.match(d):
             return self._json(400, {"ok": False, "error": "bad dir"})
