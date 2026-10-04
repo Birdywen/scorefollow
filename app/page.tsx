@@ -3121,16 +3121,17 @@ export default function ScoreFollowPage() {
   // 在 preload 预设恢复之后再压一层, 速度随链接走, 发给学生点开即用。
   const applyUrlOverrides = useCallback((params: URLSearchParams) => {
     const cfg: Record<string, unknown> = {};
-    const bpm = Number(params.get("bpm"));
-    if (Number.isFinite(bpm)) cfg.bpm = Math.min(300, Math.max(20, Math.round(bpm)));
+    // 缺参数时 params.get 返回 null: 必须先判有无, Number(null)===0 会误触下限 (bpm=20/speed=0.1)
+    const bpmRaw = (params.get("bpm") || "").trim();
+    if (/^\d+$/.test(bpmRaw)) cfg.bpm = Math.min(300, Math.max(20, parseInt(bpmRaw, 10)));
     const meter = (params.get("meter") || "").trim();
     if (/^\d{1,2}\/\d{1,2}$/.test(meter)) cfg.meter = meter;
-    const countIn = Number(params.get("countIn"));
-    if (Number.isFinite(countIn)) cfg.countIn = Math.min(8, Math.max(0, Math.round(countIn)));
+    const countInRaw = (params.get("countIn") || "").trim();
+    if (/^\d+$/.test(countInRaw)) cfg.countIn = Math.min(8, Math.max(0, parseInt(countInRaw, 10)));
     const sound = params.get("sound") || "";
     if (["wood", "clave", "beep", "digital", "snare"].includes(sound)) cfg.sound = sound;
-    const speed = Number(params.get("speed"));
-    if (Number.isFinite(speed)) setSpeed(Math.min(4, Math.max(0.1, speed)));
+    const speedRaw = (params.get("speed") || "").trim();
+    if (/^\d+(\.\d+)?$/.test(speedRaw)) setSpeed(Math.min(4, Math.max(0.1, Number(speedRaw))));
     if (!Object.keys(cfg).length) return;
     // 引擎可能稍后才挂载: 先试一次, 不成则跟 metro-state 重试(约 3 秒)
     let tries = 0;

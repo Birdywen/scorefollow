@@ -65,7 +65,7 @@ if ((string)($_POST["target"] ?? "") === "score") {
   $entry = array(
     "path" => $path,
     "title" => mb_substr($title, 0, 80),
-    "bpm" => max(20, min(300, (int)($_POST["bpm"] ?? 0))) ?: null,
+    "bpm" => (isset($_POST["bpm"]) && preg_match('/^\d+$/', trim((string)$_POST["bpm"]))) ? max(20, min(300, (int)$_POST["bpm"])) : null,
     "meter" => preg_match('/^\d{1,2}\/\d{1,2}$/', (string)($_POST["meter"] ?? "")) ? (string)$_POST["meter"] : null,
     "updatedAt" => gmdate("Y-m-d\TH:i:s\Z"),
   );
