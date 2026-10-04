@@ -35,13 +35,13 @@ export const legacyOpt: SynpdfOpt = {
   drmpl2: 2, seln: 0, delay: 0, ipaddr: "", mstr: 0, bpmsr: "4-20-1", loop: 0,
   annot: 0, zwgrens: 0.7, voorna: 0.9, mtdrmpl: 0.85, dx: 3, fscr: 0, pagenum: 1, // mtdrmpl 原版默认 0.8, 本项目默认 0.85(用户指定)
   playbtn: 0, mmin: "", fixwd: 1000, lastSynced: -2, eerst: 0, sysprf: 0, onestf: 0,
-  hd: 1, deskew: 1, // hd: 显示高清渲染(分析仍用 pagewd); deskew: 扫描偏斜自动转正
+  hd: 1, deskew: 0, // hd: 显示高清渲染(分析仍用 pagewd); deskew: 默认关(2026-10-04: 光栅旋转把细竖线碎成楼梯, 单列连续性崩; 倾斜页手动开)
   notemask: 0, widrescue: 1, // notemask(默认关)=先抠实心符头+符干再认线; widrescue(v25 默认开)=宽空档按间距先验救回被符干子句误杀的真线
   homrgate: 1, // HoMR 音符模板门(有门数据时 veto 符干; 无数据纯透传)
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 27;
+export const ALGO_VERSION = 28;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */

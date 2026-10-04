@@ -38,7 +38,7 @@ import styles from "./page.module.css";
 const DEFAULT_ADV: Record<string, number> = {
   zwgrens: 0.7, drmpl: 0.4, drmpl2: 2, mtdrmpl: 0.85, voorna: 0.9, dx: 3,
   sysprf: 0, onestf: 0, eerst: 0, skipn: 0, seln: 0, cropx: 0,
-  pagewd: 1000, fixwd: 1000, hd: 1, deskew: 1, homrgate: 1,
+  pagewd: 1000, fixwd: 1000, hd: 1, deskew: 0, homrgate: 1,
 };
 // stepper 合法范围(与原版 synpdf.html 输入框 min/max 一致)
 const ADV_RANGES: Record<string, [number, number]> = {
@@ -801,7 +801,7 @@ export default function ScoreFollowPage() {
         let proxy: any = null;
         const imgDoc = (pdf as any)?.__sfImage as { images: { bmp: ImageBitmap; w: number; h: number }[] } | undefined;
         const anaW = Math.max(1, Math.round(opt.pagewd || 1000));
-        const deskewEnabled = (opt.deskew ?? 1) !== 0;
+        const deskewEnabled = (opt.deskew ?? 0) !== 0;
         const hdEnabled = (opt.hd ?? 1) !== 0;
         const rasterMode = `${scoreRevisionRef.current}:${imgDoc ? "image" : "pdf"}:${anaW}:deskew${deskewEnabled ? 1 : 0}`;
         if (analysisRasterModeRef.current !== rasterMode) {
@@ -3646,7 +3646,7 @@ export default function ScoreFollowPage() {
               <label className={`${styles.pill} ${opt.onestf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.onestf ? true : false} onChange={(e) => applyAdv("onestf", e.target.checked ? 1 : 0)} /> onestf</label>
               <label className={`${styles.pill} ${opt.eerst ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.eerst ? true : false} onChange={(e) => applyAdv("eerst", e.target.checked ? 1 : 0)} /> eerst</label>
               <label className={`${styles.pill} ${(opt.hd ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.hd ?? 1) ? true : false} onChange={(e) => applyAdv("hd", e.target.checked ? 1 : 0)} title={lang === "zh" ? "高清渲染: 显示按屏幕超采样, 分析分辨率不变" : "HiDPI render: display upsampled, analysis unchanged"} /> hd</label>
-              <label className={`${styles.pill} ${(opt.deskew ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.deskew ?? 1) ? true : false} onChange={(e) => applyAdv("deskew", e.target.checked ? 1 : 0)} title={lang === "zh" ? "偏斜校正: 扫描摆不正自动转正" : "Deskew: auto-straighten tilted scans"} /> deskew</label>
+              <label className={`${styles.pill} ${(opt.deskew ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.deskew ?? 0) ? true : false} onChange={(e) => applyAdv("deskew", e.target.checked ? 1 : 0)} title={lang === "zh" ? "偏斜校正: 扫描摆不正自动转正（默认关：转正会把细竖线碎成楼梯）" : "Deskew: auto-straighten tilted scans (default off: rotation fragments thin verticals)"} /> deskew</label>
               <label className={`${styles.pill} ${(opt.notemask ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.notemask ?? 0) ? true : false} onChange={(e) => applyAdv("notemask", e.target.checked ? 1 : 0)} title={lang === "zh" ? "音符优先: 先抠符头符干再认小节线(实验)" : "Notes first: mask noteheads/stems before bar detection (experimental)"} /> notemask</label>
               <label className={`${styles.pill} ${(opt.widrescue ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.widrescue ?? 0) ? true : false} onChange={(e) => applyAdv("widrescue", e.target.checked ? 1 : 0)} title={lang === "zh" ? "宽度先验: 过宽小节低阈抢救淡线(实验)" : "Width prior: rescue faint bars in wide gaps (experimental)"} /> widrescue</label>
               <label className={`${styles.pill} ${(opt.homrgate ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.homrgate ?? 1) ? true : false} onChange={(e) => applyAdv("homrgate", e.target.checked ? 1 : 0)} title={lang === "zh" ? `HoMR 音符门: 有门数据时否决符干(只否决不新增)${homrGateInfo ? ` · ${homrGateInfo}` : " · 当前无门数据"}` : `HoMR note gate: veto stems when gate data present (veto-only)${homrGateInfo ? ` · ${homrGateInfo}` : " · no gate data"}`} /> homrgate{homrGateInfo ? "·" : ""}</label>

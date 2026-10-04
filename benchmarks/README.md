@@ -105,6 +105,9 @@
   HOMR 回到 FAIL(1)=Toccatta 167 既有；`npm run verify` 通过。
   警告：touch gate 只在 2 个已仲裁样本上验证过（prox 1 vs 3），后遇到「单符头重蹭（h>sp）真线」或
   「段首单点干净竖线」会反例，届时以仲裁为准调门限，不要硬保数字。
+- algo v28（2026-10-04）：deskew 默认关。Boek bundle 证明：浏览器光栅旋转纠偏（~0.5°）把 2px 竖线碎成楼梯，
+  单列 run 0.97→0.08，候选形不成，v27 类回退够不着——关掉后正确率大增。倾斜扫描页仍可手动开 deskew。
+  benchmarks 管线从不转光栅，不受影响；版本号 bump 只为刷新浏览器分析缓存（key 含版本）。
 - 数据再生：`python3 scripts/gpu-data.py [slug...]`（GPU 端点见脚本头）。
 
 ## HOMR 交叉验证 (`benchmarks/homr/`, `npm run homr`)
