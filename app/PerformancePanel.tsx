@@ -7,6 +7,7 @@ import {
   saveTakeBlob, validateTakeSync, type PracticeSession,
 } from "@/lib/practice-sync";
 import VisualReport, { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
+import { isValidAnalysisResult, isValidJobEnvelope } from "@/lib/analysis-guard";
 
 type Note = {
   id: string; measure: number; pitchMidi: number; expectedSec: number;
@@ -141,6 +142,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
   const [busyTakeId, setBusyTakeId] = useState<string | null>(null);
+  const [startingRecording, setStartingRecording] = useState(false);
   const [error, setError] = useState("");
   const [showDemo, setShowDemo] = useState(false);
   const [mockNotes] = useState(makeMockNotes);
@@ -155,6 +157,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const player = useRef<HTMLAudioElement>(null);
   const alive = useRef(true);
   const analyzeAbortRef = useRef<AbortController | null>(null);
+  const startingRecordingRef = useRef(false);
   const takesRef = useRef<Take[]>([]);
   takesRef.current = takes;
   const zh = lang === "zh";
@@ -265,11 +268,13 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   }
 
   async function startSyncRecording() {
-    if (recording || !xmlFile) { setError(zh ? "请先完成 OMR 或导入 MusicXML，再开始同步录音" : "Complete OMR or import MusicXML before synced recording"); return; }
+    if (startingRecordingRef.current || recording || !xmlFile) { setError(zh ? "请先完成 OMR 或导入 MusicXML，再开始同步录音" : "Complete OMR or import MusicXML before synced recording"); return; }
     if (!Number.isFinite(bpm) || bpm < 30 || bpm > 200) { setError("BPM: 30–200"); return; }
     if (!Number.isInteger(startMeasure) || startMeasure < 1) { setError(zh ? "请选择有效的开始小节" : "Select a valid starting measure"); return; }
     if (![2, 3, 4, 6].includes(beatsPerMeasure)) { setError(zh ? "拍号暂支持 2/3/4/6 拍" : "Meter supports 2/3/4/6 beats"); return; }
     if (!Number.isInteger(countInBeats) || countInBeats < 0 || countInBeats > 8) { setError(zh ? "预备拍请输入 0–8" : "Count-in must be 0–8"); return; }
+    startingRecordingRef.current = true;
+    setStartingRecording(true);
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new Error(zh ? "浏览器不支持录音；请用上传录音（HTTP 页面可能禁用麦克风）" : "Recording unavailable; upload audio instead (mic may be blocked on HTTP)");
       const metro = (window as unknown as { __sgaMetroPractice?: PracticeMetro }).__sgaMetroPractice;
@@ -337,6 +342,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         stream.current = null;
       }
       setError(exc instanceof Error ? exc.message : String(exc));
+    } finally {
+      startingRecordingRef.current = false;
+      if (alive.current) setStartingRecording(false);
     }
   }
 
@@ -371,6 +379,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       const response = await fetch(`${base}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const data = await readJsonResponse<AnalysisJob>(response);
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (!isValidJobEnvelope(data)) throw new Error("分析服务返回了无效任务 / Analysis service returned an invalid job");
       updateTake(take.id, { jobId: data.id, jobStatus: data.status });
       for (let i = 0; i < 240; i++) {
         await new Promise((r) => setTimeout(r, 1500));
@@ -378,8 +387,12 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         const poll = await fetch(`${base}/jobs/${data.id}`, { signal: controller.signal });
         const job = await readJsonResponse<AnalysisJob>(poll);
         if (!poll.ok) throw new Error(job.error || `HTTP ${poll.status}`);
+        if (!isValidJobEnvelope(job)) throw new Error("分析服务返回了无效任务 / Analysis service returned an invalid job");
         updateTake(take.id, { jobStatus: job.status, error: job.error });
-        if (job.status === "completed" && job.result) { updateTake(take.id, { result: job.result as Result }); break; }
+        if (job.status === "completed") {
+          if (!isValidAnalysisResult(job.result)) throw new Error("分析服务返回了无效结果 / Analysis service returned an invalid result");
+          updateTake(take.id, { result: job.result as Result }); break;
+        }
         if (job.status === "failed") break;
       }
     } catch (exc) {
@@ -418,6 +431,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           ...(removedFirstRest ? { prependRestBeats: removedBeats } : {}) }) });
       const data = await readJsonResponse<OmrJob>(response);
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (!isValidJobEnvelope(data)) throw new Error("识别服务返回了无效任务 / OMR service returned an invalid job");
       if (alive.current) setOmrJob(data);
     } catch (exc) { if (alive.current) setError(exc instanceof Error ? exc.message : String(exc)); }
     finally { if (alive.current) setOmrBusy(false); }
@@ -431,6 +445,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         const response = await fetch(`${apiBase(api)}/omr/jobs/${omrJob.id}`, { signal: controller.signal });
         const data = await readJsonResponse<OmrJob>(response);
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        if (!isValidJobEnvelope(data)) throw new Error("识别服务返回了无效任务 / OMR service returned an invalid job");
         if (!alive.current) return;
         setOmrJob(data);
         if (data.status === "completed" && data.result) {
@@ -544,7 +559,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         </select></label>
       <div className={styles.actions}>
         {!recording
-          ? <button onClick={() => { void startSyncRecording(); void refreshDevices(); }} disabled={omrActive || busyTakeId != null || !xmlFile}>{zh ? "● 同步录音" : "● Start synced take"}</button>
+          ? <button onClick={() => { void startSyncRecording(); void refreshDevices(); }} disabled={omrActive || busyTakeId != null || !xmlFile || startingRecording}>{zh ? "● 同步录音" : "● Start synced take"}</button>
           : <button onClick={stopSyncRecording}>{zh ? "■ 停止并保存" : "■ Stop & keep"}</button>}
         <label className={styles.upload}>{zh ? "上传录音为一遍" : "Upload as take"}<input type="file" accept="audio/*,.wav,.m4a,.mp3,.webm" hidden
           onChange={(e) => { const file = e.target.files?.[0]; if (file) void addTakeBlob(file, { startMeasure, bpm, beatsPerMeasure, countInBeats, firstBeatAudioSec: null, sessionId: "upload" }, file.name); e.target.value = ""; }} /></label>
