@@ -12,6 +12,7 @@ import urllib.request
 import uuid
 
 from .engine import parse_score, read_wav
+from .validation import validate_instrument, validate_bpm
 
 VERSION = "piano-midi-0.3"
 MATCH_WINDOW_SEC = 0.30
@@ -80,6 +81,8 @@ def transcribe_notes(wav: bytes) -> list | None:
 
 
 def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> dict:
+    validate_instrument("piano", ["piano"])
+    validate_bpm(bpm, 30, 200)
     signal, rate = read_wav(wav)
     audio_sec = len(signal) / rate
     score_notes = [n for n in parse_score(xml) if n["measure"] >= start_measure]

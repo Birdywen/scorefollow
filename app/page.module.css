@@ -66,35 +66,47 @@
 .controlPanel { position: relative; inset: auto; flex: 0 0 292px; width: 292px; max-height: none; box-sizing: border-box; overflow-y: auto; border-width: 0 1px 0 0; border-radius: 0; padding: 16px 14px; box-shadow: none; z-index: 2; }
 .helpPanel { top: 112px; right: 14px; left: auto; width: min(360px, calc(100vw - 28px)); }
 .helpBackdrop { position: fixed; inset: 0; z-index: 10050; display: grid; place-items: center; padding: 20px; background: radial-gradient(circle at 50% 0%, rgba(61,123,255,.18), rgba(14,24,39,.72) 58%); backdrop-filter: blur(7px); }
-.helpDialog { width: min(760px, 100%); max-height: min(88vh, 820px); overflow: hidden; display: flex; flex-direction: column; color: var(--sf-ink); background: var(--sf-surface); border: 1px solid var(--sf-border); border-radius: 24px; box-shadow: 0 28px 90px rgba(13,28,58,.32); }
-.helpHero { position: relative; display: flex; align-items: center; gap: 18px; padding: 30px 34px 26px; color: #fff; background: linear-gradient(135deg, #12316e, #2563eb 58%, #18a6a1); }
+.helpDialog { width: min(820px, 100%); max-height: min(88vh, 880px); max-height: min(calc(100dvh - 40px), 880px); overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; color: var(--sf-ink); background: var(--sf-surface); border: 1px solid var(--sf-border); border-radius: 24px; box-shadow: 0 28px 90px rgba(13,28,58,.32); }
+.helpHero { position: relative; display: flex; flex-shrink: 0; align-items: center; gap: 18px; padding: 28px; color: #fff; background: linear-gradient(135deg, #12316e, #2563eb 58%, #18a6a1); }
+.helpHero > div:nth-child(2) { min-width: 0; }
 .helpHeroIcon { display: grid; place-items: center; flex: 0 0 56px; width: 56px; height: 56px; border: 1px solid rgba(255,255,255,.35); border-radius: 18px; background: rgba(255,255,255,.15); font: 700 29px Georgia, serif; box-shadow: 0 10px 24px rgba(0,0,0,.14); }
 .helpEyebrow { margin: 0 0 6px; opacity: .75; font-size: 10px; font-weight: 800; letter-spacing: .18em; }
 .helpHero h2 { margin: 0; font-size: clamp(20px, 3vw, 30px); letter-spacing: -.03em; }
 .helpHero p:last-child { max-width: 590px; margin: 8px 0 0; color: rgba(255,255,255,.8); font-size: 13px; line-height: 1.6; }
 .helpClose { align-self: flex-start; margin-left: auto; padding: 2px 8px; border: 0; border-radius: 9px; color: #fff; background: rgba(255,255,255,.14); font-size: 25px; line-height: 1; cursor: pointer; }
 .helpClose:hover { background: rgba(255,255,255,.25); }
-.helpBody { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 22px 30px 14px; }
-.helpCard { display: flex; gap: 13px; min-height: 145px; padding: 17px; border: 1px solid var(--sf-border); border-radius: 16px; background: var(--sf-elevated); }
+.helpBody { display: flex; flex: 0 0 auto; flex-direction: column; gap: 24px; padding: 24px 28px; }
+.helpQuickStart { min-width: 0; }
+.helpSectionTitle { margin: 0 0 12px; color: var(--sf-ink); font-size: 16px; line-height: 1.5; }
+.helpCardGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.helpCard { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 18px; border: 1px solid var(--sf-border); border-radius: 14px; background: var(--sf-elevated); }
+.helpCard > div { flex: 1; min-width: 0; }
 .helpCardAccent { border-color: #9dbbfa; background: linear-gradient(145deg, #f0f6ff, var(--sf-elevated)); }
 .helpCardIcon { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 11px; color: #2563eb; background: #dce9ff; font-weight: 800; }
 .helpCard h3, .helpShortcuts h3 { margin: 0; color: var(--sf-ink); font-size: 14px; }
-.helpCard p { margin: 8px 0 13px; color: var(--sf-muted); font-size: 14px; line-height: 1.7; }
+.helpCard p { margin: 8px 0 14px; color: var(--sf-muted); font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
 .helpCard kbd, .shortcutGrid kbd { display: inline-block; min-width: 25px; margin: 0 4px 0 0; padding: 3px 7px; border: 1px solid var(--sf-border); border-bottom-width: 2px; border-radius: 6px; color: var(--sf-ink); background: var(--sf-surface); font: 700 11px ui-monospace, monospace; text-align: center; }
 .helpMeta { margin-left: 3px; color: var(--sf-muted); font-size: 11px; }
 .helpTag { display: inline-block; padding: 4px 9px; border-radius: 999px; color: #087f78; background: #d9f5ef; font-size: 11px; font-weight: 700; }
-.helpShortcuts { grid-column: 1 / -1; padding: 16px 17px; border-top: 1px solid var(--sf-border); }
-.analysisHelp { grid-column: 1 / -1; min-width: 0; padding: 17px; border: 1px solid var(--sf-border); border-radius: 16px; background: var(--sf-elevated); }
-.analysisHelp h3 { margin: 0; color: var(--sf-ink); font-size: 14px; }
-.analysisHelp p { margin: 10px 0; color: var(--sf-muted); font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
-.analysisHelp details { padding: 12px 0; border-top: 1px solid var(--sf-border); }
-.analysisHelp summary { color: var(--sf-ink); font-size: 13px; font-weight: 700; cursor: pointer; }
+.helpShortcuts { padding: 18px; border: 1px solid var(--sf-border); border-radius: 14px; background: var(--sf-elevated); }
+.analysisHelp { min-width: 0; padding: 20px; border: 1px solid var(--sf-border); border-radius: 14px; background: var(--sf-elevated); }
+.analysisHelp h3 { margin: 0; color: var(--sf-ink); font-size: 16px; line-height: 1.5; }
+.analysisHelp p { margin: 10px 0 18px; color: var(--sf-muted); font-size: 13px; line-height: 1.85; overflow-wrap: anywhere; }
+.analysisHelp details { border-top: 1px solid var(--sf-border); }
+.analysisHelp summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 12px 0; list-style: none; color: var(--sf-ink); font-size: 13px; line-height: 1.6; font-weight: 700; cursor: pointer; }
+.analysisHelp summary::-webkit-details-marker { display: none; }
+.analysisHelp summary::after { content: ""; flex: 0 0 7px; width: 7px; height: 7px; margin-right: 4px; border-right: 2px solid var(--sf-muted); border-bottom: 2px solid var(--sf-muted); transform: rotate(45deg); }
+.analysisHelp details[open] > summary::after { transform: rotate(225deg); }
+.analysisHelp details > p { margin: 0 0 16px; padding-right: 24px; }
 .analysisHelp summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 4px; border-radius: 3px; }
 .helpClose { min-width: 44px; min-height: 44px; }
 .helpDialog :is(button, summary):focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
 .helpHero .helpClose:focus-visible { outline-color: #fff; }
 .shortcutGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-top: 12px; color: var(--sf-muted); font-size: 12px; }
-.helpFooter { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 30px 20px; border-top: 1px solid var(--sf-border); color: var(--sf-muted); font-size: 11px; }
+.shortcutGrid > span { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.shortcutGrid kbd { flex: 0 0 38px; margin: 0; }
+.helpFooter { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; border-top: 1px solid var(--sf-border); color: var(--sf-muted); font-size: 12px; line-height: 1.6; }
+.helpFooter button { flex-shrink: 0; }
 .page[data-theme="dark"] .helpCardAccent { border-color: #3865ad; background: linear-gradient(145deg, #192c4b, var(--sf-elevated)); }
 .page[data-theme="dark"] .helpCardIcon { color: #91baff; background: #233b64; }
 .page[data-theme="dark"] .helpTag { color: #8ee4d5; background: #173b39; }
@@ -484,10 +496,13 @@ a.secondary {
   .statusFacts span:nth-child(n + 3) { display: none; }
   .exportDialog { padding: 16px; }
   .helpBackdrop { padding: 9px; }
-  .helpDialog { max-height: 94vh; border-radius: 18px; }
-  .helpHero { align-items: flex-start; padding: 23px 20px 20px; }
-  .helpHeroIcon { flex-basis: 44px; width: 44px; height: 44px; border-radius: 14px; }
-  .helpBody { grid-template-columns: 1fr; padding: 16px; }
+  .helpDialog { max-height: 94vh; max-height: calc(100dvh - 18px); border-radius: 18px; }
+  .helpHero { align-items: flex-start; gap: 12px; padding: 20px 16px; }
+  .helpHeroIcon { display: none; }
+  .helpBody { gap: 20px; padding: 16px; }
+  .helpCardGrid { grid-template-columns: 1fr; }
+  .helpCard { padding: 16px; }
+  .analysisHelp { padding: 16px; }
   .helpCard { min-height: 0; }
   .helpShortcuts { grid-column: auto; }
   .shortcutGrid { grid-template-columns: 1fr 1fr; }

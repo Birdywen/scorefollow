@@ -13,6 +13,7 @@ from decimal import Decimal, InvalidOperation
 import numpy as np
 
 from .alignment import locate_excerpt, usable_events
+from .validation import validate_wav_audio, validate_musicxml
 
 VERSION = "string-mono-0.2"
 MAX_SECONDS = 300
@@ -32,19 +33,13 @@ def musicxml_number(text: str | None, label: str) -> Decimal:
 
 def xml_root(xml: str, label: str = "MusicXML") -> ET.Element:
     """共享的 XML 入口防护: 大小上限 + 实体声明拒绝 + 解析错误转 ValueError。"""
-    if not isinstance(xml, str) or len(xml) > 1_000_000 or "<!ENTITY" in xml.upper() or (
-            "<!DOCTYPE" in xml.upper() and "[" in xml.split(">", 1)[0]):
-        raise ValueError(f"{label}过大或包含不支持的实体声明")
-    try:
-        return ET.fromstring(xml)
-    except ET.ParseError as exc:
-        raise ValueError(f"{label}无法解析") from exc
+    return validate_musicxml(xml, label=label)
 
 
 def parse_score(xml: str) -> list[dict]:
     # Standard MusicXML often includes an external PUBLIC DTD. ElementTree does
     # not resolve it; forbid internal entity definitions, not the normal header.
-    root = xml_root(xml)
+    root = validate_musicxml(xml)
     if root.tag.rsplit("}", 1)[-1] != "score-partwise":
         raise ValueError("仅支持 score-partwise MusicXML")
     parts = root.findall("./{*}part")
@@ -130,20 +125,8 @@ TRACK_CHUNK_FRAMES = 128
 
 
 def read_wav(data: bytes) -> tuple[np.ndarray, int]:
-    try:
-        with wave.open(io.BytesIO(data), "rb") as wav:
-            rate = wav.getframerate()
-            if wav.getnchannels() != 1 or wav.getsampwidth() != 2 or not 8000 <= rate <= 48000:
-                raise ValueError("请上传单声道 16-bit PCM WAV (8–48 kHz)")
-            frames = wav.getnframes()
-            if frames / rate > MAX_SECONDS or frames / rate < 0.4:
-                raise ValueError("录音长度须为 0.4–300 秒")
-            signal = np.frombuffer(wav.readframes(frames), dtype="<i2").astype(np.float32) / 32768
-    except (wave.Error, EOFError) as exc:
-        raise ValueError("WAV 格式无效") from exc
-    if not np.isfinite(signal).all() or np.max(np.abs(signal)) < 0.005:
-        raise ValueError("录音音量过低")
-    return signal, rate
+    """Parse and validate WAV audio, delegating to validation module."""
+    return validate_wav_audio(data, max_duration=MAX_SECONDS)
 
 
 def track(signal: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -297,10 +280,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     """pitch_notes: [(start_sec, end_sec, midi)] 外部基频传感器(pYIN); onset_hint: [sec]
     外部起音传感器(QM)。两者都可选, 为空时退回自研检测, 打分逻辑不变。
     sync_mode="vamp-beat": 用 QM 拍点时间轴做活网格, 需 beat_map=[sec...]。"""
-    if instrument not in ("violin", "viola", "cello"):
-        raise ValueError("不支持的乐器")
-    if not 30 <= bpm <= 200:
-        raise ValueError("BPM 须在 30–200 之间")
+    from .validation import validate_instrument, validate_bpm
+    validate_instrument(instrument, ["violin", "viola", "cello"])
+    validate_bpm(bpm, 30, 200)
     if sync_mode not in ("legacy", "metronome", "vamp-beat"):
         raise ValueError("无效的同步模式")
     if first_beat_audio_sec is not None and (
