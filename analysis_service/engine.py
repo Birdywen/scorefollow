@@ -15,6 +15,7 @@ import numpy as np
 from .alignment import locate_excerpt, usable_events
 from .validation import validate_bpm, validate_instrument
 from .error_messages import invalid_bpm, unsupported_instrument
+from .performance_monitor import track_performance
 
 VERSION = "string-mono-0.2"
 MAX_SECONDS = 300
@@ -43,6 +44,7 @@ def xml_root(xml: str, label: str = "MusicXML") -> ET.Element:
         raise ValueError(f"{label}无法解析") from exc
 
 
+@track_performance("score_parsing")
 def parse_score(xml: str) -> list[dict]:
     # Standard MusicXML often includes an external PUBLIC DTD. ElementTree does
     # not resolve it; forbid internal entity definitions, not the normal header.
