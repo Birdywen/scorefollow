@@ -130,3 +130,56 @@
 - [ ] 识别所有逻辑 bug
 - [ ] 制定重构计划
 - [ ] 开始实施优化
+
+### 1.5 深入代码分析结果 (2026-10-05)
+
+#### page.tsx 状态管理分析
+
+**发现的状态管理模式**:
+- 使用了 30+ 个 `useRef` hooks 管理各种状态
+- 主要 ref 类别：
+  - DOM 引用: canvasRef, notationRef, stackRef, pagesHostRef
+  - 数据缓存: analysisRasterCacheRef, displayRasterCacheRef, pagePngRef
+  - 文档状态: pdfDocRef, pageProxyRef, pdfBytesRef
+  - 播放控制: mediaRef, wijzerRef, rafRef, clockRef
+  - 分析数据: autoRef, manualRef, homrGateRef
+
+**评估**:
+- ✅ 没有发现 TODO/FIXME/BUG 注释（代码质量较好）
+- ⚠️ ref 数量过多，状态管理复杂
+- ⚠️ 大量状态难以追踪和调试
+- ✅ 多语言字符串使用静态对象管理（合理）
+
+#### 确认的优化优先级
+
+**立即可做（低风险）**:
+1. ✅ 帮助页面内容审查和改进
+2. ✅ lib 目录文档完善
+3. ✅ 代码注释和类型定义改进
+4. ✅ CSS 样式统一和优化
+
+**短期计划（中风险）**:
+1. ⏭️ 提取可复用的子组件（从 page.tsx）
+2. ⏭️ PerformancePanel 模块化
+3. ⏭️ 状态管理优化（考虑使用 Context 或状态管理库）
+
+**长期计划（高风险）**:
+1. 🔄 page.tsx 大规模重构（拆分为多个页面/组件）
+2. 🔄 引入现代状态管理方案
+3. 🔄 性能优化（React.memo, useMemo, useCallback）
+
+## 阶段 2: 帮助页面优化实施 (2026-10-05)
+
+### 2.1 AnalysisHelp.tsx 改进
+
+**目标**: 改进帮助页面的用户体验和内容准确性
+
+**计划的改进**:
+- [ ] 添加更好的导航（目录/锚点链接）
+- [ ] 改进多语言切换体验
+- [ ] 检查内容准确性和完整性
+- [ ] 添加搜索功能（可选）
+- [ ] 改进样式和可读性
+
+**开始实施**: 2026-10-05
+
