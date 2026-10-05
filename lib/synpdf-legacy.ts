@@ -1274,8 +1274,13 @@ function stemEndVeto(sysIdx: number, x: number): string {
   let c = xr, cbest = -1;
   for (let cc = xr - 2; cc <= xr + 2; cc++) { let n = 0; for (let r = cs[0]; r <= cs[cs.length - 1]; r++) if (dk(r, cc)) n++; if (n > cbest) { cbest = n; c = cc; } }
   let bi = -1, bcov = 0;
-  for (let i = 0; i < staves.length; i++) { const t = staves[i][0], b = staves[i][staves[i].length - 1]; let n = 0; for (let r = t; r <= b; r++) if (dk(r, c)) n++; const cov = n / Math.max(1, b - t + 1); if (cov > bcov) { bcov = cov; bi = i; } }
+  let strongStaves = 0;
+  for (let i = 0; i < staves.length; i++) { const t = staves[i][0], b = staves[i][staves[i].length - 1]; let n = 0; for (let r = t; r <= b; r++) if (dk(r, c)) n++; const cov = n / Math.max(1, b - t + 1); if (cov >= 0.5) strongStaves++; if (cov > bcov) { bcov = cov; bi = i; } }
   if (bi < 0 || bcov < 0.5) return "";
+  // 跨谱表互证逃生(2026-10-05 suzuki-pian p1s1-805: 反复粗线在淡印栅格顶端短 0.75sp,
+  // 旁窗墨密度 0.52, 被误判符干端点。符干只活在一个谱表里; 同 x 在 >=2 个谱表
+  // 都有纵贯墨段必是跨谱表线(钢琴谱上下小节线对齐), 不可能是符干, 直接放行)。
+  if (strongStaves >= 2) return "";
   const top = staves[bi][0], bot = staves[bi][staves[bi].length - 1];
   const segs: number[][] = []; let cur: number[] | null = null; let gap = 0;
   for (let r = Math.round(top - 6 * sp); r <= Math.round(bot + 6 * sp); r++) {
