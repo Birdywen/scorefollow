@@ -83,5 +83,31 @@ function check(name, cond, detail = "") {
   Object.assign(core.opt, before);
 }
 
+// v29 排除法符头否决: opening 符头核心 + 端部锚定 + 杆头归属。合成单谱表:
+// 真线 x=500 保留, 连头符干 x=300 否决。
+{
+  const W = 1000, H = 300;
+  const rgba = new Uint8ClampedArray(W * H * 4).fill(255);
+  for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255;
+  const px = (x, y) => {
+    const j = (y * W + x) * 4;
+    rgba[j] = rgba[j + 1] = rgba[j + 2] = 0;
+  };
+  for (const y of [100, 108, 116, 124, 132])
+    for (let x = 48; x <= 949; x++) { px(x, y); px(x, y + 1); }
+  for (let y = 98; y <= 134; y++) { px(500, y); px(501, y); }
+  for (let y = 116; y <= 156; y++) { px(300, y); px(301, y); }
+  for (let y = 152; y <= 160; y++) for (let x = 301; x <= 311; x++) {
+    const dx = (x - 306) / 5, dy = (y - 156) / 4;
+    if (dx * dx + dy * dy <= 1) px(x, y);
+  }
+  const r = legacy.countPixFromBuffer(W, H, rgba, 0);
+  const near = (arr, v, t) => (arr || []).some((b) => Math.abs(b - v) <= t);
+  check("headveto-system", r.cxs.length >= 1, String(r.cxs.length));
+  check("headveto-core", near(legacy.headCoreXs(0), 306, 7), JSON.stringify(legacy.headCoreXs(0)));
+  check("headveto-bar-kept", near(r.bxs[0], 500, 3), JSON.stringify(r.bxs[0]));
+  check("headveto-stem-dropped", !near(r.bxs[0], 300, 4), JSON.stringify(r.bxs[0]));
+}
+
 if (failures) { console.error(`${failures} regression check(s) failed`); process.exit(1); }
 console.log("REGRESSION_PASS");

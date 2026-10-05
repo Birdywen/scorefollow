@@ -41,7 +41,7 @@ export const legacyOpt: SynpdfOpt = {
 };
 
 /** 算法版本号: 缓存键与 timing 校验共用, 改动识别逻辑时递增 */
-export const ALGO_VERSION = 28;
+export const ALGO_VERSION = 29;
 /** 模块状态: 每系统亮度阈值数组(drawRes 写, countVsys/findBarLines 读) */
 export const witArr: number[] = [];
 /** 谱线间距(drawRes 内计算, findBarLines 依赖) */
@@ -1185,6 +1185,10 @@ export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: num
         return true;
       })()) ||
     (sf0.runRatio >= 0.8 && sf0.noteheadProximity >= 1 && Math.max(sf0.topBlob, sf0.botBlob) >= 6) ||
+    // v29 排除法符头否决: opening 符头核心 0.9sp 内即符干(自开头必贴杆)。
+    // No_19 上 10 符干全杀、真线零损失; 双线豁免在前, 强孪生对不受影响。
+    // 仅单谱表系统(多谱表跨谱表几何单列不可分, 保守关闭, 见 headVetoDebug)。
+    headCoreVeto(sysIdx, Math.round(x)) ||
     // extAbove(谱上延伸墨)全局否决已证伪: GT 上 26 个真线被邻音符头误杀
     // (自头/邻头单列不可分, v17.4), 保留字段供窄对仲裁等上下文规则参考。
     // 不对称窄外伸(267: 上伸10px/下0px)同样证伪: GT 上 21 个真线同形
@@ -1284,4 +1288,183 @@ function stemEndVeto(sysIdx: number, x: number): string {
   if (shB >= STEM_END_A) { const h = head(seg[1]); if (h >= STEM_END_H) return `dropped-stem-end bot sh=${shB} head=${h}`; }
   return "";
 }
-function findBarLines(a: any, b: any, c: any): any { lastEB_A = a; lastEB_B = b; lastEB_C = c; var d: any, e: any, f: any, g: any, k = legacyOpt.mtdrmpl, l = legacyOpt.voorna, p = 1 * legacyOpt.dx, n = 2 * spatium, h: any[] = []; lastBarDiagnostics.length = 0; lastSystemConfidence.length = 0; lastSysM.length = 0; for (d = 0; d < a.length; ++d) { var m = 3 * witArr[d]; var u = a[d].xs; var q = u.x1 + 50; var v = u.x2 - 20; q >= v && (q = u.x1, v = u.x2); var r = a[d].cs; var w = r[0]; var t = r[r.length - 1]; var C = (w - n) * b; var z = w * b; var A = t * b; var D = (t + n) * b; var evd = columnEvidence(r, m, b, c, n); r = evd.rs; var y: any = evd.ys; f = y.slice(q, v); f.sort(function (a: any, b: any) { return b - a }); m = f[0]; if (frozenM) { var fhit = false; for (var fmi = 0; fmi < frozenM.length; fmi++) { var fe = frozenM[fmi]; if (Math.abs(fe.top - w) <= 3 && Math.abs(fe.bot - t) <= 3) { m = fe.m; fhit = true; break; } } } lastSysM.push({ top: w, bot: t, m: m }); t = w = 0; for (f = q; f < v; f++)q = y[f], q > m * k && (r[f - p] > w && (w = r[f - p]), r[f + p] > t && (t = r[f + p])); var cands: { x: number; rel: number; bypass: boolean; weak: boolean }[] = []; var csRows0: number[] = a[d].cs; var rw0 = csRows0[0]; var rt0 = csRows0[csRows0.length - 1]; var darkSum0 = 3 * witArr[d]; for (f = 5; f < r.length - 5; f++) { var yy = y[f]; var weakPeak = false; if (!(yy > m * k)) { if (r[f - p] > w * l && r[f + p] > t * l) { if (yy > m * 0.7 && columnRunRatio(f, rw0, rt0, b, c, darkSum0) >= 0.65) { weakPeak = true; var wLo = Math.max(5, f - Math.round(spatium)); var wHi = Math.min(r.length - 6, f + Math.round(spatium)); for (var wnb = wLo; wnb <= wHi; wnb++) { if (y[wnb] > yy) { weakPeak = false; break; } } if (weakPeak) { var wsf = barStemFeatures(d, f); if (!wsf || Math.max(wsf.topBlob, wsf.botBlob) >= 4) weakPeak = false; } } } if (!weakPeak) continue; } if (f - u.x1 < Math.max(80, 8 * spatium)) continue; var passC = r[f - p] > w * l && r[f + p] > t * l; var bypass = false; if (!passC) { var br0 = columnRunRatio(f, rw0, rt0, b, c, darkSum0); if (br0 < 0.9 && !(yy > m * k && br0 >= 0.75 && barRescueClean(d, f, rw0, rt0))) continue; bypass = true; } var sf0 = barStemFeatures(d, f); if (barColumnVetoed(d, f, rw0, rt0)) continue; cands.push({ x: f, rel: m > 0 ? yy / m : 0, bypass, weak: weakPeak }); } var keptNms = nmsBarPeaks(cands, spatium); var minGap = 3 * spatium; var dblGap = Math.max(2, spatium * 0.7); var kept: number[] = []; var keptRel: { x: number; rel: number }[] = []; for (const cand of keptNms) { if (!kept.length) { kept.push(cand.x); keptRel.push(cand); continue; } var prevX = kept[kept.length - 1]; var prevRel = keptRel[keptRel.length - 1].rel; var gap = cand.x - prevX; var strongPair = cand.rel >= 0.85 && prevRel >= 0.85; var need = strongPair ? dblGap : minGap; if (gap >= need) { kept.push(cand.x); keptRel.push(cand); } else if (cand.rel > prevRel + 0.05) { kept[kept.length - 1] = cand.x; keptRel[keptRel.length - 1] = cand; } } var keptF: number[] = []; var keptRelF: { x: number; rel: number }[] = []; for (var kfi = 0; kfi < kept.length; kfi++) { if (!barColumnVetoed(d, kept[kfi], rw0, rt0)) { keptF.push(kept[kfi]); keptRelF.push(keptRel[kfi]); } else { var fbx = -1; for (var fbd = 1; fbd <= 2 && fbx < 0; fbd++) { for (var fsg = -1; fsg <= 1; fsg += 2) { var fcx = kept[kfi] + fsg * fbd; var isCand = false; for (var fci = 0; fci < cands.length; fci++) if (cands[fci].x === fcx) { isCand = true; break; } if (!isCand || barColumnVetoed(d, fcx, rw0, rt0)) continue; var fsf = barStemFeatures(d, fcx); var okTouch = false; if (fsf && 1 * fsf.noteheadProximity <= 2) { okTouch = true; var fsegs = fsf.headSegs; if (fsegs) for (var fhi = 0; fhi < fsegs.length; fhi++) if (1 * fsegs[fhi].h > spatium) { okTouch = false; break; } } if (okTouch) { fbx = fcx; break; } } } if (fbx >= 0) { keptF.push(fbx); keptRelF.push(keptRel[kfi]); lastBarDiagnostics.push({ system: d, x: kept[kfi], strength: 0, rel: 0, kept: true, reason: "kept-nms-fallback@" + fbx }); } else lastBarDiagnostics.push({ system: d, x: kept[kfi], strength: 0, rel: 0, kept: false, reason: "dropped-nms-veto" }); } } kept = keptF; keptRel = keptRelF; var mgA: number[] = []; for (var mgi = 1; mgi < kept.length; mgi++) mgA.push(kept[mgi] - kept[mgi - 1]); if (mgA.length) { mgA.sort(function (x, y) { return x - y }); var medGap = mgA[Math.floor(mgA.length / 2)]; var mergeMax = Math.min(0.45 * medGap, 2 * spatium); var pairMax2 = Math.min(0.45 * medGap, 3.5 * spatium); var pairMax = Math.max(mergeMax, pairMax2); if (pairMax >= 3) { var mPass = true; while (mPass) { mPass = false; for (var mqi = 1; mqi < kept.length; mqi++) { var pairGap = kept[mqi] - kept[mqi - 1]; if (pairGap < pairMax) { var featL = barStemFeatures(d, kept[mqi - 1]); var featR = barStemFeatures(d, kept[mqi]); var nbL = featL ? featL.noteheadProximity : 0; var nbR = featR ? featR.noteheadProximity : 0; var mdi = -1; var mdReason = ""; if (pairGap < mergeMax) { if (nbL >= 1 && nbR < 1) mdi = mqi - 1; else if (nbR >= 1 && nbL < 1) mdi = mqi; if (mdi >= 0) mdReason = "dropped-stem-graze"; } if (mdi < 0 && pairGap < pairMax2) { var relL = keptRel[mqi - 1].rel; var relR = keptRel[mqi].rel; var runL = featL ? featL.runRatio : 0; var runR = featR ? featR.runRatio : 0; var weakL = relL < 0.9 && runL < 0.85; var weakR = relR < 0.9 && runR < 0.85; var strongL = relL >= 0.95 && runL >= 0.9; var strongR = relR >= 0.95 && runR >= 0.9; if (weakL && strongR) mdi = mqi - 1; else if (weakR && strongL) mdi = mqi; if (mdi >= 0) mdReason = "dropped-weak-graze"; } if (mdi >= 0) { var mdx = kept[mdi]; kept.splice(mdi, 1); keptRel.splice(mdi, 1); lastBarDiagnostics.push({ system: d, x: mdx, strength: 0, rel: 0, kept: false, reason: mdReason }); mPass = true; break; } } } } } } for (var sei = kept.length - 1; sei >= 0; sei--) { var sex = kept[sei]; if (sex <= u.x1 + 2 || sex >= u.x2 - 2) continue; var ser = stemEndVeto(d, sex); if (ser) { kept.splice(sei, 1); keptRel.splice(sei, 1); lastBarDiagnostics.push({ system: d, x: sex, strength: 0, rel: 0, kept: false, reason: ser }); } } for (const cd of cands) { var isKept = kept.indexOf(cd.x) >= 0; lastBarDiagnostics.push({ system: d, x: cd.x, strength: cd.rel, rel: Math.round(cd.rel * 100) / 100, kept: isKept, reason: isKept ? (cd.weak ? "kept-weak-peak" : cd.bypass ? "kept-straight-bypass" : "kept") : "suppressed-by-nms-or-gap" }); } var conf = scoreSystemConfidence(keptRel, spatium); lastSystemConfidence.push(conf); e = []; v = u.x1; for (const kx of kept) { if (kx > u.x1 + 2 && kx < u.x2 - 2) { e.push(kx); v = kx; } } if (!e.length) { e = [u.x1]; v = u.x1; } else if (e[0] - u.x1 > 3 * spatium) e.unshift(u.x1); if (u.x2 - v > 3 * spatium || e.length === 1) e.push(u.x2); h.push(e) } return h }
+// v29 排除法符头否决(用户思路 2026-10-05: 先找音符墨迹再用排除法)。
+// opening(腐蚀再膨胀)抠实心符头: 2px 符干/谱线腐蚀即亡, 符头缩而复原;
+// 谱线穿头不影响(开运算作用于未擦谱线的原墨)。
+// 候选列距符头核心 <=0.9sp 即否决(符干必连自开头, 杆头相距 0-6px)。
+// No_19 三页实测: 10 符干 nhdx 0-5 全杀, 100 真线 nhdx>=9 零误杀。
+// 按系统缓存(每 findBarLines 一次), 误杀逃生: 双线豁免在前先行返回。
+let headCoreCache: (number[] | null)[] = [];
+let headCoreXYP: { x: number; y: number; w: number; h: number; n: number }[][] = [];
+export function headCoreXs(sysIdx: number): number[] {
+  if (sysIdx < 0) return [];
+  const hit = headCoreCache[sysIdx];
+  if (hit !== undefined && hit !== null) return hit;
+  const xys = computeHeadCores(sysIdx);
+  headCoreXYP[sysIdx] = xys;
+  const xs = xys.map((p) => p.x);
+  headCoreCache[sysIdx] = xs;
+  return xs;
+}
+/** 诊断: 系统符头核心 (x,y,w,h,n), 与 headCoreXs 同源 */
+export function headCoreXY(sysIdx: number): { x: number; y: number; w: number; h: number; n: number }[] {
+  headCoreXs(sysIdx);
+  return (headCoreXYP[sysIdx] ?? []).slice();
+}
+function computeHeadCores(sysIdx: number): { x: number; y: number; w: number; h: number; n: number }[] {
+  const out: { x: number; y: number; w: number; h: number; n: number }[] = [];
+  if (!lastEB_A || sysIdx >= lastEB_A.length) return out;
+  const sys = lastEB_A[sysIdx];
+  const cs: number[] = sys.cs || [];
+  if (cs.length < 4) return out;
+  const stride: number = lastEB_B; const pix: any = lastEB_C;
+  const W = Math.floor(stride / 4); const Hpx = Math.floor(pix.length / stride);
+  if (W <= 0 || Hpx <= 0) return out;
+  const sp = Math.max(1, spatium);
+  const x1 = Math.max(0, sys.xs.x1), x2 = Math.min(W - 1, sys.xs.x2);
+  const r0 = Math.max(0, cs[0] - 3 * sp), r1 = Math.min(Hpx - 1, cs[cs.length - 1] + 3 * sp);
+  const bw = x2 - x1 + 1, bh = r1 - r0 + 1;
+  if (bw <= 0 || bh <= 0) return out;
+  const ink = new Uint8Array(bw * bh);
+  for (let r = 0; r < bh; r++) {
+    const prow = r0 + r;
+    for (let c = 0; c < bw; c++) {
+      const g = prow * stride + (x1 + c) * 4;
+      if (pix[g] + pix[g + 1] + pix[g + 2] < 384) ink[r * bw + c] = 1;
+    }
+  }
+  const ero = new Uint8Array(bw * bh);
+  for (let r = 0; r < bh; r++) for (let c = 0; c < bw; c++) {
+    let m = 1;
+    for (let dr = -1; dr <= 1 && m; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const rr = r + dr, cc = c + dc;
+      if (rr < 0 || rr >= bh || cc < 0 || cc >= bw || !ink[rr * bw + cc]) { m = 0; break; }
+    }
+    ero[r * bw + c] = m;
+  }
+  const opn = new Uint8Array(bw * bh);
+  for (let r = 0; r < bh; r++) for (let c = 0; c < bw; c++) {
+    if (!ero[r * bw + c]) continue;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const rr = r + dr, cc = c + dc;
+      if (rr >= 0 && rr < bh && cc >= 0 && cc < bw) opn[rr * bw + cc] = 1;
+    }
+  }
+  const lab = new Int32Array(bw * bh);
+  let cur = 0;
+  const stack: number[] = [];
+  for (let i = 0; i < bw * bh; i++) {
+    if (!opn[i] || lab[i]) continue;
+    cur++;
+    stack.push(i); lab[i] = cur;
+    let x0 = bw, x1b = -1, y0 = bh, y1b = -1, n = 0;
+    while (stack.length) {
+      const p = stack.pop()!;
+      const pr = Math.floor(p / bw), pc = p % bw;
+      n++;
+      if (pc < x0) x0 = pc; if (pc > x1b) x1b = pc;
+      if (pr < y0) y0 = pr; if (pr > y1b) y1b = pr;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        const rr = pr + dr, cc = pc + dc;
+        if (rr < 0 || rr >= bh || cc < 0 || cc >= bw) continue;
+        const q = rr * bw + cc;
+        if (opn[q] && !lab[q]) { lab[q] = cur; stack.push(q); }
+      }
+    }
+    const w = x1b - x0 + 1, h = y1b - y0 + 1;
+    // w/h 下限 0.6: 小节线与谱线交汇处墨水堆积, opening 后残留窄高墨块
+    // (arpeggione p2s1-397 足部 4x9), 不是符头; 真符头 w/h≈1.0-1.3。
+    // w/h 上限 2.0: 符梁端/连音线头/延音线块多为宽扁 (vivaldi 11x4), 不是符头;
+    // 并排二度双符头 w/h 可到 2.0, 边界保留。
+    if (w >= 0.55 * sp && w <= 1.6 * sp && h >= 0.45 * sp && h <= 1.3 * sp && n >= 0.45 * w * h && w * 5 >= h * 3 && w <= 2 * h)
+      out.push({ x: x1 + Math.floor((x0 + x1b) / 2), y: r0 + Math.floor((y0 + y1b) / 2), w, h, n });
+  }
+  return out;
+}
+/** 候选列邻近符头核心即符干(杆头相贴), 半径 0.9sp(7px@sp8)。
+ * 端部锚定: 符头须在候选列纵向墨段任一端 1sp 内(符干头必居杆端;
+ * 跨谱表/连音线头居杆中段, 不杀)。No_19 上 10 符干全杀。 */
+/** 诊断: headCoreVeto 明细(墨段端部 + 命中符头), 不参与识别 */
+export function headVetoDebug(sysIdx: number, x: number): { vetoed: boolean; s0: number; s1: number; kx: number; ky: number } {
+  const sp = Math.max(1, spatium);
+  const R = Math.max(6, Math.round(0.9 * sp));
+  const bad = { vetoed: false, s0: -1, s1: -1, kx: -1, ky: -1 };
+  if (!lastEB_A || sysIdx < 0 || sysIdx >= lastEB_A.length) return bad;
+  const sys = lastEB_A[sysIdx];
+  const cs: number[] = sys.cs || [];
+  if (cs.length < 4) return bad;
+  // 作用域: 单谱表系统(cs<=6)。多谱表(大谱表/多乐器)存在跨谱表符头、
+  // 贴线和弦等单列不可分几何 (arpeggione/vivaldi 实测 6 真线误杀), 保守关闭。
+  if (cs.length > 6) return bad;
+  const stride: number = lastEB_B; const pix: any = lastEB_C;
+  const W = Math.floor(stride / 4); const Hpx = Math.floor(pix.length / stride);
+  const xi = Math.max(0, Math.min(W - 1, Math.round(x)));
+  const darkSum = 3 * (witArr[sysIdx] ?? 128);
+  const top = Math.max(0, cs[0] - 3 * sp), bot = Math.min(Hpx - 1, cs[cs.length - 1] + 3 * sp);
+  const inkAt = (row: number): boolean => {
+    if (row < 0 || row >= Hpx) return false;
+    for (let c = xi - 1; c <= xi + 1; c++) {
+      if (c < 0 || c >= W) continue;
+      const g = row * stride + c * 4;
+      const s0 = pix[g] + pix[g + 1] + pix[g + 2];
+      const s1 = c + 1 < W ? pix[g + 4] + pix[g + 5] + pix[g + 6] : s0;
+      if (Math.min(s0, s1) < darkSum) return true;
+    }
+    return false;
+  };
+  let s0 = -1, s1 = -1, best = 0, cur0 = -1;
+  for (let r = top; r <= bot + 1; r++) {
+    const on = r <= bot && inkAt(r);
+    if (on && cur0 < 0) cur0 = r;
+    if (!on && cur0 >= 0) {
+      if (r - cur0 > best) { best = r - cur0; s0 = cur0; s1 = r - 1; }
+      cur0 = -1;
+    }
+  }
+  if (s0 < 0 || best < 2 * sp) return { ...bad, s0, s1 };
+  // 杆头归属: 符头只否决自家符干所在纵墨带(排除符头行后续贯覆盖>=0.4 的
+  // 相邻列成带; 候选列须落在其最近带内±1px)。和弦头 6px 外的邻线(真线)
+  // 属另一带, 不杀; 符头自身列(符头墨)因排除符头行而不成带, 不抢归属。
+  const spanTop = cs[0], spanBot = cs[cs.length - 1];
+  const yLo = (hy: number): number => Math.round(hy - 0.75 * sp);
+  const yHi = (hy: number): number => Math.round(hy + 0.75 * sp);
+  const colCovNoHead = (vx: number, hy: number): number => {
+    if (vx < 0 || vx >= W) return 0;
+    let n = 0, t = 0;
+    for (let r = spanTop; r <= spanBot; r++) {
+      if (r >= yLo(hy) && r <= yHi(hy)) continue;
+      t++;
+      const g = r * stride + vx * 4;
+      if (pix[g] + pix[g + 1] + pix[g + 2] < darkSum) n++;
+    }
+    return t > 0 ? n / t : 0;
+  };
+  for (const p of headCoreXY(sysIdx)) {
+    if (Math.abs(p.x - xi) > R) continue;
+    if (Math.abs(p.y - s0) > sp && Math.abs(p.y - s1) > sp) continue;
+    // 纵墨带: p.x±(R+2) 内 cov>=0.4 的极大相邻列区间
+    const lo = Math.max(0, Math.floor(p.x - R - 2)), hi = Math.min(W - 1, Math.ceil(p.x + R + 2));
+    const bands: [number, number][] = [];
+    let b0 = -1;
+    for (let vx = lo; vx <= hi + 1; vx++) {
+      const on = vx <= hi && colCovNoHead(vx, p.y) >= 0.4;
+      if (on && b0 < 0) b0 = vx;
+      if (!on && b0 >= 0) { bands.push([b0, vx - 1]); b0 = -1; }
+    }
+    if (!bands.length) continue;
+    let bi = 0, bd = 1e9;
+    bands.forEach(([a, b], i) => {
+      const d = p.x < a ? a - p.x : p.x > b ? p.x - b : 0;
+      if (d < bd) { bd = d; bi = i; }
+    });
+    const [na, nb] = bands[bi];
+    if (xi >= na - 1 && xi <= nb + 1)
+      return { vetoed: true, s0, s1, kx: p.x, ky: p.y };
+  }
+  return { vetoed: false, s0, s1, kx: -1, ky: -1 };
+}
+function headCoreVeto(sysIdx: number, x: number): boolean {
+  return headVetoDebug(sysIdx, x).vetoed;
+}
+function findBarLines(a: any, b: any, c: any): any { lastEB_A = a; lastEB_B = b; lastEB_C = c; headCoreCache = []; var d: any, e: any, f: any, g: any, k = legacyOpt.mtdrmpl, l = legacyOpt.voorna, p = 1 * legacyOpt.dx, n = 2 * spatium, h: any[] = []; lastBarDiagnostics.length = 0; lastSystemConfidence.length = 0; lastSysM.length = 0; for (d = 0; d < a.length; ++d) { var m = 3 * witArr[d]; var u = a[d].xs; var q = u.x1 + 50; var v = u.x2 - 20; q >= v && (q = u.x1, v = u.x2); var r = a[d].cs; var w = r[0]; var t = r[r.length - 1]; var C = (w - n) * b; var z = w * b; var A = t * b; var D = (t + n) * b; var evd = columnEvidence(r, m, b, c, n); r = evd.rs; var y: any = evd.ys; f = y.slice(q, v); f.sort(function (a: any, b: any) { return b - a }); m = f[0]; if (frozenM) { var fhit = false; for (var fmi = 0; fmi < frozenM.length; fmi++) { var fe = frozenM[fmi]; if (Math.abs(fe.top - w) <= 3 && Math.abs(fe.bot - t) <= 3) { m = fe.m; fhit = true; break; } } } lastSysM.push({ top: w, bot: t, m: m }); t = w = 0; for (f = q; f < v; f++)q = y[f], q > m * k && (r[f - p] > w && (w = r[f - p]), r[f + p] > t && (t = r[f + p])); var cands: { x: number; rel: number; bypass: boolean; weak: boolean }[] = []; var csRows0: number[] = a[d].cs; var rw0 = csRows0[0]; var rt0 = csRows0[csRows0.length - 1]; var darkSum0 = 3 * witArr[d]; for (f = 5; f < r.length - 5; f++) { var yy = y[f]; var weakPeak = false; if (!(yy > m * k)) { if (r[f - p] > w * l && r[f + p] > t * l) { if (yy > m * 0.7 && columnRunRatio(f, rw0, rt0, b, c, darkSum0) >= 0.65) { weakPeak = true; var wLo = Math.max(5, f - Math.round(spatium)); var wHi = Math.min(r.length - 6, f + Math.round(spatium)); for (var wnb = wLo; wnb <= wHi; wnb++) { if (y[wnb] > yy) { weakPeak = false; break; } } if (weakPeak) { var wsf = barStemFeatures(d, f); if (!wsf || Math.max(wsf.topBlob, wsf.botBlob) >= 4) weakPeak = false; } } } if (!weakPeak) continue; } if (f - u.x1 < Math.max(80, 8 * spatium)) continue; var passC = r[f - p] > w * l && r[f + p] > t * l; var bypass = false; if (!passC) { var br0 = columnRunRatio(f, rw0, rt0, b, c, darkSum0); if (br0 < 0.9 && !(yy > m * k && br0 >= 0.75 && barRescueClean(d, f, rw0, rt0))) continue; bypass = true; } var sf0 = barStemFeatures(d, f); if (barColumnVetoed(d, f, rw0, rt0)) continue; cands.push({ x: f, rel: m > 0 ? yy / m : 0, bypass, weak: weakPeak }); } var keptNms = nmsBarPeaks(cands, spatium); var minGap = 3 * spatium; var dblGap = Math.max(2, spatium * 0.7); var kept: number[] = []; var keptRel: { x: number; rel: number }[] = []; for (const cand of keptNms) { if (!kept.length) { kept.push(cand.x); keptRel.push(cand); continue; } var prevX = kept[kept.length - 1]; var prevRel = keptRel[keptRel.length - 1].rel; var gap = cand.x - prevX; var strongPair = cand.rel >= 0.85 && prevRel >= 0.85; var need = strongPair ? dblGap : minGap; if (gap >= need) { kept.push(cand.x); keptRel.push(cand); } else if (cand.rel > prevRel + 0.05) { kept[kept.length - 1] = cand.x; keptRel[keptRel.length - 1] = cand; } } var keptF: number[] = []; var keptRelF: { x: number; rel: number }[] = []; for (var kfi = 0; kfi < kept.length; kfi++) { if (!barColumnVetoed(d, kept[kfi], rw0, rt0)) { keptF.push(kept[kfi]); keptRelF.push(keptRel[kfi]); } else { var fbx = -1; for (var fbd = 1; fbd <= 2 && fbx < 0; fbd++) { for (var fsg = -1; fsg <= 1; fsg += 2) { var fcx = kept[kfi] + fsg * fbd; var isCand = false; for (var fci = 0; fci < cands.length; fci++) if (cands[fci].x === fcx) { isCand = true; break; } if (!isCand || barColumnVetoed(d, fcx, rw0, rt0)) continue; var fsf = barStemFeatures(d, fcx); var okTouch = false; if (fsf && 1 * fsf.noteheadProximity <= 2) { okTouch = true; var fsegs = fsf.headSegs; if (fsegs) for (var fhi = 0; fhi < fsegs.length; fhi++) if (1 * fsegs[fhi].h > spatium) { okTouch = false; break; } } if (okTouch) { fbx = fcx; break; } } } if (fbx >= 0) { keptF.push(fbx); keptRelF.push(keptRel[kfi]); lastBarDiagnostics.push({ system: d, x: kept[kfi], strength: 0, rel: 0, kept: true, reason: "kept-nms-fallback@" + fbx }); } else lastBarDiagnostics.push({ system: d, x: kept[kfi], strength: 0, rel: 0, kept: false, reason: "dropped-nms-veto" }); } } kept = keptF; keptRel = keptRelF; var mgA: number[] = []; for (var mgi = 1; mgi < kept.length; mgi++) mgA.push(kept[mgi] - kept[mgi - 1]); if (mgA.length) { mgA.sort(function (x, y) { return x - y }); var medGap = mgA[Math.floor(mgA.length / 2)]; var mergeMax = Math.min(0.45 * medGap, 2 * spatium); var pairMax2 = Math.min(0.45 * medGap, 3.5 * spatium); var pairMax = Math.max(mergeMax, pairMax2); if (pairMax >= 3) { var mPass = true; while (mPass) { mPass = false; for (var mqi = 1; mqi < kept.length; mqi++) { var pairGap = kept[mqi] - kept[mqi - 1]; if (pairGap < pairMax) { var featL = barStemFeatures(d, kept[mqi - 1]); var featR = barStemFeatures(d, kept[mqi]); var nbL = featL ? featL.noteheadProximity : 0; var nbR = featR ? featR.noteheadProximity : 0; var mdi = -1; var mdReason = ""; if (pairGap < mergeMax) { if (nbL >= 1 && nbR < 1) mdi = mqi - 1; else if (nbR >= 1 && nbL < 1) mdi = mqi; if (mdi >= 0) mdReason = "dropped-stem-graze"; } if (mdi < 0 && pairGap < pairMax2) { var relL = keptRel[mqi - 1].rel; var relR = keptRel[mqi].rel; var runL = featL ? featL.runRatio : 0; var runR = featR ? featR.runRatio : 0; var weakL = relL < 0.9 && runL < 0.85; var weakR = relR < 0.9 && runR < 0.85; var strongL = relL >= 0.95 && runL >= 0.9; var strongR = relR >= 0.95 && runR >= 0.9; if (weakL && strongR) mdi = mqi - 1; else if (weakR && strongL) mdi = mqi; if (mdi >= 0) mdReason = "dropped-weak-graze"; } if (mdi >= 0) { var mdx = kept[mdi]; kept.splice(mdi, 1); keptRel.splice(mdi, 1); lastBarDiagnostics.push({ system: d, x: mdx, strength: 0, rel: 0, kept: false, reason: mdReason }); mPass = true; break; } } } } } } for (var sei = kept.length - 1; sei >= 0; sei--) { var sex = kept[sei]; if (sex <= u.x1 + 2 || sex >= u.x2 - 2) continue; var ser = stemEndVeto(d, sex); if (ser) { kept.splice(sei, 1); keptRel.splice(sei, 1); lastBarDiagnostics.push({ system: d, x: sex, strength: 0, rel: 0, kept: false, reason: ser }); } } for (const cd of cands) { var isKept = kept.indexOf(cd.x) >= 0; lastBarDiagnostics.push({ system: d, x: cd.x, strength: cd.rel, rel: Math.round(cd.rel * 100) / 100, kept: isKept, reason: isKept ? (cd.weak ? "kept-weak-peak" : cd.bypass ? "kept-straight-bypass" : "kept") : "suppressed-by-nms-or-gap" }); } var conf = scoreSystemConfidence(keptRel, spatium); lastSystemConfidence.push(conf); e = []; v = u.x1; for (const kx of kept) { if (kx > u.x1 + 2 && kx < u.x2 - 2) { e.push(kx); v = kx; } } if (!e.length) { e = [u.x1]; v = u.x1; } else if (e[0] - u.x1 > 3 * spatium) e.unshift(u.x1); if (u.x2 - v > 3 * spatium || e.length === 1) e.push(u.x2); h.push(e) } return h }
