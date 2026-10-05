@@ -1185,6 +1185,12 @@ export function barColumnVetoed(sysIdx: number, x: number, rw0: number, rt0: num
         return true;
       })()) ||
     (sf0.runRatio >= 0.8 && sf0.noteheadProximity >= 1 && Math.max(sf0.topBlob, sf0.botBlob) >= 6) ||
+    // v29d 符干窄双线: 孪生竖线(3-8px, rel 0.55-0.95, 如符干+符尾/符干+临时记号杆)
+    // + 本列纵贯(run>=0.9) + 双侧窄外伸>=3px(杆上下都伸出谱表框: 上接梁下出线。
+    // 真双线/反复线两边都收在框内; 真线纵使一侧被连音线蹭到 3px, 另一侧干净)。
+    // No_19 p1s5-695: twin 6/0.645 + run 1.0 + ext 4/4, 余子句全差之毫厘。
+    (sf0.twinDist >= 3 && sf0.twinDist <= 8 && sf0.twinRel >= 0.55 && sf0.twinRel < 0.95 && sf0.runRatio >= 0.9 &&
+      sf0.stemExtAbove >= 3 && sf0.stemExtBelow >= 3) ||
     // v29 排除法符头否决: opening 符头核心 0.9sp 内即符干(自开头必贴杆)。
     // No_19 上 10 符干全杀、真线零损失; 双线豁免在前, 强孪生对不受影响。
     // 仅单谱表系统(多谱表跨谱表几何单列不可分, 保守关闭, 见 headVetoDebug)。
@@ -1333,6 +1339,46 @@ function computeHeadCores(sysIdx: number): { x: number; y: number; w: number; h:
       if (pix[g] + pix[g + 1] + pix[g + 2] < 384) ink[r * bw + c] = 1;
     }
   }
+  // 空心头填洞: 反色 4-连通, 不连边界的白洞是圈心(半音符~12-20px)。
+  // 只填小洞 (n<=40): 符干间密格细胞(>40px)不填, 仍由实心规则处理;
+  // 填后开运算把圈变实心块, 走同一套符头过滤+杆头归属 (No_19 p2s3-238 双头)。
+  {
+    const seen = new Uint8Array(bw * bh);
+    const st: number[] = [];
+    const pushB = (i: number): void => { if (!seen[i]) { seen[i] = 1; st.push(i); } };
+    for (let c = 0; c < bw; c++) { if (!ink[c]) pushB(c); if (!ink[(bh - 1) * bw + c]) pushB((bh - 1) * bw + c); }
+    for (let r = 0; r < bh; r++) { if (!ink[r * bw]) pushB(r * bw); if (!ink[r * bw + bw - 1]) pushB(r * bw + bw - 1); }
+    while (st.length) {
+      const p = st.pop()!;
+      const pr = Math.floor(p / bw), pc = p % bw;
+      if (pr > 0 && !ink[p - bw]) pushB(p - bw);
+      if (pr < bh - 1 && !ink[p + bw]) pushB(p + bw);
+      if (pc > 0 && !ink[p - 1]) pushB(p - 1);
+      if (pc < bw - 1 && !ink[p + 1]) pushB(p + 1);
+    }
+    const lab = new Int32Array(bw * bh);
+    let cc = 0;
+    for (let i = 0; i < bw * bh; i++) {
+      if (ink[i] || seen[i] || lab[i]) continue;
+      cc++;
+      st.push(i); lab[i] = cc;
+      let ax0 = bw, ax1 = -1, ay0 = bh, ay1 = -1, n = 0;
+      while (st.length) {
+        const p = st.pop()!;
+        const pr = Math.floor(p / bw), pc = p % bw;
+        n++;
+        if (pc < ax0) ax0 = pc; if (pc > ax1) ax1 = pc;
+        if (pr < ay0) ay0 = pr; if (pr > ay1) ay1 = pr;
+        if (pr > 0 && !ink[p - bw] && !seen[p - bw] && !lab[p - bw]) { lab[p - bw] = cc; st.push(p - bw); }
+        if (pr < bh - 1 && !ink[p + bw] && !seen[p + bw] && !lab[p + bw]) { lab[p + bw] = cc; st.push(p + bw); }
+        if (pc > 0 && !ink[p - 1] && !seen[p - 1] && !lab[p - 1]) { lab[p - 1] = cc; st.push(p - 1); }
+        if (pc < bw - 1 && !ink[p + 1] && !seen[p + 1] && !lab[p + 1]) { lab[p + 1] = cc; st.push(p + 1); }
+      }
+      const w = ax1 - ax0 + 1, h = ay1 - ay0 + 1;
+      if (n >= 8 && n <= 40 && w >= 3 && w <= 1.6 * sp && h >= 3 && h <= 1.2 * sp)
+        for (let k = 0; k < bw * bh; k++) if (lab[k] === cc) ink[k] = 1;
+    }
+  }
   const ero = new Uint8Array(bw * bh);
   for (let r = 0; r < bh; r++) for (let c = 0; c < bw; c++) {
     let m = 1;
@@ -1373,11 +1419,15 @@ function computeHeadCores(sysIdx: number): { x: number; y: number; w: number; h:
       }
     }
     const w = x1b - x0 + 1, h = y1b - y0 + 1;
+    // w/h 下限 0.6->0.5/0.55->0.5sp: 浏览器栅格 AA 偏淡, 小符头腐蚀后仅剩
+    // 4px 宽 (No_19 p2s2-632 头部 4x7)。圆点(2-3px)仍排除在外。
+    // h 绝对下限 5px: 反复记号点对 (3x3 实心, serenade) 与小符头同形,
+    // 按 sp 缩放会误收 (sp=6 时 0.5sp=3px), 绝对 5px 一刀切 (真符头皆>=5px)。
     // w/h 下限 0.6: 小节线与谱线交汇处墨水堆积, opening 后残留窄高墨块
-    // (arpeggione p2s1-397 足部 4x9), 不是符头; 真符头 w/h≈1.0-1.3。
+    // (arpeggione p2s1-397 足部 4x9, w/h 0.44), 不是符头; 真符头 w/h≈1.0-1.3。
     // w/h 上限 2.0: 符梁端/连音线头/延音线块多为宽扁 (vivaldi 11x4), 不是符头;
-    // 并排二度双符头 w/h 可到 2.0, 边界保留。
-    if (w >= 0.55 * sp && w <= 1.6 * sp && h >= 0.45 * sp && h <= 1.3 * sp && n >= 0.45 * w * h && w * 5 >= h * 3 && w <= 2 * h)
+    // 并排二度双符头 w/h 可到 2.0, 边界保留。填洞后半音符圈 w 可达 1.8sp。
+    if (w >= 0.5 * sp && w <= 1.8 * sp && h >= Math.max(5, 0.45 * sp) && h <= 1.3 * sp && n >= 0.45 * w * h && w * 2 >= h && w <= 2 * h)
       out.push({ x: x1 + Math.floor((x0 + x1b) / 2), y: r0 + Math.floor((y0 + y1b) / 2), w, h, n });
   }
   return out;
@@ -1401,6 +1451,39 @@ export function headVetoDebug(sysIdx: number, x: number): { vetoed: boolean; s0:
   const W = Math.floor(stride / 4); const Hpx = Math.floor(pix.length / stride);
   const xi = Math.max(0, Math.min(W - 1, Math.round(x)));
   const darkSum = 3 * (witArr[sysIdx] ?? 128);
+  const isStaffR = (row: number): boolean => cs.some((y: number) => Math.abs(y - row) <= 1);
+  const dark1 = (row: number, col: number): boolean => {
+    if (row < 0 || row >= Hpx || col < 0 || col >= W) return false;
+    const g = row * stride + col * 4;
+    return pix[g] + pix[g + 1] + pix[g + 2] < darkSum;
+  };
+  // 符头贴杆 (No_19 p2s2-632: 半音符头左缘贴杆 3px, 系带把墨段尾拉长致
+  // 端部锚定失效)。符头 bbox 边到候选列 1-4px, 去谱线行后墨连贯, 且桥接列
+  // 有纵贯墨 (vrun>=5, 系带/连音线横墨无纵贯, 不杀)。贴线头(谱线穿桥)去谱线行判定。
+  // 全尺寸符头参与(弱小核心 w<0.55sp 或 w/h<0.6 是贴杆专属证据, 见下)。
+  for (const p of headCoreXY(sysIdx)) {
+    if (Math.abs(p.x - xi) > R + p.w / 2) continue;
+    const edge = p.x < xi ? p.x + p.w / 2 : p.x - p.w / 2;
+    const gap = Math.abs(edge - xi);
+    if (gap < 1 || gap > 4) continue;
+    const c0 = Math.round(Math.min(edge, xi)), c1 = Math.round(Math.max(edge, xi));
+    let ok = false;
+    for (let c = c0; c <= c1 && !ok; c++) {
+      let inkRows = 0, rows = 0;
+      for (let r = Math.round(p.y) - 2; r <= Math.round(p.y) + 2; r++) {
+        if (r < 0 || r >= Hpx || isStaffR(r)) continue;
+        rows++;
+        if (dark1(r, c)) inkRows++;
+      }
+      if (rows >= 2 && inkRows / rows >= 0.5) {
+        let a = Math.round(p.y), b = Math.round(p.y);
+        while (a - 1 >= 0 && dark1(a - 1, c)) a--;
+        while (b + 1 < Hpx && dark1(b + 1, c)) b++;
+        if (b - a + 1 >= 5) ok = true;
+      }
+    }
+    if (ok) return { vetoed: true, s0: -1, s1: -1, kx: p.x, ky: p.y };
+  }
   const top = Math.max(0, cs[0] - 3 * sp), bot = Math.min(Hpx - 1, cs[cs.length - 1] + 3 * sp);
   const inkAt = (row: number): boolean => {
     if (row < 0 || row >= Hpx) return false;
@@ -1443,6 +1526,9 @@ export function headVetoDebug(sysIdx: number, x: number): { vetoed: boolean; s0:
   for (const p of headCoreXY(sysIdx)) {
     if (Math.abs(p.x - xi) > R) continue;
     if (Math.abs(p.y - s0) > sp && Math.abs(p.y - s1) > sp) continue;
+    // 弱小核心 (w<0.55sp 或 w/h<0.6, 如 AA 淡印小头) 只走贴杆专属通道,
+    // 不参与端部锚定/杆头归属/分离判定 (serenade 误杀教训: 弱证据+弱锚定=FN)。
+    if (p.w < 0.55 * sp || p.w * 5 < p.h * 3) continue;
     // 纵墨带: p.x±(R+2) 内 cov>=0.4 的极大相邻列区间
     const lo = Math.max(0, Math.floor(p.x - R - 2)), hi = Math.min(W - 1, Math.ceil(p.x + R + 2));
     const bands: [number, number][] = [];
@@ -1453,14 +1539,42 @@ export function headVetoDebug(sysIdx: number, x: number): { vetoed: boolean; s0:
       if (!on && b0 >= 0) { bands.push([b0, vx - 1]); b0 = -1; }
     }
     if (!bands.length) continue;
-    let bi = 0, bd = 1e9;
+    // 并列最近(头居两带正中, 如密格细胞)两带都不杀: 归属不明, 保守放行。
+    let bi = -1, bd = 1e9, tie = false;
     bands.forEach(([a, b], i) => {
       const d = p.x < a ? a - p.x : p.x > b ? p.x - b : 0;
-      if (d < bd) { bd = d; bi = i; }
+      if (d < bd) { bd = d; bi = i; tie = false; }
+      else if (d === bd) tie = true;
     });
+    if (bi < 0 || tie) continue;
     const [na, nb] = bands[bi];
     if (xi >= na - 1 && xi <= nb + 1)
       return { vetoed: true, s0, s1, kx: p.x, ky: p.y };
+  }
+  // 分离符头 (No_19 p2s2-632: 符头在谱表外 18px, 与杆端隔 16px 白缝,
+  // 开运算桥接不上, 端部锚定够不着)。符头核心在纵段之外、相距<=2.5sp、
+  // 中间白缝>=4px 无墨(贴杆不断不算分离)-> 判为断头符干, 否决。
+  // 重叠/跨谱表中段头无白缝, 不杀。仅单谱表系统。
+  for (const p of headCoreXY(sysIdx)) {
+    if (Math.abs(p.x - xi) > R) continue;
+    if (p.w < 0.55 * sp || p.w * 5 < p.h * 3) continue;
+    const above = p.y < s0, below = p.y > s1;
+    if (!above && !below) continue;
+    const edge = above ? s0 : s1;
+    const dist = Math.abs(p.y - edge);
+    if (dist > 2.5 * sp) continue;
+    const g0 = Math.min(p.y, edge), g1 = Math.max(p.y, edge);
+    if (g1 - g0 < 4) continue;
+    let gapInk = false;
+    for (let r = g0; r <= g1 && !gapInk; r++) {
+      if (r < 0 || r >= Hpx) continue;
+      for (let c = xi - 1; c <= xi + 1; c++) {
+        if (c < 0 || c >= W) continue;
+        const g = r * stride + c * 4;
+        if (pix[g] + pix[g + 1] + pix[g + 2] < darkSum) { gapInk = true; break; }
+      }
+    }
+    if (!gapInk) return { vetoed: true, s0, s1, kx: p.x, ky: p.y };
   }
   return { vetoed: false, s0, s1, kx: -1, ky: -1 };
 }
