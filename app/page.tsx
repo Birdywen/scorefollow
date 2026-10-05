@@ -2661,7 +2661,7 @@ export default function ScoreFollowPage() {
 
   // preload.js 载入(原版兼容): pdf_data 内嵌PDF + 全页 metric 配对 + times + 逐页 adv
   // + sga_config(节拍器预设→活引擎) + ui_state(界面预设, 含全屏/隐藏UI)
-  const loadPreloadText = useCallback(async (txt: string, name: string) => {
+  const loadPreloadText = useCallback(async (txt: string, name: string, fullPath?: string) => {
     setPerformanceOpen(false);
     if (!txt.includes("//# This page")) { setStatus("not a preload file(缺 //# This page 标记)"); return; }
     renderGenRef.current++;
@@ -2783,6 +2783,21 @@ export default function ScoreFollowPage() {
     // 3) 载入 PDF
     const pdfjs: any = await import("pdfjs-dist");
     let pdf = pdfDocRef.current;
+    if (!pdfBytes && !pdf && fullPath && fullPath.includes("/")) {
+      // 公开谱库 bundle: fixed.js 为省体积不嵌 pdf_data, 同目录 original.pdf 即原谱, 顺手取回
+      // (ezmusicscore 练习链接 ?preload=Score/书/曲/fixed.js 即此情形; 取不到则走原提示)。
+      const dir = fullPath.replace(/^\/+/, "").split("/").slice(0, -1).join("/");
+      if (dir) {
+        try {
+          setStatus("preload 无内嵌PDF, 取同目录 original.pdf ...");
+          const rr = await fetch(`${BASE}/${dir}/original.pdf`);
+          if (rr.ok) {
+            const ab = await rr.arrayBuffer();
+            if (ab.byteLength > 0) pdfBytes = new Uint8Array(ab).buffer;
+          }
+        } catch { /* 取不到则走原提示 */ }
+      }
+    }
     if (pdfBytes) {
       pdfBytesRef.current = pdfBytes.slice(0);
       pdf = await pdfjs.getDocument({ data: pdfBytes, wasmUrl: `${BASE}/wasm/` }).promise;
@@ -3275,7 +3290,7 @@ export default function ScoreFollowPage() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const txt = await r.text();
         if (dead) return;
-        await loadPreloadText(txt, name.split("/").pop() || "url-preload.js");
+        await loadPreloadText(txt, name.split("/").pop() || "url-preload.js", name);
         if (dead) return;
         applyUrlOverrides(params);
       } catch {
