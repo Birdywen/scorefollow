@@ -13,6 +13,9 @@ from decimal import Decimal, InvalidOperation
 import numpy as np
 
 from .alignment import locate_excerpt, usable_events
+from .validation import validate_bpm, validate_instrument
+from .error_messages import invalid_bpm, unsupported_instrument
+from .performance_monitor import track_performance
 
 VERSION = "string-mono-0.2"
 MAX_SECONDS = 300
@@ -41,6 +44,7 @@ def xml_root(xml: str, label: str = "MusicXML") -> ET.Element:
         raise ValueError(f"{label}无法解析") from exc
 
 
+@track_performance("score_parsing")
 def parse_score(xml: str) -> list[dict]:
     # Standard MusicXML often includes an external PUBLIC DTD. ElementTree does
     # not resolve it; forbid internal entity definitions, not the normal header.
@@ -297,10 +301,16 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     """pitch_notes: [(start_sec, end_sec, midi)] 外部基频传感器(pYIN); onset_hint: [sec]
     外部起音传感器(QM)。两者都可选, 为空时退回自研检测, 打分逻辑不变。
     sync_mode="vamp-beat": 用 QM 拍点时间轴做活网格, 需 beat_map=[sec...]。"""
-    if instrument not in ("violin", "viola", "cello"):
-        raise ValueError("不支持的乐器")
-    if not 30 <= bpm <= 200:
-        raise ValueError("BPM 须在 30–200 之间")
+    # Validate instrument using validation module
+    try:
+        validate_instrument(instrument, ["violin", "viola", "cello"])
+    except ValueError as e:
+        raise ValueError(str(e))
+    # Validate BPM using validation module
+    try:
+        validate_bpm(bpm, min_bpm=30, max_bpm=200)
+    except ValueError as e:
+        raise ValueError(str(e))
     if sync_mode not in ("legacy", "metronome", "vamp-beat"):
         raise ValueError("无效的同步模式")
     if first_beat_audio_sec is not None and (
