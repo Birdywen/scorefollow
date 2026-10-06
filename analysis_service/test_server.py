@@ -118,6 +118,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("0–20", data["error"])
 
+    def test_manual_measure_sync_passes_through_http(self):
+        markers = [{"measure": i + 1, "audioSec": .12 + i} for i in range(4)]
+        body = {"scoreXml": score(), "syncMode": "manual-measures", "measureSync": markers,
+                "audioWavBase64": base64.b64encode(recording()).decode(), "bpm": 200, "instrument": "violin"}
+        status, _, data = self.request("POST", "/jobs", body)
+        self.assertEqual(status, 202, data)
+        for _ in range(60):
+            _, _, job = self.request("GET", "/jobs/" + data["id"])
+            if job['status'] in ('completed', 'failed'):
+                self.assertEqual(job['status'], 'completed', job.get('error'))
+                result = job['result']
+                self.assertEqual(result['summary']['syncMode'], 'manual-measures')
+                self.assertEqual(result['measureSync'], markers)
+                self.assertEqual([n['expectedSec'] for n in result['notes']], [.12, 1.12, 2.12])
+                break
+            time.sleep(.05)
+        else:
+            self.fail('manual sync job did not finish')
+        for override in ({'measureSync': []}, {'syncMode': 'vamp-beat'}, {'instrument': 'piano'}, {'firstBeatAudioSec': .12}):
+            status, _, data = self.request('POST', '/jobs', {**body, **override})
+            self.assertEqual(status, 400, data)
+
     def test_omr_async_job_without_network(self):
         from unittest.mock import patch
         from .server import jobs, lock

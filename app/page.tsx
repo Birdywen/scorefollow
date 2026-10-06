@@ -3619,7 +3619,13 @@ export default function ScoreFollowPage() {
       )}
 
        <div className={styles.workspace}>
-       {performanceOpen && <PerformancePanel lang={lang} pdfMeasures={barsTotal} pdfName={pdfName} pdfBytes={() => pdfBytesRef.current}
+        {performanceOpen && <PerformancePanel lang={lang} pdfMeasures={barsTotal} pdfName={pdfName} pdfBytes={() => pdfBytesRef.current}
+          getSyncedAudio={() => {
+            if (!mediaURL) return null;
+            doPause();
+            return { url: mediaURL, name: mediaName || "Synced audio", measureCount: barsTotal,
+              markers: wijzerRef.current.times.map((entry) => ({ measure: entry.mix + 1, audioSec: entry.t })) };
+          }}
          onJump={(measure) => placeCursor(measure - 1)} onClose={() => setPerformanceOpen(false)} />}
         {chromeOpen && advOpen && (
           <aside id="sf-control-panel" className={`${styles.advpanel} ${styles.controlPanel}`} aria-label={tx("panelBtn")}>

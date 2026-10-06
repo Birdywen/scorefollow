@@ -32,8 +32,8 @@ const topics = [
   {
     title: ["5 · 如何读弦乐分数", "5 · Read string scores"],
     text: [
-      "综合音高分根据可判音符的音分偏差计算，不是“弹对百分比”；100 音分等于一个半音，正值偏高、负值偏低，超过 ±50 音分记为错音。正确音音准只看已判正确的音。跟拍同时考虑整体抢拍/拖拍和局部波动；稳定性高不代表没有整体偏移。首音用于锚定，不计入弦乐节奏分。没听清与八度不确定不算正确，也不直接按错音扣分；“—”表示没有足够依据评分，不是零分。请一起看可判音符、可判起音和覆盖范围，不要只比较总分。",
-      "Pitch is based on cents errors in judgeable notes, not a percentage of correct notes. One semitone is 100 cents; positive is sharp and negative is flat. Errors beyond ±50 cents are wrong pitches. Intonation measures only notes already classified as correct. Timing combines overall rushing/dragging and local variation; high stability does not guarantee accurate timing. The first note is an anchor and is excluded from string rhythm scoring. Unclear and octave-uncertain notes are neither confirmed correct nor directly penalized as wrong pitches. A dash means insufficient evidence, not zero. Read coverage and judgeable-note/onset counts alongside the scores.",
+      "综合音高满分 100，不是“弹对百分比”；100 音分等于一个半音，正值偏高、负值偏低。±15 音分（含边界）为正确且不扣音高分；可靠读数超过此范围记为偏高或偏低。异常与八度不确定读数不计音高分。普通模式首音用于锚定，不计节奏分；手动小节同步只评价小节内节奏，不评价手动标记的首拍。“—”表示没有足够依据评分，不是零分。请一起看可判音符、可判起音和覆盖范围，不要只比较总分。",
+      "Pitch has a maximum of 100; it is not the percentage of correct notes. One semitone is 100 cents. −15 through +15 cents inclusive is correct with no pitch penalty; reliable readings beyond that band are sharp or flat. Outliers and octave-uncertain readings are excluded from pitch scoring. Ordinary analysis excludes its first timing anchor; manual measure sync grades timing within measures, not manually marked downbeats. A dash means insufficient evidence, not zero. Read coverage and scored-note/onset counts alongside the scores.",
     ],
   },
   {
@@ -48,6 +48,13 @@ const topics = [
     text: [
       "点击报告音符或“复习片段”可从音符前约 0.5 秒回听；小节数核对一致后再映射到 PDF。“模拟效果图”是示例，不是你的演奏结果。分数为空时先看可判比例，检查录音是否太短、过轻、失真或混入伴奏，再核对谱面版本和起始小节。若提示 HTML、403、网络错误或钢琴转录失败，检查分析服务地址、访问权限及服务状态；这不代表演奏有问题。HTTPS 页面必须连接 HTTPS 分析服务。分数用于帮助练习回听，尚不是经过人工标注校准的考试评分。",
       "Click a report note or review moment to replay from about 0.5 seconds before it. Verify measure counts before mapping to the PDF. Sample charts are demonstrations, not your results. For missing scores, check coverage, recording length, low level, distortion or accompaniment, then confirm the score version and start measure. HTML, 403, network errors or piano transcription failures call for checking the API address, access rules and service status—not your playing. HTTPS pages require an HTTPS analysis service. Scores guide practice and listening; they are not human-calibrated examination grades.",
+    ],
+  },
+  {
+    title: ["8 · 用 B 同步后再分析", "8 · B-sync before analysis"],
+    text: [
+      "可导入谱面播放器当前音频及其 B 同步数据，也可在分析面板选中录音后开始 B 同步。设置第一个小节，播放并在每小节首拍按 B；最后再标记一次结束边界。时间取自音频播放器，暂停或变速不改变时间基准。退格撤销，时间框可修正，回听按钮只播放该小节。核对 MusicXML/PDF 的小节编号后确认同步，再点分析；标记会随这一遍录音保存，修改后必须重新确认。只分析最后一个标记之前的完整小节，不推测未标记尾段。当前支持单声部弦乐；手动标记的首拍不计节奏分。",
+      "Import the score player’s current audio and B-sync data, or select a take and start B sync inside Analyze. Set the first measure, play, and press B at each measure’s downbeat; add one final end boundary. Timestamps come from the media player, so pausing or changing playback speed does not change the time reference. Backspace undoes; edit timestamps and preview each measure before confirming. Check MusicXML/PDF numbering, confirm sync, then Analyze. Markers are stored with the take; edits require confirmation again. Only complete intervals before the final marker are analyzed, with no guessed tail. Currently supported for monophonic strings. Manually marked downbeats do not receive rhythm grades.",
     ],
   },
 ];

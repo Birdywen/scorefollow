@@ -8,6 +8,7 @@ import {
 } from "@/lib/practice-sync";
 import VisualReport, { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
 import { isValidAnalysisResult, isValidJobEnvelope } from "@/lib/analysis-guard";
+import MeasureSyncEditor, { validateMarkers, type MeasureMarker, type SyncedAudio } from "./MeasureSyncEditor";
 
 type Note = {
   id: string; measure: number; pitchMidi: number; expectedSec: number;
@@ -23,6 +24,7 @@ type Result = {
   summary: { pitchScore: number | null; rhythmScore: number | null;
     outlierNotes?: number; scoredPitchNotes?: number;
     pitchToleranceCents?: number;
+    timingCandidateNotes?: number;
     intonationScore?: number | null; correctPitchNotes?: number; wrongPitchNotes?: number;
     pitchScoreMethod?: string; missedNotes?: number; extraNotes?: number;
     timingAccuracyScore?: number | null; rhythmStabilityScore?: number | null;
@@ -33,6 +35,7 @@ type Result = {
     autoLocated?: boolean; locationCost?: number | null };
 };
 type Take = {
+  measureSync?: MeasureMarker[]; syncScoreXml?: string;
   id: string; name: string; createdAt: number; durationSec: number;
   startMeasure: number; bpm: number; beatsPerMeasure: number; countInBeats: number;
   firstBeatAudioSec: number | null; sessionId: string;
@@ -114,9 +117,10 @@ function takeId(): string {
   return `t-${Date.now()}-${Math.floor(Math.random() * 1e9).toString(36)}`;
 }
 
-export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes, onJump, onClose }: {
+export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio }: {
   lang: "zh" | "en"; pdfMeasures: number; pdfName: string; pdfBytes: () => ArrayBuffer | null;
   onJump: (measure: number) => void; onClose: () => void;
+  getSyncedAudio?: () => SyncedAudio | null;
 }) {
   const [api, setApi] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -259,7 +263,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     setTakes((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
 
-  async function addTakeBlob(blob: Blob, sync: { startMeasure: number; bpm: number; beatsPerMeasure: number; countInBeats: number; firstBeatAudioSec: number | null; sessionId: string }, name: string) {
+  async function addTakeBlob(blob: Blob, sync: { startMeasure: number; bpm: number; beatsPerMeasure: number; countInBeats: number; firstBeatAudioSec: number | null; sessionId: string; measureSync?: MeasureMarker[] }, name: string) {
     const durationSec = Math.round(((await durationOf(blob)) || 0) * 10) / 10;
     const id = takeId();
     const url = URL.createObjectURL(blob);
@@ -381,7 +385,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
 
   async function analyzeTake(take: Take, autoLocate = false) {
     if (!take.blob || !xmlFile || !api) { setError(zh ? "请提供分析地址、MusicXML 与录音" : "Provide the API URL, MusicXML and audio"); return; }
-    const syncError = take.firstBeatAudioSec != null ? validateTakeSync(take.firstBeatAudioSec) : null;
+    const manual = !!take.measureSync?.length;
+    if (manual && (autoLocate || instrument === "piano")) { setError("Manual measure sync requires a monophonic instrument and explicit measures / 手动同步仅支持单声部，不能自动定位"); return; }
+    const syncError = !manual && take.firstBeatAudioSec != null ? validateTakeSync(take.firstBeatAudioSec) : null;
     if (syncError) { setError(syncError); return; }
     if (xmlFile.size > 1_000_000) { setError("MusicXML > 1 MB"); return; }
     const controller = new AbortController();
@@ -393,11 +399,12 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       updateTake(take.id, { jobStatus: "preparing", error: undefined, result: undefined });
       localStorage.setItem("sf-analysis-api", base);
       const xml = await xmlFile.text();
+      if (manual && take.syncScoreXml !== xml) throw new Error("Confirm the measure sync for this MusicXML before analysis / 请先为当前 MusicXML 确认小节同步");
       const body = {
         scoreXml: xml, audioWavBase64: await toWav(take.blob),
         bpm: take.bpm, instrument, startMeasure: autoLocate ? 0 : take.startMeasure,
-        syncMode: take.firstBeatAudioSec != null ? "metronome" : "vamp-beat",
-        ...(take.firstBeatAudioSec != null ? { firstBeatAudioSec: take.firstBeatAudioSec } : {}),
+        syncMode: manual ? "manual-measures" : take.firstBeatAudioSec != null ? "metronome" : "vamp-beat",
+        ...(manual ? { measureSync: take.measureSync } : take.firstBeatAudioSec != null ? { firstBeatAudioSec: take.firstBeatAudioSec } : {}),
       };
       const response = await fetch(`${base}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const data = await readJsonResponse<AnalysisJob>(response);
@@ -531,6 +538,15 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     });
   }
   function onTakePlaybackTime(sec: number, take: Take) {
+    if (take.measureSync?.length) {
+      const markers = take.measureSync;
+      const index = markers.findIndex((m, i) => i < markers.length - 1 && sec >= m.audioSec && sec < markers[i + 1].audioSec);
+      if (index >= 0 && markers[index].measure !== lastJumpMeasure.current) {
+        lastJumpMeasure.current = markers[index].measure;
+        onJump(markers[index].measure);
+      }
+      return;
+    }
     if (take.result?.summary.autoLocated) {
       if (!pdfMeasures || pdfMeasures !== take.result.summary.measureCount) return;
       const note = [...take.result.notes].reverse().find((n) => n.expectedSec <= sec);
@@ -657,12 +673,45 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           }
         }}
       />}
+      {getSyncedAudio && <button disabled={busyTakeId != null || recording} onClick={async () => {
+        try {
+          const source = getSyncedAudio();
+          if (!source || !source.markers.length) throw new Error("Load audio and create B-sync markers in the score player first / 请先在谱面播放器加载音频并用 B 同步");
+          const response = await fetch(source.url);
+          if (!response.ok) throw new Error("Cannot load synced audio");
+          await addTakeBlob(await response.blob(), { startMeasure: source.markers[0].measure, bpm, beatsPerMeasure, countInBeats: 0, firstBeatAudioSec: null, sessionId: "imported-B-sync", measureSync: source.markers }, source.name);
+          setError("");
+        } catch (exc) { setError(String(exc)); }
+      }}>{zh ? "导入谱面播放器的音频及 B 同步" : "Import score-player audio + B sync"}</button>}
       {selected?.blob && <div className={styles.preview}><span>{selected.name}</span><audio key={selected.id} ref={player} controls src={selected.url}
         onEnded={() => { playbackRange.current = null; setPlayingMeasure(null); }}
         onTimeUpdate={(e) => onTakePlaybackTime(e.currentTarget.currentTime, selected)} />
         {playingMeasure != null && <span role="status">{zh ? `只回听第 ${playingMeasure} 小节` : `Playing measure ${playingMeasure} only`}</span>}
         <button onClick={() => { playbackRange.current = null; setPlayingMeasure(null); if (player.current) { player.current.currentTime = 0; void player.current.play().catch(() => setError(zh ? "无法播放录音" : "Could not play this recording")); } }}>{zh ? "播放整遍" : "Play full take"}</button>
       </div>}
+      {selected?.blob && <MeasureSyncEditor key={selected.id} zh={zh} markers={selected.measureSync ?? []} startMeasure={selected.startMeasure}
+        confirmed={!!selected.syncScoreXml} disabled={busyTakeId != null || recording} getAudio={() => player.current} onJump={onJump}
+        onPreview={(startSec, endSec) => {
+          const audio = player.current;
+          if (!audio || !Number.isFinite(startSec) || !Number.isFinite(endSec) || startSec < 0 || endSec <= startSec || endSec > audio.duration) { setError("Invalid measure interval / 小节区间无效"); return; }
+          audio.pause(); audio.currentTime = startSec;
+          playbackRange.current = { startSec, endSec };
+          void audio.play().catch(() => { playbackRange.current = null; setError("Playback failed / 无法播放"); });
+        }}
+        onChange={(markers, first) => { playbackRange.current = null; updateTake(selected.id, { measureSync: markers, startMeasure: first, syncScoreXml: undefined, result: undefined }); }}
+        onConfirm={async () => {
+          try {
+            if (!xmlFile) throw new Error("Load MusicXML first / 请先加载 MusicXML");
+            const xml = await xmlFile.text();
+            const document = new DOMParser().parseFromString(xml, "application/xml");
+            const count = document.getElementsByTagNameNS("*", "measure").length;
+            if (!count || document.querySelector("parsererror")) throw new Error("Invalid MusicXML");
+            if (pdfMeasures && pdfMeasures !== count) throw new Error("PDF and MusicXML measure counts differ / PDF 与 MusicXML 小节数不一致");
+            const error = validateMarkers(selected.measureSync ?? [], player.current?.duration ?? selected.durationSec, count);
+            if (error) throw new Error(error);
+            updateTake(selected.id, { syncScoreXml: xml }); setError("");
+          } catch (exc) { setError(String(exc)); }
+        }} />}
     </section>
 
     {(error) && <p role="alert" className={styles.error}>{error}</p>}
@@ -689,7 +738,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       />
       <p className={styles.hint}>{zh ? "可计分音高" : "Scored pitches"} {result.summary.scoredPitchNotes ?? "—"} · {zh ? "疑似异常（不扣音高分）" : "Suspected outliers (no pitch penalty)"} {result.summary.outlierNotes ?? "—"}. {zh ? "超过八度的偏差视为疑似跟踪异常；空心点不计音高分。" : "Deviations beyond an octave are treated as suspect tracking. Hollow points do not affect pitch scores."}</p>
       <p className={styles.hint}>{zh ? "可判音符" : "Voiced"} {result.summary.voicedNotes}/{result.summary.noteCount} ·
-        {zh ? "可判起音" : "Timed"} {result.summary.timedNotes}/{Math.max(0, result.summary.noteCount - 1)} ·
+        {zh ? "可判起音" : "Timed"} {result.summary.timedNotes}/{result.summary.timingCandidateNotes ?? Math.max(0, result.summary.noteCount - 1)} ·
         {zh ? "波动" : "Spread"} {result.summary.timingSpreadMs ?? "—"} ms</p>
       {(result.summary.correctPitchNotes != null || result.summary.wrongPitchNotes != null) && <p className={styles.hint}>
         {zh ? "音高正确" : "Pitch correct"} {result.summary.correctPitchNotes ?? "—"} · {zh ? "错音" : "Wrong notes"} {result.summary.wrongPitchNotes ?? "—"} ·
@@ -701,6 +750,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       </p>}
       {result.summary.syncMode === "metronome" && <p className={styles.hint}>
         {zh ? `节拍器同步 · 第一拍 ${result.summary.recordedFirstBeatSec}s · 延迟微调 ${result.summary.estimatedLatencyMs} ms` : `Metronome sync · first beat ${result.summary.recordedFirstBeatSec}s · latency ${result.summary.estimatedLatencyMs} ms`}</p>}
+      {result.summary.syncMode === "manual-measures" && <p className={styles.hint}>{zh ? "按已确认的小节标记对齐；节奏仅评估小节内音符，手动标记的首拍不评分。" : "Aligned to confirmed measure markers. Timing evaluates within-measure notes; manually marked downbeats are not graded."}</p>}
       {/* 拍点网格与设定速度差 >25% 时后端弃用网格、按固定速度评分 (engine.py tempoMismatch) */}
       {result.summary.tempoMismatch && <p className={styles.hint}>{zh
         ? `检测速度约 ${result.summary.detectedBpm ?? "—"} BPM，与设定速度差别较大，已按固定速度评分`

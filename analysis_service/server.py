@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from . import vamp_features
-from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score
+from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score, read_wav, validate_measure_sync
 from .omr import MAX_PDF, recognize
 
 MAX_BODY = 16_000_000
@@ -34,7 +34,7 @@ API_TOKEN = os.environ.get("ANALYSIS_API_TOKEN", "")
 
 
 def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_measure: int,
-        first_beat_audio_sec: float | None = None, sync_mode: str = "legacy") -> None:
+        first_beat_audio_sec: float | None = None, sync_mode: str = "legacy", measure_sync=None) -> None:
     with lock:
         jobs[job_id]["status"] = "analyzing"
     try:
@@ -46,7 +46,7 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
             # 有 Vamp 插件就用 pYIN+QM 当耳朵, 没有则引擎退回自研检测(前端无感)
             pitch_notes, onset_hint, beat_map = vamp_features.extract_all(audio)
             result = analyze(audio, xml, bpm, instrument, start_measure, first_beat_audio_sec, sync_mode,
-                             pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map)
+                             pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map, measure_sync=measure_sync)
         update = {"status": "completed", "result": result}
     except Exception as exc:
         update = {"status": "failed", "error": str(exc) if isinstance(exc, ValueError) else "分析失败，请检查音频和谱面"}
@@ -143,14 +143,22 @@ class Handler(BaseHTTPRequestHandler):
                 # remains the fallback when the optional beat detector is absent.
                 sync_mode = request.get("syncMode", "vamp-beat")
                 first_beat = request.get("firstBeatAudioSec")
+                measure_sync = request.get("measureSync")
                 if instrument not in ("violin", "viola", "cello", "piano") or not 30 <= bpm <= 200:
                     raise ValueError("无效的乐器或 BPM")
                 if type(start_measure) is not int or not 0 <= start_measure <= notes[-1]["measure"]:
                     raise ValueError("开始小节没有可演奏音符")
                 if start_measure == 0 and (instrument == "piano" or sync_mode == "metronome" or first_beat is not None):
                     raise ValueError("自动定位仅支持未同步的单声部录音")
-                if sync_mode not in ("legacy", "metronome", "vamp-beat"):
+                if sync_mode not in ("legacy", "metronome", "vamp-beat", "manual-measures"):
                     raise ValueError("无效的同步模式")
+                if sync_mode == "manual-measures":
+                    if instrument == "piano" or start_measure == 0 or first_beat is not None:
+                        raise ValueError("Manual measure sync requires a monophonic instrument, explicit start measure and no metronome anchor")
+                    signal, rate = read_wav(audio)
+                    validate_measure_sync(measure_sync, xml, len(signal) / rate, start_measure)
+                elif measure_sync is not None:
+                    raise ValueError("measureSync requires manual-measures mode")
                 if first_beat is not None and (not isinstance(first_beat, (int, float)) or
                                                not 0 <= float(first_beat) <= MAX_FIRST_BEAT_SECONDS):
                     raise ValueError(f"firstBeatAudioSec 须在 0–{MAX_FIRST_BEAT_SECONDS} 秒之间")
@@ -175,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
             pool.submit(run_omr, job_id, pdf, filename, rest_beats)
         else:
             pool.submit(run, job_id, audio, xml, bpm, instrument, start_measure,
-                        float(first_beat) if first_beat is not None else None, sync_mode)
+                        float(first_beat) if first_beat is not None else None, sync_mode, measure_sync)
         self.respond(202, {"id": job_id, "status": "queued"})
 
     def do_GET(self) -> None:

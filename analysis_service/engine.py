@@ -301,6 +301,26 @@ def measure_start_beats(xml: str, include_end: bool = False) -> dict[int, float]
     return starts
 
 
+def validate_measure_sync(markers, xml: str, duration: float, start_measure: int) -> list:
+    """Every interval has two explicit boundaries; never extrapolate user taps."""
+    boundaries = measure_start_beats(xml, include_end=True)
+    if not isinstance(markers, list) or not 2 <= len(markers) <= len(boundaries):
+        raise ValueError("measureSync requires at least two measure boundaries")
+    previous = None
+    for marker in markers:
+        if not isinstance(marker, dict):
+            raise ValueError("Invalid measureSync marker")
+        measure, sec = marker.get("measure"), marker.get("audioSec")
+        if type(measure) is not int or measure not in boundaries or type(sec) not in (int, float) or not math.isfinite(sec) or not 0 <= sec <= duration:
+            raise ValueError("measureSync boundary is outside the score or audio")
+        if previous and (measure != previous["measure"] + 1 or sec <= previous["audioSec"] or boundaries[measure] <= boundaries[previous["measure"]]):
+            raise ValueError("measureSync requires consecutive measures and increasing audio times")
+        previous = marker
+    if markers[0]["measure"] != start_measure:
+        raise ValueError("startMeasure must match the first measureSync boundary")
+    return markers
+
+
 def tracker_beat_quarters(xml: str) -> float:
     """QM 拍点跟踪器一个拍点间隔走过的四分音符数: 单拍子 1, 复拍子
     (6/8·9/8·12/8, 面板按惯例填附点速度) 1.5。网格门限与下标映射都按它折算。"""
@@ -380,14 +400,18 @@ def _select_grid_scale(beats: np.ndarray, med: float, anchor: int, notes: list,
 def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: int = 1,
             first_beat_audio_sec: float | None = None, sync_mode: str = "legacy",
             pitch_notes: list | None = None, onset_hint: list | None = None,
-            beat_map: list | None = None) -> dict:
+            beat_map: list | None = None, measure_sync: list | None = None) -> dict:
     """pitch_notes: [(start_sec, end_sec, midi)] 外部基频传感器(pYIN); onset_hint: [sec]
     外部起音传感器(QM)。两者都可选, 为空时退回自研检测, 打分逻辑不变。
     sync_mode="vamp-beat": 用 QM 拍点时间轴做活网格, 需 beat_map=[sec...]。"""
     validate_instrument(instrument, ["violin", "viola", "cello"])
     validate_bpm(bpm, min_bpm=30, max_bpm=200)
-    if sync_mode not in ("legacy", "metronome", "vamp-beat"):
+    if sync_mode not in ("legacy", "metronome", "vamp-beat", "manual-measures"):
         raise ValueError("无效的同步模式")
+    if sync_mode == "manual-measures" and (start_measure == 0 or first_beat_audio_sec is not None):
+        raise ValueError("Manual measure sync cannot use automatic location or a metronome anchor")
+    if sync_mode != "manual-measures" and measure_sync is not None:
+        raise ValueError("measureSync requires manual-measures mode")
     if first_beat_audio_sec is not None and (
             not isinstance(first_beat_audio_sec, (int, float)) or
             not 0 <= float(first_beat_audio_sec) <= MAX_FIRST_BEAT_SECONDS):
@@ -400,6 +424,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if type(start_measure) is not int or start_measure < 0 or start_measure > score_notes[-1]["measure"]:
         raise ValueError("开始小节没有可演奏音符")
     signal, rate = read_wav(wav)
+    if sync_mode == "manual-measures":
+        measure_sync = validate_measure_sync(measure_sync, xml, len(signal) / rate, start_measure)
     # 削波必须在原始电平上判定; 随后把峰值归一化到固定电平, 让下游的绝对能量
     # 阈值 (0.008/0.012/0.018) 与录音电平无关 (#6: -38 dBFS 录音曾报"无法检测到演奏",
     # 0.02~0.32 间节奏分随电平漂移)。read_wav 已拒绝峰值 < 0.005 的录音。
@@ -451,6 +477,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         start_measure = notes[0]["measure"]
     else:
         notes = [n for n in score_notes if n["measure"] >= start_measure]
+    if sync_mode == "manual-measures":
+        notes = [n for n in notes if n["measure"] < measure_sync[-1]["measure"]]
+        if not notes:
+            raise ValueError("No pitched notes inside the confirmed measure boundaries")
     times, pitches, energy, confidence = _hint_track(signal, rate, pitch_notes) if pitch_notes \
         else track(signal, rate)
     if len(times) < 8:
@@ -530,6 +560,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             else:
                 beat_time = None
 
+    manual_boundaries = measure_start_beats(xml) if sync_mode == "manual-measures" else {}
+    if sync_mode == "manual-measures":
+        boundaries = measure_start_beats(xml, include_end=True)
+        anchor_beats = [boundaries[m["measure"]] for m in measure_sync]
+        anchor_times = [m["audioSec"] for m in measure_sync]
+        base_beat = 0.0
+        def beat_time(rel_beat):
+            return float(np.interp(rel_beat, anchor_beats, anchor_times))
+
     if sync_mode == "metronome":
         # The client records the metronome downbeat of start_measure.
         # Trust it as the base timeline, then apply only a small bounded
@@ -548,14 +587,16 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     # Score excerpts can start at any measure. Never count score notes beyond
     # the recording as missed notes, including when the full score is hours long.
     last_voiced = times[voiced[-1]]
-    notes = [n for n in notes if (beat_time(n["onsetBeat"] - base_beat) if beat_time is not None
-                                else start + n["onsetBeat"] * sec_per_beat) <= last_voiced + 0.06]
+    if sync_mode != "manual-measures":
+        notes = [n for n in notes if (beat_time(n["onsetBeat"] - base_beat) if beat_time is not None
+                                    else start + n["onsetBeat"] * sec_per_beat) <= last_voiced + 0.06]
     if not notes:
         raise ValueError("录音不足以覆盖所选开始小节")
     aligned = []
     pitch_errors, timing_errors = [], []
     timing_at: list[float] = []
     measured_count = 0
+    timing_candidates = 0
     # legacy/metronome 是固定网格: 整体偏慢/偏快时误差逐音累积, 几小节后搜索窗
     # 落到邻音上, 把速度问题误报成错音。只让"去哪儿找"跟随已测起音的线性趋势;
     # 计时误差仍对固定网格计算, 拖慢照实报 late, 期望与实测不同源。
@@ -587,7 +628,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         reach = min(0.22, duration * 0.35)
         # 固定网格模式下起音单调且一一匹配: 前一音符已占用的起音不可复用,
         # 否则回退窗会把前一音的起音当成本音 (拖慢时尤甚)。
-        free = [t for t in onsets if beat_time is not None or t > last_onset + 0.05]
+        measure_lo = beat_time(manual_boundaries[note["measure"]]) if manual_boundaries else -math.inf
+        measure_hi = beat_time(boundaries[note["measure"] + 1]) if manual_boundaries else math.inf
+        free = [t for t in onsets if measure_lo <= t < measure_hi and
+                ((beat_time is not None and not manual_boundaries) or t > last_onset + 0.05)]
         # 先在趋势预测处找; 落空再回固定网格窗 (随机抖动时预测会偏)。
         # 两处都落空时音高窗仍跟随趋势: 漏检起音(如半音连奏)不把音高窗拉回旧网格。
         ref = center
@@ -606,7 +650,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             # 一一匹配。命中后音高窗锚到实测起音, 避免窗口落在前一音的尾部。
             late_reach = min(0.40, duration * 0.45)
             early_reach = min(0.40, (prev_duration or duration) * 0.45)
-            wide = [t for t in onsets if t > last_onset + 0.05 and expected - early_reach <= t <= expected + late_reach]
+            wide = [t for t in onsets if measure_lo <= t < measure_hi and t > last_onset + 0.05 and expected - early_reach <= t <= expected + late_reach]
             if wide:
                 onset = min(wide, key=lambda t: abs(t - expected))
                 ref = onset
@@ -674,15 +718,17 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         pitch_status = classify_pitch(cents, detected)
         if cents is not None and pitch_status in ("sharp", "flat", "correct"):
             pitch_errors.append(abs(cents))
-        if delta is not None and note_index > 0:
+        timing_eligible = (bool(manual_boundaries) or note_index > 0) and not (manual_boundaries and abs(note["onsetBeat"] - manual_boundaries[note["measure"]]) < 1e-6)
+        timing_candidates += int(timing_eligible)
+        if delta is not None and timing_eligible:
             timing_errors.append(delta)
             timing_at.append(expected)
-        timing_status = "unscored" if note_index == 0 else "uncertain" if delta is None else "late" if delta > 80 else "early" if delta < -80 else "correct"
+        timing_status = "unscored" if not timing_eligible else "uncertain" if delta is None else "late" if delta > 80 else "early" if delta < -80 else "correct"
         status = "outlier" if pitch_status == "outlier" else "uncertain" if pitch_status == "uncertain" else "octave_uncertain" if pitch_status == "octave" else "wrong_pitch" if pitch_status in ("sharp", "flat") else \
-            "timing_uncertain" if note_index > 0 and delta is None else timing_status if timing_status in ("late", "early") else "correct"
+            "timing_uncertain" if timing_eligible and delta is None else timing_status if timing_status in ("late", "early") else "correct"
         aligned.append({**note, "expectedSec": round(expected, 3), "performedSec": round(onset, 3) if onset is not None else None,
                         "expectedEndSec": round(expected + duration, 3),
-                        "pitchErrorCents": cents, "timingErrorMs": delta if note_index > 0 else None,
+                        "pitchErrorCents": cents, "timingErrorMs": delta if timing_eligible else None,
                         "confidence": quality, "pitchStatus": pitch_status, "timingStatus": timing_status,
                         "matchStatus": "matched" if cents is not None else "uncertain", "status": status})
     # 不将不可判断的音符作为正确或错误；节奏得分只在至少三个起音可匹配时给出。
@@ -705,7 +751,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     rhythm_stability_score = None
     rhythm_spread = None
     timing_offset = None
-    if len(timing_errors) >= 3 and len(timing_errors) / max(1, len(notes) - 1) >= .6:
+    if len(timing_errors) >= 3 and len(timing_errors) / max(1, timing_candidates) >= .6:
         timing_offset = round(float(np.median(timing_errors)))
         # 稳定性只看去掉整体速度趋势后的残差: 稳定地慢/快由 timingAccuracyScore 扣分,
         # 不算"不稳" (产品决定 2026-10-01)。至少 6 个起音才拟合趋势, 点太少时
@@ -733,10 +779,16 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             measure_intervals.append({"measure": measure, "startSec": round(lo, 3), "endSec": round(hi, 3)})
     clipped = raw_clipped  # 归一化前测得, 见 read_wav 调用处
     sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
+    if sync_mode == "manual-measures":
+        measure_intervals = [{"measure": a["measure"], "startSec": a["audioSec"], "endSec": b["audioSec"]}
+                             for a, b in zip(measure_sync, measure_sync[1:])]
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
             "measureIntervals": measure_intervals,
+            "measureSync": measure_sync,
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
                         "pitchToleranceCents": 15,
+                        "timingCandidateNotes": timing_candidates,
+                        "timingReference": "within-manually-synced-measures" if manual_boundaries else "automatic",
                         "outlierNotes": sum(n["pitchStatus"] == "outlier" for n in aligned),
                         "scoredPitchNotes": len(pitch_errors),
                         "correctPitchNotes": correct_pitch_notes, "wrongPitchNotes": wrong_pitch_notes,
@@ -756,6 +808,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "clipped": clipped, "detectedBpm": detected_bpm if detected_bpm is not None else mismatch_bpm,
                         "tempoMismatch": tempo_mismatch},
             "notes": aligned, "limitations": ["仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",
+                                           "手动小节边界用于对齐；仅评估小节内节奏，手动标记的首拍不评分。"
+                                           if sync_mode == "manual-measures" else
                                            "音高按十二平均律；首音作为时间零点，不计入节奏得分。"
                                            if sync_mode == "legacy" else
                                            "音高按十二平均律；节拍器第一拍锚定时间轴，后端仅做 ±150 ms 微调。"]}
