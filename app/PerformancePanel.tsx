@@ -330,7 +330,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       }, 120);
       recordingStopTimer.current = setTimeout(() => {
         if (!alive.current || recorder.current?.state !== "recording") return;
-        setError(zh ? "录音达到 90 秒上限，已自动停止并保存" : "The 90-second limit was reached; the take was stopped and saved");
+        setError(zh ? "录音达到 180 秒上限，已自动停止并保存" : "The 180-second limit was reached; the take was stopped and saved");
         stopSyncRecording();
       }, MAX_RECORDING_MS);
     } catch (exc) {

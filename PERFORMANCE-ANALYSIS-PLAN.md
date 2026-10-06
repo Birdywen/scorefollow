@@ -26,7 +26,7 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 
 ## API 契约 v0
 
-- `POST /jobs` JSON `{scoreXml, audioWavBase64, bpm, instrument, startMeasure?, syncMode?, firstBeatAudioSec?}` → `202 {id,status}`；`startMeasure` 是从 1 开始的谱面小节编号，默认为 1；最大请求 8 MB，音频 5 MB/90 秒。`legacy`（默认）按录音首个检测起音对齐此小节或其后第一个有音高的音；`metronome` 需附 `firstBeatAudioSec`（0–20 秒，足以覆盖 30 BPM 的 8 个预备拍；表示起始小节第一拍在录音中的位置），后端以它为时间轴、仅做 ±150 ms 延迟微调并返回 `syncMode/recordedFirstBeatSec/estimatedLatencyMs/coveredSec`。录音未覆盖的后续目标音符不计分。
+- `POST /jobs` JSON `{scoreXml, audioWavBase64, bpm, instrument, startMeasure?, syncMode?, firstBeatAudioSec?}` → `202 {id,status}`；`startMeasure` 是从 1 开始的谱面小节编号，默认为 1；最大请求体 16 MB，音频解码后 10 MB；页面上传最长 180 秒。`legacy`（默认）按录音首个检测起音对齐此小节或其后第一个有音高的音；`metronome` 需附 `firstBeatAudioSec`（0–20 秒，足以覆盖 30 BPM 的 8 个预备拍；表示起始小节第一拍在录音中的位置），后端以它为时间轴、仅做 ±150 ms 延迟微调并返回 `syncMode/recordedFirstBeatSec/estimatedLatencyMs/coveredSec`。录音未覆盖的后续目标音符不计分。
 - `GET /jobs/{id}` → `{id,status,createdAt,result?,error?}`；状态 `queued|analyzing|completed|failed`。`GET /health` 可用于检查服务。
 - `POST /omr/jobs` JSON `{pdfBase64,filename,prependRestBeats?}` → `202 {id,status}`；原始 PDF ≤ 15 MB；只有另选已删除首小节的 PDF 才填写 `prependRestBeats`（整数 1–16）。`GET /omr/jobs/{id}` → `{id,status,progress?,result?,error?}`；`result` 含 `musicXml,compatible,reason,noteCount,measureCount,restoredFirstRest`。OMR 作业可能持续数分钟。
 - 任务 ID 为随机不可猜字符串，任务和结果仅保留进程内最多 1 小时；进程重启即丢失。最多 4 个排队/处理中的任务。
@@ -34,7 +34,7 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 
 ## 下一轮验收顺序
 
-1. **已完成第一批可信度修复**：声明音域内的高音/低音回归、93 ms 窗与周期插值、错音不能被中位数掩盖、整体抢拖拍与稳定性分开、重复音未检测到起音时不再标正确、30 BPM × 8 预备拍同步范围、节拍器启动失败丢弃录音、90 秒自动停止。
+1. **已完成第一批可信度修复**：声明音域内的高音/低音回归、93 ms 窗与周期插值、错音不能被中位数掩盖、整体抢拖拍与稳定性分开、重复音未检测到起音时不再标正确、30 BPM × 8 预备拍同步范围、节拍器启动失败丢弃录音、180 秒自动停止。
 2. 建立小提琴/大提琴真实演奏标注集：音符起音、稳态 cents、滑音/揉弦、漏音、噪音；提供留出曲目验证，按乐器/速度/录音设备分层报告 precision/recall/误差。
 3. 加入谱面音符时间轴的声部/连音/休止/反复标准化，识别 MusicXML 和 PDF 小节对应关系；接入 ABC 投射后才提供音符级 PDF 高亮。
 4. 用稳健基频候选、谱音约束和单调序列对齐/DTW 替换简单固定时间窗；先识别漏音/多余音及整体延迟，再推出音乐性评分，明确阈值与置信度校准。
