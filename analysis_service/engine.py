@@ -20,6 +20,15 @@ VERSION = "string-mono-0.2"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
+# 调号在五线谱上的升降号顺序: fifths 个升号取前 N 个, 降号同理。
+SHARP_ORDER = ("F", "C", "G", "D", "A", "E", "B")
+FLAT_ORDER = ("B", "E", "A", "D", "G", "C", "F")
+# 个别导出器只写 <accidental> 不写 <alter> 时的回退映射。
+ACCIDENTAL_ALTER = {
+    "sharp": 1, "natural": 0, "flat": -1,
+    "double-sharp": 2, "sharp-sharp": 2, "flat-flat": -2,
+    "natural-sharp": 1, "natural-flat": -1,
+}
 
 
 def musicxml_number(text: str | None, label: str) -> Decimal:
@@ -53,6 +62,7 @@ def parse_score(xml: str) -> list[dict]:
     beat = 0.0
     divisions = Decimal(1)
     meter_signature = None
+    key_alter: dict[str, int] = {}
     voices = set()
     staves = set()
     for index, measure in enumerate(parts[0].findall("./{*}measure"), 1):
@@ -70,6 +80,19 @@ def parse_score(xml: str) -> list[dict]:
                 meter_signature = meter
             elif meter != meter_signature:
                 raise ValueError("中途变拍暂不支持，请按拍号分段分析")
+        for fifths_el in measure.findall("./{*}attributes/{*}key/{*}fifths"):
+            fifths = musicxml_number(fifths_el.text, "fifths")
+            if fifths != fifths.to_integral_value() or not -7 <= fifths <= 7:
+                raise ValueError("MusicXML 调号无效")
+            fifths = int(fifths)
+            if fifths > 0:
+                key_alter = dict.fromkeys(SHARP_ORDER[:fifths], 1)
+            elif fifths < 0:
+                key_alter = dict.fromkeys(FLAT_ORDER[:-fifths], -1)
+            else:
+                key_alter = {}
+        # 小节线把临时升降号清零, 调号保留到下次变调。
+        accidentals: dict[tuple[str, int], int] = {}
         for item in measure:
             tag = item.tag.rsplit("}", 1)[-1]
             if tag in ("backup", "forward"):
@@ -100,10 +123,27 @@ def parse_score(xml: str) -> list[dict]:
                 if name not in STEP:
                     raise ValueError("MusicXML 音名无效")
                 octave = musicxml_number(pitch.findtext("./{*}octave"), "octave")
-                alter = musicxml_number(pitch.findtext("./{*}alter", "0"), "alter")
-                if octave != octave.to_integral_value() or alter != alter.to_integral_value():
+                if octave != octave.to_integral_value():
                     raise ValueError("微分音或非整数八度暂不支持")
-                midi = 12 * (int(octave) + 1) + STEP[name] + int(alter)
+                octave = int(octave)
+                alter_el = pitch.find("./{*}alter")
+                if alter_el is not None:
+                    alter = musicxml_number(alter_el.text, "alter")
+                    if alter != alter.to_integral_value():
+                        raise ValueError("微分音或非整数八度暂不支持")
+                    alter = int(alter)
+                    accidentals[(name, octave)] = alter
+                else:
+                    accidental = pitch.findtext("./{*}accidental")
+                    if accidental is None:
+                        alter = accidentals.get((name, octave), key_alter.get(name, 0))
+                    else:
+                        accidental = accidental.strip()
+                        if accidental not in ACCIDENTAL_ALTER:
+                            raise ValueError("微分音或非整数八度暂不支持")
+                        alter = ACCIDENTAL_ALTER[accidental]
+                        accidentals[(name, octave)] = alter
+                midi = 12 * (octave + 1) + STEP[name] + alter
                 if not 36 <= midi <= 96:
                     raise ValueError("音域暂仅支持 MIDI 36–96")
                 ties = {t.get("type") for t in item.findall("./{*}tie")}

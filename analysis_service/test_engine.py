@@ -181,6 +181,59 @@ class EngineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "微分音"):
             parse_score(xml.replace("<alter>-1.0</alter>", "<alter>0.5</alter>"))
 
+    def test_key_signature_applies_to_bare_notes(self):
+        # D 大调: 无 alter 的 F/C 按 F#/C# 读。
+        xml = ('<score-partwise><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions>'
+               '<key><fifths>2</fifths></key></attributes>'
+               '<note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration></note>'
+               '<note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration></note>'
+               '<note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration></note>'
+               '</measure></part></score-partwise>')
+        result = parse_score(xml)
+        self.assertEqual([n["pitchMidi"] for n in result], [66, 73, 67])
+
+    def test_explicit_natural_carries_within_measure_then_key_returns(self):
+        # 同小节内还原号延续, 过小节线回到调号。
+        xml = ('<score-partwise><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions>'
+               '<key><fifths>2</fifths></key></attributes>'
+               '<note><pitch><step>F</step><alter>0</alter><octave>4</octave></pitch><duration>1</duration></note>'
+               '<note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration></note>'
+               '</measure><measure number="2">'
+               '<note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration></note>'
+               '</measure></part></score-partwise>')
+        result = parse_score(xml)
+        self.assertEqual([n["pitchMidi"] for n in result], [65, 65, 66])
+
+    def test_mid_piece_key_change(self):
+        xml = ('<score-partwise><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions></attributes>'
+               '<note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration></note>'
+               '</measure><measure number="2"><attributes>'
+               '<key><fifths>1</fifths></key></attributes>'
+               '<note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration></note>'
+               '</measure></part></score-partwise>')
+        result = parse_score(xml)
+        self.assertEqual([n["pitchMidi"] for n in result], [65, 66])
+
+    def test_invalid_key_signature_is_rejected(self):
+        xml = score((69,)).replace("<divisions>1</divisions>",
+                                    "<divisions>1</divisions><key><fifths>8</fifths></key>")
+        with self.assertRaisesRegex(ValueError, "调号"):
+            parse_score(xml)
+
+    def test_key_signature_end_to_end_scores_matching_audio(self):
+        # 回归用户场景: D 大调谱 + 对应录音, 不应再大面积错音。
+        xml = ('<score-partwise><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions>'
+               '<key><fifths>2</fifths></key></attributes>'
+               + "".join(f'<note><pitch><step>{s}</step><octave>4</octave></pitch><duration>1</duration></note>'
+                           for s in ("D", "E", "F", "G", "A")) +
+               '</measure></part></score-partwise>')
+        result = analyze(recording((62, 64, 66, 67, 69)), xml, 60, "violin")
+        self.assertTrue(all(n["status"] == "correct" for n in result["notes"]))
+
     def test_timing_variation_reduces_stability(self):
         steady = analyze(recording(), score(), 60, "violin")
         uneven = analyze(recording(offsets=(0, .16, -.13, .17, -.12)), score(), 60, "violin")
