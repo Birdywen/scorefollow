@@ -18,6 +18,7 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
   const launch = useRef<HTMLButtonElement>(null);
   const idle = useRef(0);
   const keyboard = useRef(false);
+  const lastTap = useRef(0);
   const touch = () => { idle.current = Date.now(); };
 
   useEffect(() => {
@@ -64,6 +65,9 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
     touch();
   };
   const play = () => {
+    const now = Date.now();
+    if (now - lastTap.current < 500) return;
+    lastTap.current = now;
     const api = engine();
     if (!api) return;
     if (api.isPlaying()) api.stop();
