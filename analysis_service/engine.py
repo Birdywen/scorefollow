@@ -331,31 +331,43 @@ def _interp_beats(beats: np.ndarray, med: float, anchor: int, rel_beat: float) -
     return float(beats[i] * (1 - f) + beats[i + 1] * f)
 
 
-def _select_compound_scale(beats: np.ndarray, med: float, anchor: int,
-                           rel_quarters: list, onsets: list) -> float | None:
-    """复拍子 1.2–1.8 倍带二选一：1.0=四分脉冲 1:1，1.5=附点脉冲 /1.5。
-    用与网格无关的起音证据投票：赢家须 ≤0.10s 且比对手好一倍，否则 None。
-    只统计录音覆盖得到的音符（超出拍点跨度的尾部在两种刻度下都对不上）。"""
-    if not rel_quarters or not onsets:
+def _select_grid_scale(beats: np.ndarray, med: float, anchor: int, notes: list,
+                       base_beat: float, times, pitches, confidence, scales) -> float | None:
+    """用音高证据验网格刻度：候选 1.0=四分脉冲 1:1，1.5=附点脉冲 /1.5。
+    窗内音高中位数与谱面音差 ≤1.5 半音算命中；赢家须 ≥0.6，多候选时还须
+    ≥1.4 倍于次名，单候选须 ≥0.7，否则 None。只统计录音覆盖的音符。"""
+    if med <= 0 or len(beats) < 2 or not notes:
         return None
-    span = (float(beats[-1]) - float(beats[0])) / med if med > 0 and len(beats) >= 2 else 0
-    rels = [rel for rel in rel_quarters if rel <= span + 2.0]
-    if len(rels) < 4:
+    span = (float(beats[-1]) - float(beats[0])) / med
+    cov = [n for n in notes if n["onsetBeat"] - base_beat <= span + 2.0]
+    if len(cov) < 4:
         return None
-    grid = np.asarray(sorted(float(o) for o in onsets))
-    cand = {}
-    for scale in (1.0, 1.5):
-        diffs = []
-        for rel in rels:
-            t = _interp_beats(beats, med, anchor, rel / scale)
-            j = int(np.searchsorted(grid, t))
-            near = min(abs(t - grid[k]) for k in (j - 1, j) if 0 <= k < len(grid))
-            diffs.append(near)
-        cand[scale] = float(np.median(diffs))
-    if cand[1.0] <= 0.10 and cand[1.0] * 2 <= cand[1.5]:
-        return 1.0
-    if cand[1.5] <= 0.10 and cand[1.5] * 2 <= cand[1.0]:
-        return 1.5
+    t = np.asarray(times)
+    p = np.asarray(pitches)
+    c = np.asarray(confidence)
+    agree = {}
+    for scale in scales:
+        hit = total = 0
+        for n in cov:
+            rel = n["onsetBeat"] - base_beat
+            t0 = _interp_beats(beats, med, anchor, rel / scale)
+            t1 = _interp_beats(beats, med, anchor, (rel + n["durationBeat"]) / scale)
+            lo, hi = t0 + (t1 - t0) * 0.3, t1 - (t1 - t0) * 0.3
+            m = (t >= lo) & (t <= hi) & np.isfinite(p) & (c >= 0.7)
+            if int(m.sum()) < 3:
+                continue
+            total += 1
+            if abs(float(np.median(p[m])) - n["pitchMidi"]) <= 1.5:
+                hit += 1
+        agree[scale] = hit / total if total >= 4 else 0.0
+    best = max(scales, key=lambda s: agree[s])
+    if agree[best] < 0.6:
+        return None
+    if len(scales) == 1:
+        return best if agree[best] >= 0.7 else None
+    others = [agree[s] for s in scales if s != best]
+    if others and agree[best] >= 1.4 * max(others):
+        return best
     return None
 
 
@@ -394,12 +406,11 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if pitch_notes:
         usable_events(pitch_notes)
     sec_per_beat = seconds_per_quarter(xml, bpm)
-    # 网格门限比较的是同一单位: 跟踪器脉冲间隔 vs 面板速度对应的脉冲时长。
-    # 单拍子只有四分脉冲一种可能; 复拍子在 1.2–1.8 倍之间有两种读法
-    # (四分口径录入 + 四分脉冲，或附点口径录入 + 附点脉冲)，留到起音证据
-    # 齐备后再二选一，选不出来就按 mismatch 退回，绝不拿错位网格打分。
+    # 面板速度只做第一道粗筛：命中 [0.8,1.25] 直接用 1:1；其余（面板未知、
+    # 填错口径）只要不是自动定位，就拿音高证据验网格，验过才锁，验不过
+    # 按 mismatch 退回 legacy。自动定位没有面板可依赖，含糊直接退回。
     beat_quarters = 1.0
-    compound_ambiguous = False
+    needs_vote = False
     tempo_mismatch = False
     mismatch_bpm = None
     if sync_mode == "vamp-beat" and beat_map:
@@ -409,17 +420,16 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             if interval <= 0:
                 tempo_mismatch = True
                 beat_map = None
+            elif 0.8 <= interval / sec_per_beat <= 1.25:
+                pass
+            elif start_measure != 0:
+                needs_vote = True
+                tempo_mismatch = True
+                mismatch_bpm = round(60 / interval, 1)
             else:
-                ratio = interval / sec_per_beat
-                if 0.8 <= ratio <= 1.25:
-                    pass
-                elif (start_measure != 0 and tracker_beat_quarters(xml) == 1.5
-                        and 1.2 <= ratio <= 1.8):
-                    compound_ambiguous = True
-                else:
-                    tempo_mismatch = True
-                    mismatch_bpm = round(60 / interval, 1)
-                    beat_map = None
+                tempo_mismatch = True
+                mismatch_bpm = round(60 / interval, 1)
+                beat_map = None
     auto_located = start_measure == 0
     location_cost = None
     if auto_located:
@@ -490,20 +500,20 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             audio_anchor = location_anchor if auto_located else onsets[0]
             anchor = int(np.argmin(np.abs(beats - audio_anchor)))
             anchor_shift = audio_anchor - beats[anchor] if auto_located else 0.0
-            if compound_ambiguous:
-                picked = _select_compound_scale(
-                    beats, med, anchor,
-                    [n["onsetBeat"] - notes[0]["onsetBeat"] for n in notes], onsets)
+            if needs_vote:
+                scales = (1.0, 1.5) if tracker_beat_quarters(xml) == 1.5 else (1.0,)
+                picked = _select_grid_scale(
+                    beats, med, anchor, notes, notes[0]["onsetBeat"],
+                    times, pitches, confidence, scales)
                 if picked is None:
-                    tempo_mismatch = True
-                    mismatch_bpm = round(60 / med, 1) if med > 0 else None
+                    beat_map = None
                     sync_mode = "legacy"
                 else:
                     beat_quarters = picked
-            if tracker_beat_quarters(xml) == 1.5 and not compound_ambiguous \
+            if tracker_beat_quarters(xml) == 1.5 and not needs_vote \
                     and detected_bpm is not None:
                 # 直接锁住的复拍子网格：面板按惯例是附点口径，detectedBpm
-                # 折成附点数才跟面板可比（脉冲本身是四分口径时 rate/1.5）。
+                # 折成附点数才跟面板可比。投票锁住的不折（口径未知，报实测）。
                 detected_bpm = round(detected_bpm / 1.5, 1)
 
             if sync_mode == "vamp-beat":

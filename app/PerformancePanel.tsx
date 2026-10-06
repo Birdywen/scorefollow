@@ -43,8 +43,8 @@ type AnalysisJob = { id: string; status: string; error?: string; result?: Result
 const LOCAL_API = "http://127.0.0.1:8765";
 const TAKES_KEY = "sf-takes-meta-v1";
 const MAX_TAKES = 3;
-// Keep browser recordings below this page's 90-second conversion limit.
-const MAX_RECORDING_MS = 89_500;
+// Keep browser recordings below this page's 180-second conversion limit.
+const MAX_RECORDING_MS = 179_500;
 
 type PracticeMetro = {
   isAvailable: () => boolean;
@@ -80,7 +80,7 @@ async function toWav(file: Blob): Promise<string> {
   const context = new AudioContext();
   try {
     const decoded = await context.decodeAudioData(await file.arrayBuffer());
-    if (decoded.duration < 0.4 || decoded.duration > 90) throw new Error("录音须为 0.4–90 秒 / Audio must be 0.4–90 s");
+    if (decoded.duration < 0.4 || decoded.duration > 180) throw new Error("录音须为 0.4–180 秒 / Audio must be 0.4–180 s");
     const rate = 22050;
     const frames = Math.floor(decoded.duration * rate);
     const bytes = new Uint8Array(44 + frames * 2);

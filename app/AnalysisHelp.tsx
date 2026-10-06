@@ -11,8 +11,8 @@ const topics = [
   {
     title: ["2 · 录音、上传与保存", "2 · Record, upload and store takes"],
     text: [
-      "可用麦克风录音，也可上传浏览器能解码的 WAV、MP3、M4A、WebM 等音频；能否解码取决于浏览器。页面分析接受 0.4–90 秒、原文件不超过 40 MB，发送前会转换成单声道 WAV。录音接近 90 秒时自动停止。保持独奏、避免伴奏串音和过载；同步录音建议戴耳机，减少节拍器漏入麦克风。录音和上传共用 3 个位置，满额后新增会替换当前选中项（未选中则替换第一项）。录音尝试保存在本机浏览器中，存储失败时仅在本次页面保留，不是云端备份。分析时音频和 MusicXML 会发送到所配置的服务，钢琴音频还会转交转录服务。",
-      "Record with a microphone or upload audio your browser can decode, such as WAV, MP3, M4A or WebM; codec support varies. This page accepts 0.4–90 seconds and original files up to 40 MB, converting them to mono WAV before analysis. Recording stops near 90 seconds. Use a clear solo recording without accompaniment or clipping; headphones reduce metronome bleed during synced recording. Recordings and uploads share three slots. Adding a take when full replaces the selected take, or the first if none is selected. Takes are saved locally when browser storage is available, otherwise only for this page session—not as a cloud backup. Analysis sends audio and MusicXML to the configured service; piano audio is also sent to its transcription service.",
+      "可用麦克风录音，也可上传浏览器能解码的 WAV、MP3、M4A、WebM 等音频；能否解码取决于浏览器。页面分析接受 0.4–180 秒、原文件不超过 40 MB，发送前会转换成单声道 WAV。录音接近 180 秒时自动停止。保持独奏、避免伴奏串音和过载；同步录音建议戴耳机，减少节拍器漏入麦克风。录音和上传共用 3 个位置，满额后新增会替换当前选中项（未选中则替换第一项）。录音尝试保存在本机浏览器中，存储失败时仅在本次页面保留，不是云端备份。分析时音频和 MusicXML 会发送到所配置的服务，钢琴音频还会转交转录服务。",
+      "Record with a microphone or upload audio your browser can decode, such as WAV, MP3, M4A or WebM; codec support varies. This page accepts 0.4–180 seconds and original files up to 40 MB, converting them to mono WAV before analysis. Recording stops near 180 seconds. Use a clear solo recording without accompaniment or clipping; headphones reduce metronome bleed during synced recording. Recordings and uploads share three slots. Adding a take when full replaces the selected take, or the first if none is selected. Takes are saved locally when browser storage is available, otherwise only for this page session—not as a cloud backup. Analysis sends audio and MusicXML to the configured service; piano audio is also sent to its transcription service.",
     ],
   },
   {

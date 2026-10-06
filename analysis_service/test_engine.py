@@ -441,35 +441,45 @@ class EngineTests(unittest.TestCase):
         return output.getvalue(), segments
 
     def test_vamp_beat_compound_meter_selects_quarter_pulse(self):
-        # 用户实案：6/8 慢速四分脉冲，面板按四分口径填 108。r=1.5 进二选一，
-        # 起音证据必须投给 1:1，锁住且全对，detectedBpm 与面板同口径。
+        # 用户实案：6/8 慢速四分脉冲，面板按四分口径填 108。r=1.5 进投票，
+        # 音高证据必须投给 1:1，锁住且全对；面板与实测口径不同，mismatch 照实标出。
         wav_bytes, segments = self._compound_audio(60 / 108 / 2)
         beats = [0.12 + (60 / 108) * i for i in range(6)]
         result = analyze(wav_bytes, compound_score(), 108, "violin", sync_mode="vamp-beat",
                          pitch_notes=segments, beat_map=beats)
         self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
-        self.assertFalse(result["summary"]["tempoMismatch"])
+        self.assertTrue(result["summary"]["tempoMismatch"])
         self.assertAlmostEqual(result["summary"]["detectedBpm"], 108.0, delta=2)
         self.assertEqual([n["status"] for n in result["notes"]], ["correct"] * 6)
 
     def test_vamp_beat_compound_meter_selects_dotted_pulse(self):
-        # 6/8 快速附点脉冲，面板附点口径 120：r=1.5 进二选一，证据投给 /1.5。
+        # 6/8 快速附点脉冲，面板附点口径 120：r=1.5 进投票，证据投给 /1.5。
         wav_bytes, segments = self._compound_audio(60 / 120 / 1.5 / 2)
         beats = [0.12 + 0.5 * i for i in range(4)]
         result = analyze(wav_bytes, compound_score(), 120, "violin", sync_mode="vamp-beat",
                          pitch_notes=segments, beat_map=beats)
         self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
-        self.assertFalse(result["summary"]["tempoMismatch"])
+        self.assertTrue(result["summary"]["tempoMismatch"])
         self.assertAlmostEqual(result["summary"]["detectedBpm"], 120.0, delta=1)
         self.assertEqual([n["status"] for n in result["notes"]], ["correct"] * 6)
 
     def test_vamp_beat_compound_meter_rejects_garbage_pulse(self):
-        # 6/8 里出现 0.9s 脉冲 (r=2.7)：两种读法都对不上，必须退回并标出。
+        # 不规则拍点（跟踪器失锁的真实形态）：两种刻度都对不上，必须退回并标出。
         wav_bytes, _ = self._compound_audio(60 / 108 / 2)
         result = analyze(wav_bytes, compound_score(), 108, "violin", sync_mode="vamp-beat",
-                         beat_map=[0.12 + 0.9 * i for i in range(4)])
+                         beat_map=[0.12, 1.5, 1.6, 3.0])
         self.assertEqual(result["summary"]["syncMode"], "legacy")
         self.assertTrue(result["summary"]["tempoMismatch"])
+
+    def test_vamp_beat_unknown_panel_tempo_locks_on_evidence(self):
+        # 面板 150、实际 60（4/4，YouTube 录音不知道速度）：r=2.5 照样凭
+        # 音高证据锁住四分网格，mismatch 标出实测 60 供用户抄回面板。
+        result = analyze(recording(), score(), 150, "violin", sync_mode="vamp-beat",
+                         beat_map=[0.12 + i for i in range(6)])
+        self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
+        self.assertTrue(result["summary"]["tempoMismatch"])
+        self.assertAlmostEqual(result["summary"]["detectedBpm"], 60.0, delta=2)
+        self.assertEqual([n["status"] for n in result["notes"]], ["correct"] * 5)
 
     def test_steady_slow_tempo_is_reported_as_late_not_wrong_pitch(self):
         # 连奏音阶整体慢 5%/10%: 误差逐音累积, 不能把速度问题判成错音。
