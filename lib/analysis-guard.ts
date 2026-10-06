@@ -11,6 +11,13 @@ export function isValidAnalysisResult(r: unknown): boolean {
   const o = r as Record<string, unknown>;
   if (typeof o.version !== "string" || !o.version) return false;
   if (!Array.isArray(o.notes) || !Array.isArray(o.limitations)) return false;
+  if (o.measureIntervals !== undefined) {
+    if (!Array.isArray(o.measureIntervals)) return false;
+    if (!o.measureIntervals.every((v) => v && typeof v === "object" &&
+      Number.isInteger(v.measure) && v.measure >= 1 &&
+      Number.isFinite(v.startSec) && v.startSec >= 0 &&
+      Number.isFinite(v.endSec) && v.endSec > v.startSec)) return false;
+  }
   if (!o.limitations.every((t) => typeof t === "string")) return false;
   for (const n of o.notes) {
     if (!n || typeof n !== "object") return false;

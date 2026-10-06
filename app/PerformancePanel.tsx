@@ -13,13 +13,16 @@ type Note = {
   id: string; measure: number; pitchMidi: number; expectedSec: number;
   performedSec: number | null; pitchErrorCents: number | null;
   timingErrorMs: number | null; confidence: number; status: string;
-  pitchStatus?: "correct" | "sharp" | "flat" | "uncertain";
+  pitchStatus?: "correct" | "sharp" | "flat" | "uncertain" | "octave" | "outlier";
   timingStatus?: "correct" | "early" | "late" | "uncertain" | "unscored";
   matchStatus?: "matched" | "uncertain";
 };
 type Result = {
   version: string; instrument?: string; notes: Note[]; limitations: string[];
+  measureIntervals?: { measure: number; startSec: number; endSec: number }[];
   summary: { pitchScore: number | null; rhythmScore: number | null;
+    outlierNotes?: number; scoredPitchNotes?: number;
+    pitchToleranceCents?: number;
     intonationScore?: number | null; correctPitchNotes?: number; wrongPitchNotes?: number;
     pitchScoreMethod?: string; missedNotes?: number; extraNotes?: number;
     timingAccuracyScore?: number | null; rhythmStabilityScore?: number | null;
@@ -155,6 +158,26 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const discardRecording = useRef(false);
   const lastJumpMeasure = useRef(0);
   const player = useRef<HTMLAudioElement>(null);
+  const playbackRange = useRef<{ startSec: number; endSec: number } | null>(null);
+  const [playingMeasure, setPlayingMeasure] = useState<number | null>(null);
+  useEffect(() => {
+    playbackRange.current = null;
+    setPlayingMeasure(null);
+    // timeupdate alone may arrive only four times per second. Check the media
+    // clock more frequently, including after seeking or changing playback rate.
+    const timer = window.setInterval(() => {
+      const audio = player.current;
+      const range = playbackRange.current;
+      if (!audio || !range || audio.paused || audio.seeking) return;
+      if (audio.currentTime >= range.endSec || audio.currentTime < range.startSec - 0.05) {
+        audio.pause();
+        audio.currentTime = range.endSec;
+        playbackRange.current = null;
+        setPlayingMeasure(null);
+      }
+    }, 20);
+    return () => { window.clearInterval(timer); playbackRange.current = null; };
+  }, [selectedId]);
   const alive = useRef(true);
   const analyzeAbortRef = useRef<AbortController | null>(null);
   const startingRecordingRef = useRef(false);
@@ -482,10 +505,30 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   function replay(note: Note) {
     // performedSec is a recording timestamp, so seeking is exact for synced takes.
     if (player.current) {
+      playbackRange.current = null;
+      setPlayingMeasure(null);
       player.current.currentTime = Math.max(0, (note.performedSec ?? note.expectedSec) - 0.5);
-      void player.current.play();
+      void player.current.play().catch(() => setError(zh ? "无法播放录音" : "Could not play this recording"));
     }
     if (canJump) onJump(note.measure);
+  }
+  function replayMeasure(measure: number) {
+    if (canJump) onJump(measure);
+    const range = result?.measureIntervals?.find((item) => item.measure === measure);
+    const audio = player.current;
+    if (!audio || !range || !Number.isFinite(range.startSec) || !Number.isFinite(range.endSec) || range.endSec <= range.startSec) {
+      setError(zh ? "此报告没有小节音频边界，请重新分析录音。" : "This report has no measure audio boundaries. Please reanalyze the take.");
+      return;
+    }
+    audio.pause();
+    playbackRange.current = range;
+    setPlayingMeasure(measure);
+    audio.currentTime = range.startSec;
+    void audio.play().catch(() => {
+      playbackRange.current = null;
+      setPlayingMeasure(null);
+      setError(zh ? "无法播放录音" : "Could not play this recording");
+    });
   }
   function onTakePlaybackTime(sec: number, take: Take) {
     if (take.result?.summary.autoLocated) {
@@ -614,8 +657,12 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           }
         }}
       />}
-      {selected?.blob && <div className={styles.preview}><span>{selected.name}</span><audio ref={player} controls src={selected.url}
-        onTimeUpdate={(e) => onTakePlaybackTime(e.currentTarget.currentTime, selected)} /></div>}
+      {selected?.blob && <div className={styles.preview}><span>{selected.name}</span><audio key={selected.id} ref={player} controls src={selected.url}
+        onEnded={() => { playbackRange.current = null; setPlayingMeasure(null); }}
+        onTimeUpdate={(e) => onTakePlaybackTime(e.currentTarget.currentTime, selected)} />
+        {playingMeasure != null && <span role="status">{zh ? `只回听第 ${playingMeasure} 小节` : `Playing measure ${playingMeasure} only`}</span>}
+        <button onClick={() => { playbackRange.current = null; setPlayingMeasure(null); if (player.current) { player.current.currentTime = 0; void player.current.play().catch(() => setError(zh ? "无法播放录音" : "Could not play this recording")); } }}>{zh ? "播放整遍" : "Play full take"}</button>
+      </div>}
     </section>
 
     {(error) && <p role="alert" className={styles.error}>{error}</p>}
@@ -631,13 +678,16 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     </section>}
     {result && <section className={styles.report} aria-label={zh ? "分析报告" : "Analysis report"}>
       <h2>{zh ? "演奏报告" : "Performance report"}</h2>
+      {result.instrument !== "piano" && result.summary.pitchToleranceCents !== 15 && <p role="status" className={styles.hint}>{zh ? "这是旧评分规则的报告。图表已按 ±15 音分显示；请更新分析服务并重新分析，刷新分数与错音数量。" : "This report uses the old scoring rules. Charts now use ±15 cents; update the analysis service and reanalyze to refresh the score and wrong-note totals."}</p>}
       <div className={styles.scores}><div><b>{result.summary.pitchScore ?? "—"}</b>{zh ? "综合音高" : "Pitch"}</div>
         <div><b>{result.summary.rhythmScore ?? "—"}</b>{zh ? "跟拍" : "Timing"}</div></div>
       <VisualReport
+        zh={zh}
         notes={result.notes}
         onNoteClick={(vn) => { const full = result.notes.find((n) => n.id === vn.id); if (full) replay(full); }}
-        onMeasureClick={(m) => { if (canJump) onJump(m); }}
+        onMeasureClick={replayMeasure}
       />
+      <p className={styles.hint}>{zh ? "可计分音高" : "Scored pitches"} {result.summary.scoredPitchNotes ?? "—"} · {zh ? "疑似异常（不扣音高分）" : "Suspected outliers (no pitch penalty)"} {result.summary.outlierNotes ?? "—"}. {zh ? "超过八度的偏差视为疑似跟踪异常；空心点不计音高分。" : "Deviations beyond an octave are treated as suspect tracking. Hollow points do not affect pitch scores."}</p>
       <p className={styles.hint}>{zh ? "可判音符" : "Voiced"} {result.summary.voicedNotes}/{result.summary.noteCount} ·
         {zh ? "可判起音" : "Timed"} {result.summary.timedNotes}/{Math.max(0, result.summary.noteCount - 1)} ·
         {zh ? "波动" : "Spread"} {result.summary.timingSpreadMs ?? "—"} ms</p>

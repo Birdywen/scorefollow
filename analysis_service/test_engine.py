@@ -316,14 +316,55 @@ class EngineTests(unittest.TestCase):
     def test_classify_pitch_uses_cents_and_physics_range(self):
         self.assertEqual(classify_pitch(None, None), "uncertain")
         self.assertEqual(classify_pitch(0.0, 69.0), "correct")
-        self.assertEqual(classify_pitch(50.0, 69.0), "correct")
-        self.assertEqual(classify_pitch(51.0, 69.0), "sharp")
-        self.assertEqual(classify_pitch(-51.0, 69.0), "flat")
+        self.assertEqual(classify_pitch(15.0, 69.0), "correct")
+        self.assertEqual(classify_pitch(-15.0, 69.0), "correct")
+        self.assertEqual(classify_pitch(15.1, 69.0), "sharp")
+        self.assertEqual(classify_pitch(-15.1, 69.0), "flat")
+
+    def test_accepted_intonation_has_no_pitch_penalty(self):
+        for cents in (-10, 10):
+            result = analyze(recording(detune=cents), score(), 60, "violin")
+            self.assertEqual(result["summary"]["pitchScore"], 100)
+            self.assertEqual(result["summary"]["wrongPitchNotes"], 0)
+            self.assertEqual(result["summary"]["pitchToleranceCents"], 15)
+        outside = analyze(recording(detune=25), score(), 60, "violin")
+        self.assertEqual(outside["summary"]["wrongPitchNotes"], 5)
+        self.assertLess(outside["summary"]["pitchScore"], 100)
         self.assertEqual(classify_pitch(1200.0, 69.0), "octave")
         self.assertEqual(classify_pitch(-1190.0, 48.0 - 11.9), "octave")
         # 大提琴最低 C2=36: 实测低于此是次谐波误判, 不得计错音。
         self.assertEqual(classify_pitch(-1866.0, 35.3), "uncertain")
         self.assertEqual(classify_pitch(1300.0, 97.0), "uncertain")
+
+    def test_extreme_pitch_outliers_do_not_count_as_wrong(self):
+        for cents in (-2400, -1500, 1500, 2400):
+            self.assertEqual(classify_pitch(cents, 60), "outlier")
+        self.assertEqual(classify_pitch(200, 71), "sharp")
+        self.assertEqual(classify_pitch(-200, 67), "flat")
+        # One two-octave tracker excursion amongst four reliable notes.
+        result = analyze(recording((45, 71, 72, 74, 76)), score(), 60, "cello")
+        self.assertEqual(result["notes"][0]["pitchStatus"], "outlier")
+        self.assertEqual(result["notes"][0]["status"], "outlier")
+        self.assertEqual(result["summary"]["outlierNotes"], 1)
+        self.assertEqual(result["summary"]["wrongPitchNotes"], 0)
+        self.assertGreater(result["summary"]["pitchScore"], 95)
+
+        # Excluding most of the take must not manufacture a high-confidence score.
+        sparse = analyze(recording((45, 47, 48, 74, 76)), score(), 60, "cello")
+        self.assertEqual(sparse["summary"]["outlierNotes"], 3)
+        self.assertIsNone(sparse["summary"]["pitchScore"])
+
+    def test_measure_audio_intervals_cover_rests_and_stop_at_next_bar(self):
+        xml = score().replace('<duration>1</duration></note></measure>',
+                              '<duration>1</duration></note><note><rest/><duration>1</duration></note></measure>', 1)
+        result = analyze(recording((69, 69, 71, 72, 74, 76)), xml, 60, "violin")
+        intervals = result["measureIntervals"]
+        self.assertAlmostEqual(intervals[0]["endSec"] - intervals[0]["startSec"], 2, places=2)
+        self.assertEqual(intervals[0]["endSec"], intervals[1]["startSec"])
+        for interval in intervals:
+            self.assertGreater(interval["endSec"], interval["startSec"])
+            self.assertGreaterEqual(interval["startSec"], 0)
+            self.assertLessEqual(interval["endSec"], 6.25)
 
     def test_shift_slide_does_not_count_as_wrong(self):
         # E3 滑到 G3(差 3 半音): 前 0.15s 是滑音, 稳定段是准的, 应判 correct。
@@ -421,6 +462,9 @@ class EngineTests(unittest.TestCase):
                          beat_map=[0.12 + i for i in range(6)])
         self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
         self.assertFalse(result["summary"]["tempoMismatch"])
+        for interval, note in zip(result["measureIntervals"], result["notes"]):
+            self.assertAlmostEqual(interval["startSec"], note["expectedSec"], places=3)
+            self.assertAlmostEqual(interval["endSec"] - interval["startSec"], 1, places=3)
 
     def _compound_audio(self, eighth_sec):
         rate = 22050

@@ -243,7 +243,7 @@ def _hint_track(signal: np.ndarray, rate: int,
 
 def classify_pitch(cents: float | None, detected_midi: float | None) -> str:
     """Cents 判音: 物理不可能 Verdict uncertain, 差整八度单列 octave,
-    ±50 音分内 correct, 之外 sharp/flat。MIDI 只做存储, 判定全是 cents
+    ±15 音分内 correct, 之外 sharp/flat。MIDI 只做存储, 判定全是 cents
     (1 半音=100, 1 八度=1200)。"""
     if cents is None:
         return "uncertain"
@@ -252,14 +252,18 @@ def classify_pitch(cents: float | None, detected_midi: float | None) -> str:
         return "uncertain"
     if abs(abs(cents) - 1200) <= 80:
         return "octave"
-    if cents > 50:
+    # A displacement beyond an octave is suspect tracking/alignment evidence,
+    # not a reliable intonation verdict. Keep the raw measurement for replay.
+    if abs(cents) > 1200:
+        return "outlier"
+    if cents > 15:
         return "sharp"
-    if cents < -50:
+    if cents < -15:
         return "flat"
     return "correct"
 
 
-def measure_start_beats(xml: str) -> dict[int, float]:
+def measure_start_beats(xml: str, include_end: bool = False) -> dict[int, float]:
     """Map 1-based measure number -> absolute downbeat in quarter-note beats.
 
     Includes rest-only measures. Independent from parse_score so the playback
@@ -292,6 +296,8 @@ def measure_start_beats(xml: str) -> dict[int, float]:
             if duration is None:
                 raise ValueError("仅支持有明确 duration 的音符和休止符")
             beat += float(musicxml_number(duration, "duration") / divisions)
+    if include_end:
+        starts[len(starts) + 1] = beat
     return starts
 
 
@@ -672,9 +678,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             timing_errors.append(delta)
             timing_at.append(expected)
         timing_status = "unscored" if note_index == 0 else "uncertain" if delta is None else "late" if delta > 80 else "early" if delta < -80 else "correct"
-        status = "uncertain" if cents is None else "octave_uncertain" if pitch_status == "octave" else "wrong_pitch" if pitch_status in ("sharp", "flat") else \
+        status = "outlier" if pitch_status == "outlier" else "uncertain" if pitch_status == "uncertain" else "octave_uncertain" if pitch_status == "octave" else "wrong_pitch" if pitch_status in ("sharp", "flat") else \
             "timing_uncertain" if note_index > 0 and delta is None else timing_status if timing_status in ("late", "early") else "correct"
         aligned.append({**note, "expectedSec": round(expected, 3), "performedSec": round(onset, 3) if onset is not None else None,
+                        "expectedEndSec": round(expected + duration, 3),
                         "pitchErrorCents": cents, "timingErrorMs": delta if note_index > 0 else None,
                         "confidence": quality, "pitchStatus": pitch_status, "timingStatus": timing_status,
                         "matchStatus": "matched" if cents is not None else "uncertain", "status": status})
@@ -685,12 +692,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     wrong_pitch_notes = sum(n["pitchStatus"] in ("sharp", "flat") for n in aligned)
     octave_uncertain_notes = sum(n["pitchStatus"] == "octave" for n in aligned)
     voiced_count = measured_count
-    if pitch_errors and voiced_count / len(notes) >= .6:
+    if pitch_errors and len(pitch_errors) / len(notes) >= .6:
         # Capped mean keeps one noisy frame bounded, but unlike a median it cannot
         # hide a substantial minority of clearly wrong notes.
-        pitch_score = round(max(0, 100 - float(np.mean(np.minimum(pitch_errors, 100))) * 1.2))
+        # Within the accepted +/-15 cents band there is no pitch penalty.
+        penalties = np.maximum(np.asarray(pitch_errors) - 15, 0)
+        pitch_score = round(max(0, 100 - float(np.mean(np.minimum(penalties, 100))) * 1.2))
         in_tune = [abs(float(n["pitchErrorCents"])) for n in aligned if n["pitchStatus"] == "correct"]
-        intonation_score = round(max(0, 100 - float(np.median(in_tune)) * 1.2)) if in_tune else None
+        intonation_score = 100 if in_tune else None
     rhythm_score = None
     timing_accuracy_score = None
     rhythm_stability_score = None
@@ -713,10 +722,23 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         timing_accuracy_score = round(max(0, 100 - float(np.mean(np.minimum(np.abs(timing_errors), 250))) * .4))
         rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))
     duration_sec = round(float(len(signal) / rate), 3)
+    boundaries = measure_start_beats(xml, include_end=True)
+    def audio_time(beat):
+        return beat_time(beat - base_beat) if beat_time is not None else start + beat * sec_per_beat
+    measure_intervals = []
+    for measure in range(notes[0]["measure"], notes[-1]["measure"] + 1):
+        lo = max(0.0, audio_time(boundaries[measure]))
+        hi = min(duration_sec, audio_time(boundaries[measure + 1]))
+        if hi > lo:
+            measure_intervals.append({"measure": measure, "startSec": round(lo, 3), "endSec": round(hi, 3)})
     clipped = raw_clipped  # 归一化前测得, 见 read_wav 调用处
     sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
+            "measureIntervals": measure_intervals,
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
+                        "pitchToleranceCents": 15,
+                        "outlierNotes": sum(n["pitchStatus"] == "outlier" for n in aligned),
+                        "scoredPitchNotes": len(pitch_errors),
                         "correctPitchNotes": correct_pitch_notes, "wrongPitchNotes": wrong_pitch_notes,
                         "octaveUncertainNotes": octave_uncertain_notes,
                         "rhythmScore": rhythm_score, "timingAccuracyScore": timing_accuracy_score,

@@ -27,6 +27,11 @@ const valid = { version: "1", notes: [note], limitations: [], summary };
 assert.equal(guard.isValidJobEnvelope({ id: "j1", status: "completed" }), true);
 assert.equal(guard.isValidJobEnvelope({ id: "", status: "completed" }), false);
 assert.equal(guard.isValidAnalysisResult(valid), true);
+const interval = { measure: 1, startSec: 0, endSec: 1 };
+assert.equal(guard.isValidAnalysisResult({ ...valid, measureIntervals: [interval] }), true);
+for (const measureIntervals of [{}, null, [null], [{ ...interval, startSec: -1 }], [{ ...interval, endSec: 0 }], [{ ...interval, endSec: Infinity }], [{ ...interval, measure: 1.5 }]]) {
+  assert.equal(guard.isValidAnalysisResult({ ...valid, measureIntervals }), false);
+}
 assert.equal(guard.isValidAnalysisResult({ ...valid, notes: [{ ...note, measure: "1" }] }), false);
 assert.equal(guard.isValidAnalysisResult({ ...valid, summary: { ...summary, noteCount: "1" } }), false);
 assert.equal(guard.isValidAnalysisResult({ ...valid, limitations: [null] }), false);

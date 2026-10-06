@@ -1,8 +1,12 @@
 "use client";
 
+const PITCH_TOLERANCE_CENTS = 15;
+
 export type VisualNote = {
   id: string;
   measure: number;
+  pitchMidi?: number;
+  pitchStatus?: string;
   pitchErrorCents: number | null;
   timingErrorMs?: number | null;
   status: string;
@@ -30,7 +34,7 @@ export function makeMockNotes(): VisualNote[] {
     measure: Math.floor(i / 5) + 1,
     pitchErrorCents: c,
     timingErrorMs: timing[i] ?? null,
-    status: c == null ? "uncertain" : Math.abs(c) > 50 ? "wrong_pitch" : "correct",
+    status: c == null ? "uncertain" : Math.abs(c) > PITCH_TOLERANCE_CENTS ? "wrong_pitch" : "correct",
   }));
 }
 
@@ -49,9 +53,39 @@ export function makeMockTakes(): CompareTake[] {
   ];
 }
 
+export function isScoredPitch(note: VisualNote): boolean {
+  if (note.pitchErrorCents == null) return false;
+  // Older services may label tracker excursions sharp/flat. Do not turn those
+  // stale verdicts into red dots; keep display exclusions aligned with engine.
+  const cents = note.pitchErrorCents;
+  if (!Number.isFinite(cents) || Math.abs(cents) > 1200 || Math.abs(Math.abs(cents) - 1200) <= 80) return false;
+  if (note.pitchMidi != null) {
+    const detected = note.pitchMidi + cents / 100;
+    if (detected < 36 || detected > 96) return false;
+  }
+  if (note.pitchStatus) return ["correct", "sharp", "flat"].includes(note.pitchStatus);
+  return !["uncertain", "octave_uncertain", "outlier", "missed"].includes(note.status);
+}
+
+export function pitchFrequency(notes: VisualNote[]) {
+  const groups = new Map<number, { midi: number; total: number; sharp: number; flat: number; excluded: number }>();
+  for (const note of notes) {
+    if (note.pitchMidi == null) continue;
+    const row = groups.get(note.pitchMidi) ?? { midi: note.pitchMidi, total: 0, sharp: 0, flat: 0, excluded: 0 };
+    if (!isScoredPitch(note)) row.excluded++;
+    else {
+      row.total++;
+      if (note.pitchErrorCents! > PITCH_TOLERANCE_CENTS) row.sharp++;
+      if (note.pitchErrorCents! < -PITCH_TOLERANCE_CENTS) row.flat++;
+    }
+    groups.set(note.pitchMidi, row);
+  }
+  return [...groups.values()].sort((a, b) => (b.sharp + b.flat) - (a.sharp + a.flat) || a.midi - b.midi);
+}
+
 function pitchColor(note: VisualNote): string {
-  if (note.pitchErrorCents == null) return "#9aa0a6";
-  return Math.abs(note.pitchErrorCents) > 50 ? "#d93025" : "#1a8737";
+  if (!isScoredPitch(note)) return "#9aa0a6";
+  return Math.abs(note.pitchErrorCents!) > PITCH_TOLERANCE_CENTS ? "#d93025" : "#1a8737";
 }
 
 function timingColor(note: VisualNote, isFirst: boolean): string {
@@ -166,15 +200,17 @@ export default function VisualReport({
   notes,
   onNoteClick,
   onMeasureClick,
+  zh = true,
 }: {
   notes: VisualNote[];
   onNoteClick?: (note: VisualNote) => void;
   onMeasureClick?: (measure: number) => void;
+  zh?: boolean;
 }) {
   if (!notes.length) return null;
   const pMid = yForCents(0);
-  const pTop = yForCents(50);
-  const pBot = yForCents(-50);
+  const pTop = yForCents(PITCH_TOLERANCE_CENTS);
+  const pBot = yForCents(-PITCH_TOLERANCE_CENTS);
   const tMid = yForMs(0);
   const tTop = yForMs(80);
   const tBot = yForMs(-80);
@@ -183,8 +219,8 @@ export default function VisualReport({
   for (const n of notes) {
     const s = stats.get(n.measure) ?? { total: 0, wrong: 0, uncertain: 0 };
     s.total += 1;
-    if (n.pitchErrorCents == null) s.uncertain += 1;
-    else if (Math.abs(n.pitchErrorCents) > 50) s.wrong += 1;
+    if (!isScoredPitch(n)) s.uncertain += 1;
+    else if (Math.abs(n.pitchErrorCents!) > PITCH_TOLERANCE_CENTS) s.wrong += 1;
     stats.set(n.measure, s);
   }
 
@@ -199,24 +235,23 @@ export default function VisualReport({
 
   function barText(m: number): string {
     const s = stats.get(m);
-    if (!s) return `第 ${m} 小节`;
-    if (s.wrong > 0) return `第 ${m} 小节：${s.wrong} 个音不准，点我跳到谱子`;
-    if (s.uncertain === s.total) return `第 ${m} 小节：没听清，不算分`;
-    return `第 ${m} 小节：都挺准，点我跳到谱子`;
+    return zh
+      ? `第 ${m} 小节：${s?.wrong ?? 0} 个音不准，${s?.uncertain ?? 0} 个未计分。点击回听本小节`
+      : `Measure ${m}: ${s?.wrong ?? 0} wrong, ${s?.uncertain ?? 0} excluded. Play this measure`;
   }
 
   function barSub(m: number): string {
     const s = stats.get(m);
     if (!s) return "";
-    if (s.wrong > 0) return `${s.wrong} 个要练`;
-    if (s.uncertain === s.total) return "没听清";
+    if (s.wrong > 0) return zh ? `${s.wrong} 个要练` : `${s.wrong} wrong`;
+    if (s.uncertain > 0) return zh ? `${s.uncertain} 未计分` : `${s.uncertain} excluded`;
     return "✓";
   }
 
   return (
     <div>
       <p style={{ color: "var(--sf-muted)", fontSize: 12, lineHeight: 1.6, margin: "8px 0" }}>
-        点越靠近中间绿线越好；红点是要练的；空心点是没听清、不算分。点任意点可以直接回听。
+        {zh ? "满分 100；±15 音分（含边界）为正确，不扣音高分。空心点为异常或不确定，不计音高分。点击音符可回听。" : "Maximum score: 100. −15 to +15 cents inclusive is correct, with no pitch penalty. Hollow points are excluded as abnormal or uncertain. Click a note to listen."}
       </p>
       <h3 style={{ fontSize: 13, margin: "10px 0 8px" }}>音拉得准不准（越靠近中间线越准）</h3>
       <svg
@@ -236,12 +271,12 @@ export default function VisualReport({
         <text x={4} y={pBot + 3} fontSize={10} fill="var(--sf-muted)">偏低</text>
         {notes.map((n, i) => {
           const cx = xFor(i, notes.length);
-          const uncertain = n.pitchErrorCents == null;
+          const uncertain = !isScoredPitch(n);
           const cy = uncertain ? pMid : yForCents(n.pitchErrorCents as number);
           return (
             <g key={n.id} onClick={() => onNoteClick?.(n)} style={{ cursor: onNoteClick ? "pointer" : "default" }}>
               <title>
-                {uncertain ? "没听清" : `${(n.pitchErrorCents as number) > 0 ? "+" : ""}${n.pitchErrorCents} 音分`} · 第 {n.measure} 小节
+                {uncertain ? (zh ? "未计分（异常/不确定）" : "Excluded (outlier/uncertain)") : `${(n.pitchErrorCents as number) > 0 ? "+" : ""}${n.pitchErrorCents} cents`} · m{n.measure}
               </title>
               {/* 加大点击热区 */}
               <circle cx={cx} cy={cy} r={11} fill="transparent" />
@@ -311,7 +346,18 @@ export default function VisualReport({
         <span><i style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", border: "2px solid #9aa0a6", marginRight: 4 }} />不算分</span>
       </div>
 
-      <h3 style={{ fontSize: 13, margin: "14px 0 8px" }}>哪段要练（数字是这小节几个音要练）</h3>
+      <h3 style={{ fontSize: 13, margin: "14px 0 8px" }}>{zh ? "常错音（本遍，按错音次数排序）" : "Frequently wrong pitches (this take)"}</h3>
+      <p style={{ fontSize: 12, color: "var(--sf-muted)" }}>{zh ? "仅统计可判音高；异常及不确定音不计入分母。音名包含八度。" : "Only scored pitches count toward the error rate. Outliers and uncertain notes are excluded. Names include octave."}</p>
+      {pitchFrequency(notes).map((row) => {
+        const name = ["C", "C♯/D♭", "D", "D♯/E♭", "E", "F", "F♯/G♭", "G", "G♯/A♭", "A", "A♯/B♭", "B"][row.midi % 12] + (Math.floor(row.midi / 12) - 1);
+        const wrong = row.sharp + row.flat;
+        const percent = row.total ? Math.round(wrong / row.total * 100) : 0;
+        return <div key={row.midi} style={{ margin: "8px 0", fontSize: 12 }}>
+          <b>{name}</b> · {wrong}/{row.total} {zh ? "次不准" : "wrong"} ({row.total ? `${percent}%` : "—"}) · ↑{row.sharp} ↓{row.flat} · {zh ? "排除" : "excluded"} {row.excluded}
+          <div role="img" aria-label={`${name}: ${wrong}/${row.total}, ${percent}%`} style={{ height: 8, background: "#e8eaed", borderRadius: 4 }}><div style={{ width: `${percent}%`, height: "100%", background: "#d93025", borderRadius: 4 }} /></div>
+        </div>;
+      })}
+      <h3 style={{ fontSize: 13, margin: "14px 0 8px" }}>{zh ? "哪段要练（点击只回听该小节）" : "Measures to practice — click to play only that measure"}</h3>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {measures.map((m) => (
           <button
