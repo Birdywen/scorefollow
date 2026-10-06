@@ -573,7 +573,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         else:
             expected = start + note["onsetBeat"] * sec_per_beat
         duration = (beat_time(note["onsetBeat"] - base_beat + note["durationBeat"]) - expected
-                    if auto_located and beat_time is not None else note["durationBeat"] * sec_per_beat)
+                    if beat_time is not None else note["durationBeat"] * sec_per_beat)
         # 换把滑音需要更长的稳定时间: 与前音差 3 半音以上时, 音高窗跳过前 35%。
         shifted = note_index > 0 and abs(note["pitchMidi"] - notes[note_index - 1]["pitchMidi"]) >= 3
         # 时间误差与稳态音高分开估计，避开擦弦、滑音和收尾。
