@@ -68,7 +68,7 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
     if (!api) return;
     if (api.isPlaying()) api.stop();
     else if (!api.play()) setNotice(zh ? "请先载入并识别谱面" : "Load and recognize a score first");
-    else setNotice("");
+    else { setNotice(""); setOpen(false); }
     touch();
   };
 
@@ -89,7 +89,7 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
     </div>}
     {open && <p role="status" className={styles.notice}>{!state.ready ? (zh ? "载入谱面后启用节拍器" : "Load a score to enable controls") : notice}</p>}
     <div className={styles.launchRow}>
-      {(open || advanced) && <button className={styles.more} aria-pressed={advanced} onClick={() => { setAdvanced(!advanced); touch(); }}>{advanced ? (zh ? "收起设置" : "Hide settings") : (zh ? "完整设置" : "Full settings")}</button>}
+      {(open || advanced) && <button className={styles.more} aria-pressed={advanced} onClick={() => { if (advanced) setOpen(false); setAdvanced(!advanced); touch(); }}>{advanced ? (zh ? "收起设置" : "Hide settings") : (zh ? "完整设置" : "Full settings")}</button>}
       <button ref={launch} className={styles.launch} aria-expanded={open} aria-controls="sf-metro-radial" aria-label={zh ? "节拍器圆盘" : "Metronome dial"}
         data-playing={state.playing} onClick={() => { setOpen(!open); touch(); }}><span aria-hidden="true">◴</span>{open ? (zh ? "收起" : "Close") : `${state.bpm} BPM`}</button>
     </div>
