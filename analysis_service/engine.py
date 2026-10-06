@@ -295,6 +295,19 @@ def measure_start_beats(xml: str) -> dict[int, float]:
     return starts
 
 
+def tracker_beat_quarters(xml: str) -> float:
+    """QM 拍点跟踪器一个拍点间隔走过的四分音符数: 单拍子 1, 复拍子
+    (6/8·9/8·12/8, 面板按惯例填附点速度) 1.5。网格门限与下标映射都按它折算。"""
+    root = xml_root(xml)
+    time = root.find("./{*}part/{*}measure/{*}attributes/{*}time")
+    try:
+        beats = int(time.findtext("./{*}beats")) if time is not None else 4
+        beat_type = int(time.findtext("./{*}beat-type")) if time is not None else 4
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MusicXML 拍号无效") from exc
+    return 1.5 if beat_type == 8 and beats in (6, 9, 12) else 1.0
+
+
 def seconds_per_quarter(xml: str, bpm: float) -> float:
     """Convert the displayed tempo to the quarter-note beat used by notes.
 
@@ -303,16 +316,47 @@ def seconds_per_quarter(xml: str, bpm: float) -> float:
     notes.  Keeping this conversion here prevents a 6/8 take from drifting 50%
     slow against the score.
     """
-    root = xml_root(xml)
-    time = root.find("./{*}part/{*}measure/{*}attributes/{*}time")
-    try:
-        beats = int(time.findtext("./{*}beats")) if time is not None else 4
-        beat_type = int(time.findtext("./{*}beat-type")) if time is not None else 4
-    except (TypeError, ValueError) as exc:
-        raise ValueError("MusicXML 拍号无效") from exc
-    if beat_type == 8 and beats in (6, 9, 12):
-        return 60.0 / bpm * (2.0 / 3.0)
-    return 60.0 / bpm
+    return 60.0 / bpm / tracker_beat_quarters(xml)
+
+
+def _interp_beats(beats: np.ndarray, med: float, anchor: int, rel_beat: float) -> float:
+    """拍点下标 -> 秒（无位移版 beat_time）：越界用中位间隔外推。"""
+    pos = anchor + rel_beat
+    if pos <= 0:
+        return float(beats[0] + pos * med)
+    if pos >= len(beats) - 1:
+        return float(beats[-1] + (pos - (len(beats) - 1)) * med)
+    i = int(pos)
+    f = pos - i
+    return float(beats[i] * (1 - f) + beats[i + 1] * f)
+
+
+def _select_compound_scale(beats: np.ndarray, med: float, anchor: int,
+                           rel_quarters: list, onsets: list) -> float | None:
+    """复拍子 1.2–1.8 倍带二选一：1.0=四分脉冲 1:1，1.5=附点脉冲 /1.5。
+    用与网格无关的起音证据投票：赢家须 ≤0.10s 且比对手好一倍，否则 None。
+    只统计录音覆盖得到的音符（超出拍点跨度的尾部在两种刻度下都对不上）。"""
+    if not rel_quarters or not onsets:
+        return None
+    span = (float(beats[-1]) - float(beats[0])) / med if med > 0 and len(beats) >= 2 else 0
+    rels = [rel for rel in rel_quarters if rel <= span + 2.0]
+    if len(rels) < 4:
+        return None
+    grid = np.asarray(sorted(float(o) for o in onsets))
+    cand = {}
+    for scale in (1.0, 1.5):
+        diffs = []
+        for rel in rels:
+            t = _interp_beats(beats, med, anchor, rel / scale)
+            j = int(np.searchsorted(grid, t))
+            near = min(abs(t - grid[k]) for k in (j - 1, j) if 0 <= k < len(grid))
+            diffs.append(near)
+        cand[scale] = float(np.median(diffs))
+    if cand[1.0] <= 0.10 and cand[1.0] * 2 <= cand[1.5]:
+        return 1.0
+    if cand[1.5] <= 0.10 and cand[1.5] * 2 <= cand[1.0]:
+        return 1.5
+    return None
 
 
 def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: int = 1,
@@ -350,18 +394,32 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if pitch_notes:
         usable_events(pitch_notes)
     sec_per_beat = seconds_per_quarter(xml, bpm)
-    # 拍点网格的单位必须是四分音符: 跟踪器锁在倍速/半速或跟附点四分/二分时,
-    # 中位间隔与面板速度差很远; 此时不用网格评分/定位, 退回固定速度并显式标出。
+    # 网格门限比较的是同一单位: 跟踪器脉冲间隔 vs 面板速度对应的脉冲时长。
+    # 单拍子只有四分脉冲一种可能; 复拍子在 1.2–1.8 倍之间有两种读法
+    # (四分口径录入 + 四分脉冲，或附点口径录入 + 附点脉冲)，留到起音证据
+    # 齐备后再二选一，选不出来就按 mismatch 退回，绝不拿错位网格打分。
+    beat_quarters = 1.0
+    compound_ambiguous = False
     tempo_mismatch = False
     mismatch_bpm = None
     if sync_mode == "vamp-beat" and beat_map:
         grid = sorted(set(float(b) for b in beat_map if math.isfinite(float(b)) and float(b) >= 0))
         if len(grid) >= 4:
             interval = float(np.median(np.diff(grid)))
-            if interval > 0 and not 0.8 <= interval / sec_per_beat <= 1.25:
+            if interval <= 0:
                 tempo_mismatch = True
-                mismatch_bpm = round(60 / interval, 1)
                 beat_map = None
+            else:
+                ratio = interval / sec_per_beat
+                if 0.8 <= ratio <= 1.25:
+                    pass
+                elif (start_measure != 0 and tracker_beat_quarters(xml) == 1.5
+                        and 1.2 <= ratio <= 1.8):
+                    compound_ambiguous = True
+                else:
+                    tempo_mismatch = True
+                    mismatch_bpm = round(60 / interval, 1)
+                    beat_map = None
     auto_located = start_measure == 0
     location_cost = None
     if auto_located:
@@ -432,16 +490,29 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             audio_anchor = location_anchor if auto_located else onsets[0]
             anchor = int(np.argmin(np.abs(beats - audio_anchor)))
             anchor_shift = audio_anchor - beats[anchor] if auto_located else 0.0
+            if compound_ambiguous:
+                picked = _select_compound_scale(
+                    beats, med, anchor,
+                    [n["onsetBeat"] - notes[0]["onsetBeat"] for n in notes], onsets)
+                if picked is None:
+                    tempo_mismatch = True
+                    mismatch_bpm = round(60 / med, 1) if med > 0 else None
+                    sync_mode = "legacy"
+                else:
+                    beat_quarters = picked
+            if tracker_beat_quarters(xml) == 1.5 and not compound_ambiguous \
+                    and detected_bpm is not None:
+                # 直接锁住的复拍子网格：面板按惯例是附点口径，detectedBpm
+                # 折成附点数才跟面板可比（脉冲本身是四分口径时 rate/1.5）。
+                detected_bpm = round(detected_bpm / 1.5, 1)
 
-            def beat_time(rel_beat: float) -> float:  # noqa: F811
-                pos = anchor + rel_beat
-                if pos <= 0:
-                    return float(beats[0] + pos * med + anchor_shift)
-                if pos >= len(beats) - 1:
-                    return float(beats[-1] + (pos - (len(beats) - 1)) * med + anchor_shift)
-                i = int(pos)
-                f = pos - i
-                return float(beats[i] * (1 - f) + beats[i + 1] * f + anchor_shift)
+            if sync_mode == "vamp-beat":
+                def beat_time(rel_beat: float) -> float:  # noqa: F811
+                    # 相对拍是四分音符口径，拍点下标是跟踪器脉冲口径：下标按
+                    # 选中的单位折算（1=四分脉冲 1:1，1.5=附点脉冲 /1.5）。
+                    return _interp_beats(beats, med, anchor, rel_beat / beat_quarters) + anchor_shift
+            else:
+                beat_time = None
 
     if sync_mode == "metronome":
         # The client records the metronome downbeat of start_measure.
