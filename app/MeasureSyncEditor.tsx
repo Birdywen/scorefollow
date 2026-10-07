@@ -44,11 +44,12 @@ export default function MeasureSyncEditor({ markers, startMeasure, confirmed, di
     function key(event: KeyboardEvent) {
       const target = event.target as HTMLElement;
       if (event.ctrlKey || event.metaKey || event.altKey || target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName)) return;
-      if (!["b", "Backspace", " "].includes(event.key.toLowerCase() === "b" ? "b" : event.key)) return;
+      const k = event.key.toLowerCase();
+      if (!["b", "backspace", "p"].includes(k)) return;
       event.preventDefault(); event.stopImmediatePropagation();
       if (event.repeat) return;
-      if (event.key.toLowerCase() === "b") mark();
-      else if (event.key === "Backspace") onChange(markers.slice(0, -1), startMeasure);
+      if (k === "b") mark();
+      else if (k === "backspace") onChange(markers.slice(0, -1), startMeasure);
       else { const audio = getAudio(); if (audio) { if (audio.paused) void audio.play().catch(() => setMessage("Playback failed")); else audio.pause(); } }
     }
     window.addEventListener("keydown", key, true);
@@ -56,7 +57,7 @@ export default function MeasureSyncEditor({ markers, startMeasure, confirmed, di
   });
   return <section aria-label={zh ? "小节同步" : "Measure sync"} style={{ marginTop: 12 }}>
     <h3>{zh ? "先同步小节，再分析" : "Sync measures before analysis"}</h3>
-    <p>{zh ? "播放这一遍，在每小节第一拍按 B。最后再标记一次结束边界。仅分析最后一个标记之前的完整小节。空格播放/暂停；退格撤销。" : "Play this take and press B on each measure’s first beat. Add one final end boundary. Only complete intervals before the last marker are analyzed. Space plays/pauses; Backspace undoes."}</p>
+    <p>{zh ? "播放这一遍，在每小节第一拍按 B。最后再标记一次结束边界。仅分析最后一个标记之前的完整小节。P 播放/暂停；退格撤销。" : "Play this take and press B on each measure’s first beat. Add one final end boundary. Only complete intervals before the last marker are analyzed. P plays/pauses; Backspace undoes."}</p>
     <fieldset disabled={disabled} style={{ border: 0, padding: 0 }}>
       <label>{zh ? "第一个小节" : "First measure"} <input aria-label="Sync first measure" type="number" min={1} step={1} value={startMeasure} disabled={markers.length > 0}
         onChange={(e) => onChange([], Number(e.target.value))} /></label>

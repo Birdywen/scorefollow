@@ -1233,18 +1233,7 @@ export default function ScoreFollowPage() {
     } catch { return null; }
   };
 
-  useEffect(() => {
-    const win = window as unknown as { __sfSpaceControl?: (event: KeyboardEvent) => boolean };
-    const control = (event: KeyboardEvent) => {
-      if (mediaURL) return false; // 音频播放器的空格仍由 React 接管
-      const mc = metroControl();
-      if (!mc) return false;
-      if (!event.repeat) { if (mc.isPlaying()) mc.stop(); else mc.play(); }
-      return true;
-    };
-    win.__sfSpaceControl = control;
-    return () => { if (win.__sfSpaceControl === control) delete win.__sfSpaceControl; };
-  }, [mediaURL]);
+  // __sfSpaceControl 已删除(全仓库无人调用): 空格语义收敛到主键盘处理器, 只控制节拍器。
 
   // 新谱面: 必须清掉上一份谱的全部状态(缓存/人工校正/timing/undo),
   // 否则同页同尺寸会命中旧缓存、旧小节线盖到新谱上。
@@ -3073,16 +3062,17 @@ export default function ScoreFollowPage() {
       if (correctMode && selectedBar && (e.key === "a" || e.key === "A")) { e.preventDefault(); mergeSelectedMeasure("left"); return; }
       if (correctMode && selectedBar && (e.key === "d" || e.key === "D")) { e.preventDefault(); mergeSelectedMeasure("right"); return; }
       if (e.key === " ") {
+        // 空格只控制节拍器开/关, 与播放彻底解耦(播放请按 P)。
         e.preventDefault();
         if (!e.repeat) {
-          if (mediaURL) {
-            playing ? doPause() : doPlay();
-          } else {
-            const mc = metroControl();
-            if (mc) { mc.isPlaying() ? mc.stop() : mc.play(); }
-            else { playing ? doPause() : doPlay(); }
-          }
+          const mc = metroControl();
+          if (mc) { mc.isPlaying() ? mc.stop() : mc.play(); }
         }
+      }
+      else if (e.key.toLowerCase() === "p") {
+        // P 播放/暂停: 有音频播音频, 无音频走时钟光标; 再按一次暂停。
+        e.preventDefault();
+        if (!e.repeat) { playing ? doPause() : doPlay(); }
       }
       else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -3470,14 +3460,14 @@ export default function ScoreFollowPage() {
              <section className={styles.helpQuickStart} aria-labelledby="help-quick-start">
               <h3 id="help-quick-start" className={styles.helpSectionTitle}>{lang === "zh" ? "快速入门" : "Quick start"}</h3>
               <div className={styles.helpCardGrid}>
-             <section className={styles.helpCard + " " + styles.helpCardAccent}><span className={styles.helpCardIcon}>▶</span><div><h3>{lang === "zh" ? "开始播放" : "Start playing"}</h3><p>{lang === "zh" ? "谱面载入并显示后，直接按空格即可播放。首次按键若正在准备识别，应用会自动等小节数据就绪。" : "Once the score is visible, press Space to play. If recognition is still settling, the app waits for the measure map automatically."}</p><kbd>Space</kbd><span className={styles.helpMeta}>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span></div></section>
-              <section className={styles.helpCard}><span className={styles.helpCardIcon}>⌁</span><div><h3>{lang === "zh" ? "跟着节拍练" : "Practice with the beat"}</h3><p>{lang === "zh" ? "右下角 BPM 按钮展开节拍器圆盘，可播放、调速、切换预备拍和音色。闲置 4 秒自动收起；键盘操作时保留展开。完整设置保留循环、拍号等功能。顶部月亮按钮切换夜间模式并记住选择。点击谱面小节可移动起点。" : "Open the bottom-right BPM dial for playback, tempo, count-in and sound. It folds after 4 seconds idle and stays open during keyboard use. Full settings retain loops and meter controls. The toolbar moon switches and remembers night mode. Click a score measure to move the start."}</p><kbd>← →</kbd><kbd>↑ ↓</kbd><span className={styles.helpMeta}>{lang === "zh" ? "小节 / 系统" : "measure / system"}</span></div></section>
+             <section className={styles.helpCard + " " + styles.helpCardAccent}><span className={styles.helpCardIcon}>▶</span><div><h3>{lang === "zh" ? "开始播放" : "Start playing"}</h3><p>{lang === "zh" ? "谱面载入并显示后，按 P 即可播放, 再按一次暂停; 无音频时走时钟光标。空格只控制节拍器开/关, 与播放互不干扰。" : "Once the score is visible, press P to play and again to pause (clock cursor when no audio). Space toggles only the metronome and never touches playback."}</p><kbd>P</kbd><span className={styles.helpMeta}>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span></div></section>
+              <section className={styles.helpCard}><span className={styles.helpCardIcon}>⌁</span><div><h3>{lang === "zh" ? "跟着节拍练" : "Practice with the beat"}</h3><p>{lang === "zh" ? "右下角 BPM 按钮展开节拍器圆盘，可播放、调速、切换预备拍和音色。闲置 4 秒自动收起；键盘操作时保留展开。完整设置保留循环、拍号等功能。顶部月亮按钮切换夜间模式并记住选择。点击谱面小节可移动起点。" : "Open the bottom-right BPM dial for playback, tempo, count-in and sound. It folds after 4 seconds idle and stays open during keyboard use. Full settings retain loops and meter controls. The toolbar moon switches and remembers night mode. Click a score measure to move the start."}</p><kbd>← →</kbd><kbd>↑ ↓</kbd><kbd>Space</kbd><span className={styles.helpMeta}>{lang === "zh" ? "小节 / 系统 · 空格节拍器开/关" : "measure / system · Space metronome on/off"}</span></div></section>
              <section className={styles.helpCard}><span className={styles.helpCardIcon}>◌</span><div><h3>{lang === "zh" ? "建立同步" : "Build sync"}</h3><p>{lang === "zh" ? "播放录音时按 B 记录拍点；Backspace 撤回一个点，逗号和句号微调时值。" : "While listening, press B to mark beats. Backspace removes one; comma and period fine-tune duration."}</p><div><kbd>B</kbd><kbd>⌫</kbd><kbd>, .</kbd></div></div></section>
              <section className={styles.helpCard}><span className={styles.helpCardIcon}>✦</span><div><h3>{lang === "zh" ? "查看演奏分析" : "Review your take"}</h3><p>{lang === "zh" ? "打开“演奏分析”，上传练习录音，查看音准、节奏、稳定性与需要回听的小节。" : "Open Analyze and upload a take to see pitch, rhythm, stability, and measures worth revisiting."}</p><span className={styles.helpTag}>{lang === "zh" ? "练习报告" : "practice report"}</span></div></section>
               </div>
              </section>
               <AnalysisHelp lang={lang} />
-              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "设置" : "settings"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
+              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "设置" : "settings"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
            </div>
            <footer className={styles.helpFooter}><span>{lang === "zh" ? "提示：按钮也可以直接点击，快捷键适合专注演奏时使用。" : "Tip: every shortcut also has a button, so you can stay focused on the music."}</span><button className={styles.practicePlay} onClick={() => setHelpOpen(false)}>{lang === "zh" ? "开始练习" : "Start practicing"}</button></footer>
          </section>
