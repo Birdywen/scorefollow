@@ -108,6 +108,11 @@ const STR: Record<string, { zh: string; en: string }> = {
   correctHint: { zh: "点击选中 · 拖动线条 · 长按/双击新增 · Ctrl+Z 撤销", en: "Click to select · drag a line · long-press/double-click to add · Ctrl+Z to undo" },
   exitCorrect: { zh: "完成校正", en: "Done correcting" },
   noPdfHint: { zh: "加载 PDF 乐谱，开始连续练习", en: "Load a PDF score to begin practicing" },
+  emptyDrop: { zh: "拖入 PDF / 图片，或选择文件。识别小节后按 ▶ 开始跟谱。", en: "Drop a PDF / image, or pick a file. After bars are found, press ▶ to play along." },
+  step1: { zh: "载入谱面", en: "Load a score" },
+  step2: { zh: "检查小节", en: "Check the bars" },
+  step3: { zh: "播放练习", en: "Play & practice" },
+  expertDev: { zh: "开发者", en: "dev" },
   exportPreview: { zh: "导出预览", en: "Export preview" },
   selected: { zh: "已选中", en: "Selected" },
   fileSection: { zh: "文件与导出", en: "Files & export" },
@@ -540,7 +545,7 @@ export default function ScoreFollowPage() {
   const [annotsByPage, setAnnotsByPage] = useState<Record<number, Annot[]>>({});
   const annotDragRef = useRef<{ idx: number; startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(null);
 
-  const [status, setStatus] = useState("scorefollow ready — upload a PDF score");
+  const [status, setStatus] = useState("scorefollow 就绪 — 载入 PDF 谱开始");
   const [cursorInfo, setCursorInfo] = useState("");
   const [advOpen, setAdvOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
@@ -564,6 +569,8 @@ export default function ScoreFollowPage() {
   const [barNumMap, setBarNumMap] = useState<Record<number, number>>({});
   const [loopM, setLoopM] = useState<{ on: boolean; from: number; to: number }>({ on: false, from: 1, to: 1 });
   const [loopMark, setLoopMark] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [expertOpen, setExpertOpen] = useState(() => { try { return localStorage.getItem("sf-expert-open") === "1"; } catch { return false; } });
   // 调整模式(对标纠错模式): 点小节弹设置框(拍号/小节号/Loop), 与纠错互斥
   const [adjustMode, setAdjustMode] = useState(false);
   const [barPop, setBarPop] = useState<{ x: number; y: number } | null>(null);
@@ -3334,6 +3341,12 @@ export default function ScoreFollowPage() {
       if (correctMode && (e.key === "Delete" || e.key === "Del" || e.key === "Backspace")) { e.preventDefault(); deleteSelectedBar(); setPie(null); return; }
       if (correctMode && selectedBar && (e.key === "s" || e.key === "S")) { e.preventDefault(); splitSelectedMeasure(); return; }
       if (correctMode && selectedBar && (e.key === "a" || e.key === "A")) { e.preventDefault(); mergeSelectedMeasure("left"); return; }
+      if (!correctMode && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        if (adjustMode) { setAdjustMode(false); setSelectedBar(null); setBarPop(null); }
+        else { setAdjustMode(true); setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); }
+        return;
+      }
       if (correctMode && selectedBar && (e.key === "d" || e.key === "D")) { e.preventDefault(); mergeSelectedMeasure("right"); return; }
       if (e.key === " ") {
         // 空格只控制节拍器开/关, 与播放彻底解耦(播放请按 P)。
@@ -3791,7 +3804,7 @@ export default function ScoreFollowPage() {
               </div>
              </section>
               <AnalysisHelp lang={lang} />
-              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "全屏" : "fullscreen"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>E</kbd>{lang === "zh" ? "调整模式" : "adjust"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
+              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "全屏" : "fullscreen"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>E</kbd>/<kbd>A</kbd>{lang === "zh" ? "调整模式" : "adjust"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
            </div>
            <footer className={styles.helpFooter}><span>{lang === "zh" ? "提示：按钮也可以直接点击，快捷键适合专注演奏时使用。" : "Tip: every shortcut also has a button, so you can stay focused on the music."}</span><button className={styles.practicePlay} onClick={() => setHelpOpen(false)}>{lang === "zh" ? "开始练习" : "Start practicing"}</button></footer>
          </section>
@@ -3979,38 +3992,7 @@ export default function ScoreFollowPage() {
                </p>
              )}
            </div>
-          <div className={styles.pcard}>
-             <div className={styles.pcardTitle}><span>{tx("barsSection")}</span></div>
-            <div className={styles.pillRow}>
-              <label className={`${styles.pill} ${opt.sysprf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.sysprf ? true : false} onChange={(e) => applyAdv("sysprf", e.target.checked ? 1 : 0)} /> sysprf</label>
-              <label className={`${styles.pill} ${opt.onestf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.onestf ? true : false} onChange={(e) => applyAdv("onestf", e.target.checked ? 1 : 0)} /> onestf</label>
-              <label className={`${styles.pill} ${opt.eerst ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.eerst ? true : false} onChange={(e) => applyAdv("eerst", e.target.checked ? 1 : 0)} /> eerst</label>
-              <label className={`${styles.pill} ${(opt.hd ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.hd ?? 1) ? true : false} onChange={(e) => applyAdv("hd", e.target.checked ? 1 : 0)} title={lang === "zh" ? "高清渲染: 显示按屏幕超采样, 分析分辨率不变" : "HiDPI render: display upsampled, analysis unchanged"} /> hd</label>
-              <label className={`${styles.pill} ${(opt.deskew ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.deskew ?? 0) ? true : false} onChange={(e) => applyAdv("deskew", e.target.checked ? 1 : 0)} title={lang === "zh" ? "偏斜校正: 扫描摆不正自动转正（默认关：转正会把细竖线碎成楼梯）" : "Deskew: auto-straighten tilted scans (default off: rotation fragments thin verticals)"} /> deskew</label>
-              <label className={`${styles.pill} ${(opt.notemask ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.notemask ?? 0) ? true : false} onChange={(e) => applyAdv("notemask", e.target.checked ? 1 : 0)} title={lang === "zh" ? "音符优先: 先抠符头符干再认小节线(实验)" : "Notes first: mask noteheads/stems before bar detection (experimental)"} /> notemask</label>
-              <label className={`${styles.pill} ${(opt.widrescue ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.widrescue ?? 0) ? true : false} onChange={(e) => applyAdv("widrescue", e.target.checked ? 1 : 0)} title={lang === "zh" ? "宽度先验: 过宽小节低阈抢救淡线(实验)" : "Width prior: rescue faint bars in wide gaps (experimental)"} /> widrescue</label>
-              <label className={`${styles.pill} ${(opt.homrgate ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.homrgate ?? 1) ? true : false} onChange={(e) => applyAdv("homrgate", e.target.checked ? 1 : 0)} title={lang === "zh" ? `HoMR 音符门: 有门数据时否决符干(只否决不新增)${homrGateInfo ? ` · ${homrGateInfo}` : " · 当前无门数据"}` : `HoMR note gate: veto stems when gate data present (veto-only)${homrGateInfo ? ` · ${homrGateInfo}` : " · no gate data"}`} /> homrgate{homrGateInfo ? "·" : ""}</label>
-            </div>
-            <label className={styles.stepper}>skipn <input type="number" min={-5} max={5} step={1} value={opt.skipn} title={lang === "zh" ? ">0 去掉整谱开头 N 个系统(封面/标题, 只动首个有系统页); <0 去掉整谱末尾 |N| 个系统(它曲/demo, 只动末个有系统页)" : "score-level: positive drops first N systems of first content page; negative drops last |N| of last content page"} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
-            <label className={styles.stepper}>seln <input type="number" min={0} max={9} value={opt.seln} onChange={(e) => applyAdv("seln", Number(e.target.value))} /></label>
-            <div className={styles.pcardTitle}><span>{lang === "zh" ? "阈值(原版三阈值)" : "Thresholds"}</span></div>
-            {([
-              ["zwgrens", "blackThresh"],
-              ["voorna", "beforeAfter"],
-              ["mtdrmpl", "barlineThresh"],
-            ] as const).map(([k, label]) => (
-              <label key={`${k}-${advNonce}`} className={styles.stepper}>{tx(label)}({k})
-                <input type="number" min={ADV_RANGES[k][0]} max={ADV_RANGES[k][1]} step={ADV_STEPS[k]}
-                  defaultValue={opt[k] as number}
-                  title={lang === "zh" ? "只记当前页, 整谱重分析但各页保留已调参数" : "Saved for current page only; other tuned pages keep theirs"}
-                  onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) applyAdv(k, v); }}
-                  onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { applyAdv(k, v); e.target.value = String(opt[k] as number); } }}
-                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
-              </label>
-            ))}
-            <label className={styles.stepper}>cropx <input type="number" min={0} value={opt.cropx} onChange={(e) => applyAdv("cropx", Number(e.target.value))} /></label>
-             <label className={`${styles.pill} ${opt.annot === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.annot === 1} onChange={(e) => applyAdv("annot", e.target.checked ? 1 : 0)} /> {tx("annotate")}</label>
-          </div>
+          {/* 小节/阈值参数已并入下方高级(开发者)折叠区 */}
           <div className={styles.pcard}>
              <div className={styles.pcardTitle}><span>{tx("fileSection")}</span></div>
             <button className={styles.pfileBtn} onClick={saveTiming}>{tx("saveTiming")}</button>
@@ -4042,8 +4024,8 @@ export default function ScoreFollowPage() {
              </div>
              <p className={styles.expertHint}>{lang === "zh" ? `${numPages} 页 · ${correctedPages} 页校正 · ${tapCount} 个同步点 · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "包含" : "不包含"}` : `${numPages} pages · ${correctedPages} corrected · ${tapCount} sync points · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "included" : "excluded"}`}</p>
           </div>
-          <details className={styles.pcard}>
-             <summary className={styles.pcardTitle}><span>{tx("expertSection")}</span><span>›</span></summary>
+          <details className={styles.pcard} open={expertOpen} onToggle={(e) => { const o = (e.target as HTMLDetailsElement).open; setExpertOpen(o); try { localStorage.setItem("sf-expert-open", o ? "1" : "0"); } catch { /* ignore */ } }}>
+             <summary className={styles.pcardTitle}><span>{tx("expertSection")} · {tx("expertDev")}</span><span>›</span></summary>
              <p className={styles.expertHint}>{lang === "zh" ? "仅在识别困难时调整；修改后会重新分析谱面。" : "Adjust only when recognition needs tuning; changes rerun analysis."}</p>
              <div className={styles.pcardTitle}>{tx("timingSection")}</div>
              {(["drmpl", "drmpl2", "dx"] as const).map((k) => (
@@ -4057,6 +4039,36 @@ export default function ScoreFollowPage() {
              ))}
             <label className={styles.stepper}>pagewd <input type="number" min={600} max={3000} step={50} value={opt.pagewd} onChange={(e) => applyAdv("pagewd", Number(e.target.value) || 1000)} /></label>
             <label className={styles.stepper}>fixwd <input type="number" min={0} step={100} value={opt.fixwd} onChange={(e) => applyAdv("fixwd", Number(e.target.value) || 0)} /></label>
+            <div className={styles.pcardTitle}><span>{tx("barsSection")}</span></div>
+            <div className={styles.pillRow}>
+              <label className={`${styles.pill} ${opt.sysprf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.sysprf ? true : false} onChange={(e) => applyAdv("sysprf", e.target.checked ? 1 : 0)} /> sysprf</label>
+              <label className={`${styles.pill} ${opt.onestf ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.onestf ? true : false} onChange={(e) => applyAdv("onestf", e.target.checked ? 1 : 0)} /> onestf</label>
+              <label className={`${styles.pill} ${opt.eerst ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.eerst ? true : false} onChange={(e) => applyAdv("eerst", e.target.checked ? 1 : 0)} /> eerst</label>
+              <label className={`${styles.pill} ${(opt.hd ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.hd ?? 1) ? true : false} onChange={(e) => applyAdv("hd", e.target.checked ? 1 : 0)} title={lang === "zh" ? "高清渲染: 显示按屏幕超采样, 分析分辨率不变" : "HiDPI render: display upsampled, analysis unchanged"} /> hd</label>
+              <label className={`${styles.pill} ${(opt.deskew ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.deskew ?? 0) ? true : false} onChange={(e) => applyAdv("deskew", e.target.checked ? 1 : 0)} title={lang === "zh" ? "偏斜校正: 扫描摆不正自动转正（默认关：转正会把细竖线碎成楼梯）" : "Deskew: auto-straighten tilted scans (default off: rotation fragments thin verticals)"} /> deskew</label>
+              <label className={`${styles.pill} ${(opt.notemask ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.notemask ?? 0) ? true : false} onChange={(e) => applyAdv("notemask", e.target.checked ? 1 : 0)} title={lang === "zh" ? "音符优先: 先抠符头符干再认小节线(实验)" : "Notes first: mask noteheads/stems before bar detection (experimental)"} /> notemask</label>
+              <label className={`${styles.pill} ${(opt.widrescue ?? 0) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.widrescue ?? 0) ? true : false} onChange={(e) => applyAdv("widrescue", e.target.checked ? 1 : 0)} title={lang === "zh" ? "宽度先验: 过宽小节低阈抢救淡线(实验)" : "Width prior: rescue faint bars in wide gaps (experimental)"} /> widrescue</label>
+              <label className={`${styles.pill} ${(opt.homrgate ?? 1) ? styles.pillOn : ""}`}><input type="checkbox" checked={(opt.homrgate ?? 1) ? true : false} onChange={(e) => applyAdv("homrgate", e.target.checked ? 1 : 0)} title={lang === "zh" ? `HoMR 音符门: 有门数据时否决符干(只否决不新增)${homrGateInfo ? ` · ${homrGateInfo}` : " · 当前无门数据"}` : `HoMR note gate: veto stems when gate data present (veto-only)${homrGateInfo ? ` · ${homrGateInfo}` : " · no gate data"}`} /> homrgate{homrGateInfo ? "·" : ""}</label>
+            </div>
+            <label className={styles.stepper}>skipn <input type="number" min={-5} max={5} step={1} value={opt.skipn} title={lang === "zh" ? ">0 去掉整谱开头 N 个系统(封面/标题, 只动首个有系统页); <0 去掉整谱末尾 |N| 个系统(它曲/demo, 只动末个有系统页)" : "score-level: positive drops first N systems of first content page; negative drops last |N| of last content page"} onChange={(e) => applyAdv("skipn", Number(e.target.value))} /></label>
+            <label className={styles.stepper}>seln <input type="number" min={0} max={9} value={opt.seln} onChange={(e) => applyAdv("seln", Number(e.target.value))} /></label>
+            <div className={styles.pcardTitle}><span>{lang === "zh" ? "阈值(原版三阈值)" : "Thresholds"}</span></div>
+            {([
+              ["zwgrens", "blackThresh"],
+              ["voorna", "beforeAfter"],
+              ["mtdrmpl", "barlineThresh"],
+            ] as const).map(([k, label]) => (
+              <label key={`${k}-${advNonce}`} className={styles.stepper}>{tx(label)}({k})
+                <input type="number" min={ADV_RANGES[k][0]} max={ADV_RANGES[k][1]} step={ADV_STEPS[k]}
+                  defaultValue={opt[k] as number}
+                  title={lang === "zh" ? "只记当前页, 整谱重分析但各页保留已调参数" : "Saved for current page only; other tuned pages keep theirs"}
+                  onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) applyAdv(k, v); }}
+                  onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { applyAdv(k, v); e.target.value = String(opt[k] as number); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+              </label>
+            ))}
+            <label className={styles.stepper}>cropx <input type="number" min={0} value={opt.cropx} onChange={(e) => applyAdv("cropx", Number(e.target.value))} /></label>
+             <label className={`${styles.pill} ${opt.annot === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.annot === 1} onChange={(e) => applyAdv("annot", e.target.checked ? 1 : 0)} /> {tx("annotate")}</label>
           </details>
          </aside>
        )}
@@ -4074,6 +4086,19 @@ export default function ScoreFollowPage() {
          ref={notationRef}
          className={styles.notation}
          onScroll={onScoreScroll}
+        onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragActive(false);
+          const fs = e.dataTransfer?.files;
+          if (!fs || !fs.length) return;
+          const all = [...fs];
+          const pdf = all.find((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+          if (pdf) { void onPdfFile(pdf); return; }
+          const imgs = all.filter((f) => f.type.startsWith("image/"));
+          if (imgs.length) void onImageFile(imgs);
+        }}
         onClick={onScoreClick}
         onDoubleClick={onScoreDoubleClick}
         onContextMenu={onNotationContextMenu}
@@ -4097,7 +4122,7 @@ export default function ScoreFollowPage() {
              <div style={{ position: "absolute", left: 7, top: 7, width: 20, height: 20, borderRadius: "50%", border: "2px solid rgba(0,120,255,0.9)" }} />
            </div>
          )}
-          {!analysis && <div className={styles.emptyScore}><span aria-hidden="true">♬</span><h1>{tx("noPdfHint")}</h1><p>PDF · MEGA-METRO · scorefollow</p><button className={styles.practicePlay} onClick={() => pdfInputRef.current?.click()}>{tx("loadPdf")}</button><button className={styles.practicePlay} onClick={() => imgInputRef.current?.click()}>{tx("loadImage")}</button></div>}
+          {!analysis && <div className={styles.emptyScore} data-drag={dragActive ? "true" : "false"}><span aria-hidden="true">♬</span><h1>{tx("noPdfHint")}</h1><p>{tx("emptyDrop")}</p><button className={styles.practicePlay} onClick={() => pdfInputRef.current?.click()}>{tx("loadPdf")}</button><div className={styles.emptyActions}><button className={styles.tbBtn} onClick={() => imgInputRef.current?.click()}>{tx("loadImage")}</button><button className={styles.tbBtn} onClick={() => void openCamera()}>{tx("takePhoto")}</button></div><ol className={styles.emptySteps}><li>{tx("step1")}</li><li>{tx("step2")}</li><li>{tx("step3")}</li></ol></div>}
          {analysis && pageOffsetsRef.current.slice(1).map((off) => <div key={off.page} className={styles.pageBreak} style={{ top: `${off.y / analysis.pageH * 100}%` }} aria-hidden="true">{lang === "zh" ? `第 ${off.page} 页` : `Page ${off.page}`}</div>)}
          {analysis && (
             <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: correctMode ? "auto" : "none" }} viewBox={`0 0 ${analysis.pageW} ${analysis.pageH}`} preserveAspectRatio="none">

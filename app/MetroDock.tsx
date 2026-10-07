@@ -93,7 +93,6 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
       <button className={styles.sound} disabled={!state.ready} onClick={() => configure({ sound: sounds[(sounds.indexOf(state.sound) + 1) % sounds.length] })}>♫<small>{zh ? ["木鱼", "响木", "滴声", "数字", "军鼓"][sounds.indexOf(state.sound)] ?? "音色" : state.sound}</small></button>
       <button className={styles.meter} disabled={!state.ready} onClick={() => { const order = [2, 3, 4, 6]; configure({ meter: order[(order.indexOf(state.meter) + 1) % order.length] }); }}
         aria-label={zh ? `全局拍号 ${state.meter}/4, 点击切换` : `Global meter ${state.meter}/4, tap to cycle`} title={zh ? "全局拍号(点小节可单独覆盖)" : "Global meter (per-bar override by tapping a bar)"}>{state.meter}<small>{zh ? "拍号" : "Meter"}</small></button>
-      <span className={styles.idleHint}>{zh ? "闲置 4 秒收起" : "Hides after 4s idle"}</span>
     </div>}
     {open && <p role="status" className={styles.notice}>{!state.ready ? (zh ? "载入谱面后启用节拍器" : "Load a score to enable controls") : notice}</p>}
     <div className={styles.launchRow}>

@@ -18,7 +18,7 @@
 .meter { left: 103px; bottom: 8px; }
 .idleHint { position: absolute; top: 24px; width: 100%; text-align: center; color: var(--sf-muted); font-size: 11px; }
 .launchRow { display: flex; justify-content: flex-end; gap: 8px; align-items: center; margin-top: 12px; }
-.launch, .more { min-height: 46px; padding: 10px 16px; border-radius: 24px; box-shadow: var(--sf-shadow); font-weight: 650 !important; }
+.launch, .more { min-height: 46px; padding: 10px 16px; border-radius: 24px; box-shadow: var(--sf-shadow); font-weight: 600 !important; }
 .launch span { font-size: 22px; margin-right: 8px; color: var(--sf-accent); vertical-align: middle; }
 .launch[data-playing="true"] { border-color: var(--sf-accent); background: var(--sf-accent-soft); }
 .more { font-size: 12px !important; }
@@ -26,4 +26,17 @@
 .notice:empty { display: none; }
 @keyframes appear { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: none; } }
 @media (max-width: 600px) { .dock { right: 12px; bottom: max(48px, calc(env(safe-area-inset-bottom) + 40px)); } }
+@media (max-width: 680px) {
+  .dock { bottom: calc(37px + 64px + 12px + env(safe-area-inset-bottom)); }
+  .disc { width: 224px; height: 224px; }
+  .disc button { width: 52px; height: 52px; font-size: 20px; }
+  .readout { top: 52px; left: 77px; width: 70px; }
+  .readout strong { font-size: 28px; }
+  .disc .play { left: 86px; top: 108px; }
+  .slower { left: 16px; top: 70px; }
+  .faster { right: 16px; top: 70px; }
+  .count { left: 40px; bottom: 30px; }
+  .sound { right: 40px; bottom: 30px; }
+  .meter { left: 87px; bottom: 6px; }
+}
 @media (prefers-reduced-motion: reduce) { .disc { animation: none; } }

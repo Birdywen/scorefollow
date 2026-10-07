@@ -1,6 +1,6 @@
 .page {
   margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column;
-  color: #1b1b1b; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 13px;
+  color: #1b1b1b; background: #fff; font-family: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", -apple-system, "Segoe UI", sans-serif; font-size: 13px;
   color-scheme: light;
 }
 .page[data-fullscreen="true"] { position: fixed; inset: 0; z-index: 9999; }
@@ -358,14 +358,14 @@ a.secondary {
   --sf-elevated: #f5f7fa;
   --sf-border: #dce3ec;
   --sf-ink: #18253a;
-  --sf-muted: #627088;
+  --sf-muted: #56647a;
   --sf-accent: #215dd4;
   --sf-accent-soft: #eaf1ff;
   --sf-focus: #215dd4;
   --sf-shadow: 0 12px 34px rgba(30, 48, 75, .12);
   color: var(--sf-ink);
   background: var(--sf-bg);
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", -apple-system, "Segoe UI", sans-serif;
   font-size: 14px;
 }
 .page[data-theme="dark"] {
@@ -394,9 +394,9 @@ a.secondary {
   background: var(--sf-surface);
   border-color: var(--sf-border);
 }
-.tbLogo { color: var(--sf-ink); font-size: 13px; letter-spacing: .025em; font-weight: 780; padding-right: 11px; border-right: 1px solid var(--sf-border); }
+.tbLogo { color: var(--sf-ink); font-size: 13px; letter-spacing: .025em; font-weight: 700; padding-right: 11px; border-right: 1px solid var(--sf-border); }
 .tbLogoSvg { color: var(--sf-accent); }
-.tbTitle, .page[data-theme="dark"] .tbTitle { flex: 0 1 38ch; min-width: 0; max-width: none; color: var(--sf-muted); font-weight: 550; }
+.tbTitle, .page[data-theme="dark"] .tbTitle { flex: 0 1 38ch; min-width: 0; max-width: none; color: var(--sf-muted); font-weight: 500; }
 .tbMenuWrap { flex: 0 0 auto; display: inline-flex; gap: 8px; }
 .tbBtn, .page[data-theme="dark"] .tbBtn,
 .practiceBtn, .page[data-theme="dark"] .practiceBtn,
@@ -424,7 +424,7 @@ a.secondary {
 .practicePlay { background: #215dd4; color: #fff; }
 .practicePlay:hover { background: #184bab; }
 .practiceBtn:disabled, .modebar button:disabled { opacity: .43; cursor: not-allowed; }
-.pageIndicator { font-weight: 650; color: var(--sf-ink); }
+.pageIndicator { font-weight: 600; color: var(--sf-ink); }
 .speedControl, .page[data-theme="dark"] .speedControl { color: var(--sf-muted); }
 .speedControl b, .page[data-theme="dark"] .speedControl b { color: var(--sf-ink); }
 .speedControl input { accent-color: var(--sf-accent); }
@@ -454,12 +454,16 @@ a.secondary {
 .emptyScore h1 { font-size: clamp(18px, 2.2vw, 25px); font-weight: 700; color: var(--sf-ink); }
 .emptyScore p { letter-spacing: .08em; font-size: 11px; }
 .emptyScore button { margin-top: 8px; }
+.emptyScore[data-drag="true"] { outline: 2px dashed var(--sf-accent); outline-offset: -18px; background: var(--sf-accent-soft); border-radius: 18px; }
+.emptyActions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.emptySteps { display: flex; gap: 18px; margin: 6px 0 0; padding: 0; list-style: none; color: var(--sf-muted); font-size: 12px; }
+.emptySteps li { display: flex; align-items: center; gap: 6px; }
 .pageBreak { position: absolute; right: 7px; padding: 2px 7px; z-index: 1; transform: translateY(-50%); font-size: 10px; font-variant-numeric: tabular-nums; background: var(--sf-elevated); border: 1px solid var(--sf-border); color: var(--sf-muted); border-radius: 6px; pointer-events: none; }
 .statusbar, .page[data-theme="dark"] .statusbar { display: flex; align-items: center; gap: 16px; min-height: 37px; max-height: 45px; padding: 7px 16px; background: var(--sf-surface); border-color: var(--sf-border); color: var(--sf-muted); font-size: 12px; overflow: hidden; }
 .statusmsg, .page[data-theme="dark"] .statusmsg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sf-muted); }
 .statusFacts { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .statusFacts > span + span { padding-left: 9px; border-left: 1px solid var(--sf-border); }
-.statusWarning { color: #ad6400; font-weight: 700; }
+.statusWarning { color: #9a5800; font-weight: 700; }
 .statusTechnical { font-family: ui-monospace, monospace; white-space: nowrap; }
 .modalBackdrop { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10100; padding: 18px; background: rgba(14, 24, 39, .65); }
 .camVideo { width: 100%; max-height: 46vh; border-radius: 10px; background: #000; object-fit: contain; }
