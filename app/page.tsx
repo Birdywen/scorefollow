@@ -1169,7 +1169,7 @@ export default function ScoreFollowPage() {
     [renderPage],
   );
 
-  // metro 桥接(Smart-Metro/metro-engine.js 契约): 当前页 metric + 渲染状态 + 重算事件
+  // metro 桥接(MEGA-METRO/metro-engine.js 契约): 当前页 metric + 渲染状态 + 重算事件
   useEffect(() => {
     (window as unknown as Record<string, unknown>).SynPDFRuntime = Object.assign(
       (window as unknown as Record<string, unknown>).SynPDFRuntime ?? {},
@@ -2556,7 +2556,7 @@ export default function ScoreFollowPage() {
     for (const [pn, arr] of Object.entries(annotsRef.current)) {
       for (const a of arr) annotAll.push({ x: a.x, y: a.y, w: a.w, c: a.c, t: a.t, d: 0, p: Number(pn) });
     }
-    // 节拍器嵌入: loader 藏进 annot(原版 eval 即自启动, 与 Smart-Metro/metro-engine.js 同机制)
+    // 节拍器嵌入: loader 藏进 annot(原版 eval 即自启动, 与 MEGA-METRO/metro-engine.js 同机制)
     const isEngineAnnot = (t: string) =>
       t.includes("__sgaBoot") || t.includes("metro-engine.js") || t.includes("sga_config");
     if (embedMetro) {
@@ -3337,7 +3337,7 @@ export default function ScoreFollowPage() {
       <MetroDock lang={lang} hidden={helpOpen || correctMode || !!preloadPreview || tunerOpen || playing} />
       {!chromeOpen && <button className={styles.showui} onClick={() => setChromeOpen(true)} title="Show toolbar (T)">UI</button>}
       {chromeOpen && <header className={styles.topbar}>
-        <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>SMART-METRO</span>
+        <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>MEGA-METRO</span>
          <button className={`${styles.tbBtn} ${pdfName ? styles.tbBtnOn : ""}`} onClick={() => pdfInputRef.current?.click()} title={pdfName || tx("loadPdf")}>📄 {pdfName ? (pdfName.length > 16 ? pdfName.slice(0, 14) + "…" : pdfName) : tx("score")}</button>
         <button className={styles.tbBtn} onClick={() => imgInputRef.current?.click()} title={tx("loadImage")}>🖼</button>
         <button className={styles.tbBtn} onClick={() => void openCamera()} title={tx("takePhoto")}>📷</button>
@@ -3773,7 +3773,7 @@ export default function ScoreFollowPage() {
              <div style={{ position: "absolute", left: 7, top: 7, width: 20, height: 20, borderRadius: "50%", border: "2px solid rgba(0,120,255,0.9)" }} />
            </div>
          )}
-          {!analysis && <div className={styles.emptyScore}><span aria-hidden="true">♬</span><h1>{tx("noPdfHint")}</h1><p>PDF · Smart-Metro · scorefollow</p><button className={styles.practicePlay} onClick={() => pdfInputRef.current?.click()}>{tx("loadPdf")}</button><button className={styles.practicePlay} onClick={() => imgInputRef.current?.click()}>{tx("loadImage")}</button></div>}
+          {!analysis && <div className={styles.emptyScore}><span aria-hidden="true">♬</span><h1>{tx("noPdfHint")}</h1><p>PDF · MEGA-METRO · scorefollow</p><button className={styles.practicePlay} onClick={() => pdfInputRef.current?.click()}>{tx("loadPdf")}</button><button className={styles.practicePlay} onClick={() => imgInputRef.current?.click()}>{tx("loadImage")}</button></div>}
          {analysis && pageOffsetsRef.current.slice(1).map((off) => <div key={off.page} className={styles.pageBreak} style={{ top: `${off.y / analysis.pageH * 100}%` }} aria-hidden="true">{lang === "zh" ? `第 ${off.page} 页` : `Page ${off.page}`}</div>)}
          {analysis && (
             <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: correctMode ? "auto" : "none" }} viewBox={`0 0 ${analysis.pageW} ${analysis.pageH}`} preserveAspectRatio="none">

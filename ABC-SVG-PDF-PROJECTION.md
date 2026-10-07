@@ -2,7 +2,7 @@
 
 ## 定位与来源
 
-这是 Smart-Metro 与 livescore 共用的**已建立的投射算法**：利用 abc2svg 的排版位置、SynPDF 在 PDF 页面上检测的谱线/小节线，在不识别 PDF 音符语义的情况下预测符头位置。算法实现以 `/home/ubuntu/workspace/Smart-Metro/align-engine.js` 为准：文件头将几何核心称为 **v11**，当前脚本自报 `version: 1.2.0`、`versionName: v13-reviewed-or-candidate-module-x`；这些是不同层次的版本号，不应混为一谈。此文档记录现有算法，不把 scorefollow 的 CV 小节线检测和 ABC 投射混为同一模块。
+这是 MEGA-METRO 与 livescore 共用的**已建立的投射算法**：利用 abc2svg 的排版位置、SynPDF 在 PDF 页面上检测的谱线/小节线，在不识别 PDF 音符语义的情况下预测符头位置。算法实现以 `/home/ubuntu/workspace/Smart-Metro/align-engine.js` 为准：文件头将几何核心称为 **v11**，当前脚本自报 `version: 1.2.0`、`versionName: v13-reviewed-or-candidate-module-x`；这些是不同层次的版本号，不应混为一谈。此文档记录现有算法，不把 scorefollow 的 CV 小节线检测和 ABC 投射混为同一模块。
 
 输入：按谱行切分的 ABC；abc2svg 的 `anno_start` 与 `get_abcmodel` 回调；PDF 对应行的 `cs`（两组各 5 条谱线 y）、`bxs`（按 x 排序的小节边界）；可选显示比例 `scale`。输出：`heads[]`，每个符头含 `png_x/png_y`、`pit/st/v`、`measureInRow/localTick` 等。这里的 `png_*` 指**与输入 PDF/PNG metric 相同的页内像素坐标空间**乘以 `scale`，不是浏览器视口坐标；若叠到 DOM，仍须处理画布偏移/尺寸。
 
