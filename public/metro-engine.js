@@ -107,7 +107,7 @@ function boot(){
 
   var st = { raf:null, iSeq:0, playing:false, bpm:66, audio:null,
              loopOn:false, loopFrom:1, loopTo:38, loopN:4, loopLeft:0, s0:0,
-             color:'blue', opacity:0.28, followY:0.30, meter:4, countIn:0, seqText:'', meterMap:null, skipBars:null, sound:'wood', showBarnums:true, lang:'en',
+             color:'blue', opacity:0.28, followY:0.30, meter:4, countIn:0, seqText:'', meterMap:null, skipBars:null, barNumMap:null, sound:'wood', showBarnums:true, lang:'en',
              planSlot:1, planSlots:null, planStorageKey:null };
   window.__sgaMetro = st;
   // 返回某小节生效的拍数: 查 meterMap(取<=该小节的最近一次设定), 无则回退全局 st.meter
@@ -255,11 +255,26 @@ function boot(){
   }
   applyShadeStyle();
 
+  function renderLoopZone(){
+    var olds=host.querySelectorAll('.sga-loopzone');
+    for(var k=0;k<olds.length;k++) olds[k].remove();
+    if(!st.loopOn||!B.length) return;
+    var lo=Math.min(st.loopFrom,st.loopTo), hi=Math.max(st.loopFrom,st.loopTo);
+    var cur=-1,bL=0,yT=0,yB=0,bR=0;
+    function flush(){ if(cur<0) return; var d=document.createElement('div'); d.className='sga-loopzone';
+      d.style.cssText='position:absolute;left:'+bL+'px;top:'+yT+'px;width:'+Math.max(2,bR-bL)+'px;height:'+Math.max(2,yB-yT)+'px;background:rgba(37,99,235,.08);box-shadow:inset 0 0 0 1.5px rgba(37,99,235,.4);pointer-events:none;z-index:5998';
+      host.appendChild(d); cur=-1; }
+    for(var i=0;i<B.length;i++){ var e=B[i],m=e[4];
+      if(m<lo||m>hi){ if(cur>=0) flush(); continue; }
+      if(m!==cur){ if(cur>=0) flush(); cur=m; bL=e[6]; yT=e[2]; yB=e[3]; }
+      bR=e[7]; if(e[2]<yT) yT=e[2]; if(e[3]>yB) yB=e[3]; }
+    flush();
+  }
   function renderBarnums(){
     var olds=host.querySelectorAll('.sga-barnum');
     for(var k=0;k<olds.length;k++) olds[k].remove();
     for(var i=0;i<B.length;i++){ var e=B[i]; if(e[5]!==1) continue;
-      var lab=document.createElement('div'); lab.className='sga-barnum'; lab.textContent=e[4];
+      var lab=document.createElement('div'); lab.className='sga-barnum'; lab.textContent=(st.barNumMap&&st.barNumMap[e[4]]!=null)?st.barNumMap[e[4]]:e[4];
       lab.style.cssText='position:absolute;left:'+(e[6]+2)+'px;top:'+(e[2]-20)+'px;font:600 13px sans-serif;color:#3a7bd5;pointer-events:none;z-index:5999;opacity:0.85';
       host.appendChild(lab);
     }
@@ -508,7 +523,7 @@ function boot(){
   function clonePlan(value){ return value==null?null:JSON.parse(JSON.stringify(value)); }
   function capturePlan(){
     return {version:1,bpm:st.bpm,meter:st.meter,countIn:st.countIn,seqText:st.seqText||'',
-      meterMap:clonePlan(st.meterMap),skipBars:clonePlan(st.skipBars),loopOn:!!st.loopOn,
+      meterMap:clonePlan(st.meterMap),skipBars:clonePlan(st.skipBars),barNumMap:clonePlan(st.barNumMap),loopOn:!!st.loopOn,
       loopFrom:st.loopFrom,loopTo:st.loopTo,loopN:st.loopN,sound:st.sound};
   }
   function planFingerprint(){
@@ -553,6 +568,7 @@ function boot(){
     st.seqText=plan.seqText||'';
     st.meterMap=clonePlan(plan.meterMap);
     st.skipBars=clonePlan(plan.skipBars);
+    st.barNumMap=clonePlan(plan.barNumMap);
     st.loopOn=!!plan.loopOn;
     st.loopFrom=+plan.loopFrom||1;
     st.loopTo=+plan.loopTo||maxM;
@@ -1000,6 +1016,7 @@ function boot(){
     if(c.bpm!=null){ st.bpm=c.bpm; setV('sgBpm',c.bpm); var bv=document.getElementById('sgBpmV'); if(bv)bv.textContent=c.bpm; if(typeof renderTempo==='function'){ try{ renderTempo(); }catch(e){} } }
     if(c.meter!=null){ st.meter=c.meter; var ms=document.getElementById('sgMeter'); if(ms){ms.value=c.meter;} }
     if(c.meterMap!=null){ st.meterMap=c.meterMap; var mmEl=document.getElementById('sgMeterMap'); if(mmEl){ mmEl.value=Object.keys(c.meterMap).sort(function(a,b){return a-b;}).map(function(k){return k+':'+c.meterMap[k];}).join(', '); } }
+    if(c.barNumMap!=null){ st.barNumMap=c.barNumMap; try{ renderBarnums(); }catch(e){} }
     if(c.skipBars!=null){ st.skipBars=c.skipBars; var skEl=document.getElementById('sgSkip'); if(skEl){ skEl.value=Object.keys(c.skipBars).sort(function(a,b){return a-b;}).join(', '); } }
     if(c.color!=null){ st.color=c.color; var cs=document.getElementById('sgColor'); if(cs)cs.value=c.color; }
     if(c.opacity!=null){ st.opacity=c.opacity; var op=document.getElementById('sgOpac'); if(op)op.value=Math.round(c.opacity*100); var ov=document.getElementById('sgOpacV'); if(ov)ov.textContent=c.opacity.toFixed(2).replace(/^0/,''); }
@@ -1014,6 +1031,7 @@ function boot(){
     if(c.showBarnums!=null){ st.showBarnums=c.showBarnums; var bnEl=document.getElementById('sgBarnum'); if(bnEl)bnEl.checked=!!c.showBarnums; if(typeof applyBarnumStyle==='function')applyBarnumStyle(); }
     if(c.lang!=null){ st.lang=c.lang; if(typeof applyLang==='function')applyLang(); }
     if(typeof applyShadeStyle==='function') applyShadeStyle();
+    try{ renderLoopZone(); }catch(e){}
   }
   // ===== 启动读 SGA_CONFIG 恢复上次导出的偏好 =====
   (function(){
@@ -1033,6 +1051,7 @@ function boot(){
     if(gi){ gi.max=maxM; if(+gi.value>maxM) gi.value=maxM; }
     st.loopTo=Math.min(st.loopTo||maxM,maxM)||maxM;
     renderBarnums();
+    renderLoopZone();
     if(st.iSeq>=B.length) st.iSeq=0;
     lastRowY=-1; positionShade(st.iSeq); // 只跟新几何, 不滚屏(纠错加线/合并不再跳回开头)
     info.textContent=L('ready')+' - '+maxM+' bars';
@@ -1215,6 +1234,7 @@ function boot(){
     stop: function(){ stop(); return true; },
     restartAtMeasure: restartAtMeasure,
     applyConfig: applySgaConfig,
+    resync: function(){ try{ rebuild(); }catch(e){} return true; },
     isPlaying: function(){ return !!st.playing; }
   };
   window.__sgaMetroPractice={

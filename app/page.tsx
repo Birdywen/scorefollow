@@ -90,6 +90,18 @@ const STR: Record<string, { zh: string; en: string }> = {
   pieReset: { zh: "重置", en: "Reset" },
   pieUndo: { zh: "撤销", en: "Undo" },
   pieMergeL: { zh: "◀左合", en: "◀ Merge" },
+  barSetup: { zh: "小节设置", en: "Bar setup" },
+  barMeter: { zh: "拍号", en: "Meter" },
+  meterDefault: { zh: "默认", en: "Default" },
+  pickup14: { zh: "1/4·弱起", en: "1/4 pickup" },
+  barNo: { zh: "小节号", en: "Bar No." },
+  renumber: { zh: "顺排↓", en: "Renumber↓" },
+  loopFrom: { zh: "设为起点", en: "Set start" },
+  loopTo: { zh: "设为终点", en: "Set end" },
+  loopToggle: { zh: "循环", en: "Loop" },
+  loopClear: { zh: "清除", en: "Clear" },
+  loopMark: { zh: "圈Loop", en: "Mark loop" },
+  loopMarking: { zh: "✓圈Loop中", en: "✓Marking" },
   diagnostics: { zh: "诊断视图", en: "Diagnostics" },
   correctHint: { zh: "点击选中 · 拖动线条 · 长按/双击新增 · Ctrl+Z 撤销", en: "Click to select · drag a line · long-press/double-click to add · Ctrl+Z to undo" },
   exitCorrect: { zh: "完成校正", en: "Done correcting" },
@@ -515,7 +527,7 @@ export default function ScoreFollowPage() {
   const maskHeadsRef = useRef(0);
   // 按页分析参数快照 {页: {键: 值}}: 调参只记当前页, 各页互不影响(见 PAGE_ADV_KEYS)
   const advsRef = useRef<Record<number, Record<string, number>>>({});
-  type ManualSnap = { bars: Record<number, number[][]>; align: Record<number, { skip: number; full: number }> };
+  type ManualSnap = { bars: Record<number, number[][]>; align: Record<number, { skip: number; full: number }>; meter?: Record<number, number>; barnum?: Record<number, number>; loopm?: { on: boolean; from: number; to: number } };
   const undoRef = useRef<ManualSnap[]>([]);
   const redoRef = useRef<ManualSnap[]>([]);
   const dragRef = useRef<{ si: number; bi: number; active: boolean }>({ si: -1, bi: -1, active: false });
@@ -544,6 +556,25 @@ export default function ScoreFollowPage() {
   const [metroAvail, setMetroAvail] = useState(false);
   const [loopA, setLoopA] = useState(0);
   const [loopB, setLoopB] = useState(0);
+  // 谱面小节设置(React 自有, 推给引擎 + 进 undo + 进存档):
+  // meterMap: 引擎小节号→拍数(弱起 1/4 即 beats=1); barNumMap: 引擎小节号→显示号; loopM: 练习区间(引擎小节号)
+  const [meterMap, setMeterMap] = useState<Record<number, number>>({});
+  const [barNumMap, setBarNumMap] = useState<Record<number, number>>({});
+  const [loopM, setLoopM] = useState<{ on: boolean; from: number; to: number }>({ on: false, from: 1, to: 1 });
+  const [loopMark, setLoopMark] = useState(false);
+  const meterMapRef = useRef<Record<number, number>>({});
+  const barNumRef = useRef<Record<number, number>>({});
+  const loopMRef = useRef<{ on: boolean; from: number; to: number }>({ on: false, from: 1, to: 1 });
+  const autoFsRef = useRef(false);
+  const autoFsCount = useRef(0);
+  const syncMeterMap = useCallback((n: Record<number, number>) => { meterMapRef.current = n; setMeterMap(n); }, []);
+  const syncBarNum = useCallback((n: Record<number, number>) => { barNumRef.current = n; setBarNumMap(n); }, []);
+  const syncLoopM = useCallback((n: { on: boolean; from: number; to: number }) => { loopMRef.current = n; setLoopM(n); }, []);
+  const snapExtras = useCallback(() => ({
+    meter: { ...meterMapRef.current },
+    barnum: { ...barNumRef.current },
+    loopm: { ...loopMRef.current },
+  }), []);
   const [tapCount, setTapCount] = useState(0);
   const [synbox, setSynbox] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -720,6 +751,32 @@ export default function ScoreFollowPage() {
       if (document.fullscreenElement) await document.exitFullscreen();
       else await document.documentElement.requestFullscreen();
     } catch { setStatus("fullscreen unavailable"); }
+  }, []);
+  // 自动全屏(计数制): 主播放/节拍器进入时+1, 退出时-1; 归零且是自动进入的才退, 用户手动全屏不碰
+  const enterAutoFs = useCallback(() => {
+    try {
+      if (document.fullscreenElement) return;
+      autoFsCount.current += 1;
+      autoFsRef.current = true;
+      const p = document.documentElement.requestFullscreen?.() as Promise<void> | undefined;
+      if (p && typeof p.catch === "function") p.catch(() => {
+        autoFsCount.current = Math.max(0, autoFsCount.current - 1);
+        if (autoFsCount.current === 0) autoFsRef.current = false;
+      });
+    } catch {
+      autoFsCount.current = Math.max(0, autoFsCount.current - 1);
+      if (autoFsCount.current === 0) autoFsRef.current = false;
+    }
+  }, []);
+  const exitAutoFs = useCallback(() => {
+    try {
+      if (!autoFsRef.current) return;
+      autoFsCount.current -= 1;
+      if (autoFsCount.current > 0) return;
+      autoFsCount.current = 0;
+      autoFsRef.current = false;
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
@@ -1215,6 +1272,11 @@ export default function ScoreFollowPage() {
     } catch { /* ignore */ }
     return () => window.removeEventListener("synpdf:metro-state", onState);
   }, []);
+  // 节拍器播放同样自动全屏/停止恢复(与主播放同一套 autoFs 计数)
+  useEffect(() => {
+    if (metroPlaying) enterAutoFs();
+    else exitAutoFs();
+  }, [metroPlaying, enterAutoFs, exitAutoFs]);
 
   // 纠错模式标记供引擎点谱监听读取: 纠错点线条不碰播放头
   useEffect(() => {
@@ -1226,6 +1288,8 @@ export default function ScoreFollowPage() {
     stop: () => boolean;
     restartAtMeasure: (m: number) => void;
     isPlaying: () => boolean;
+    applyConfig: (c: Record<string, unknown>) => void;
+    resync?: () => void;
   }
   const metroControl = (): MetroControl | null => {
     try {
@@ -1269,6 +1333,10 @@ export default function ScoreFollowPage() {
     setTapCount(0);
     setSelectedBar(null);
     setPie(null);
+    syncMeterMap({});
+    syncBarNum({});
+    syncLoopM({ on: false, from: 1, to: 1 });
+    setLoopMark(false);
     homrGateRef.current = null;
     setHomrGate(null);
     setHomrGateInfo("");
@@ -1536,9 +1604,23 @@ export default function ScoreFollowPage() {
     }
   }, [scheduleAdvRender]);
 
+  // React 小节设置 → 活引擎(拍号/显示号/练习区间; 面板输入框同步由引擎 applyConfig 负责, 几何重建走 resync)
+  const pushMetroPatch = useCallback(() => {
+    try {
+      const mc = metroControl();
+      if (!mc) return;
+      const lm = loopMRef.current;
+      mc.applyConfig({
+        meterMap: { ...meterMapRef.current },
+        barNumMap: { ...barNumRef.current },
+        loopOn: lm.on, loopFrom: lm.from, loopTo: lm.to,
+      });
+      try { mc.resync?.(); } catch { /* 引擎无 B 时重建自愈 */ }
+    } catch { /* 引擎未加载时只留 React 态 */ }
+  }, []);
   // ---- 人工校正层 ----
   const pushUndo = useCallback(() => {
-    const snap: ManualSnap = { bars: {}, align: {} };
+    const snap: ManualSnap = { bars: {}, align: {}, ...snapExtras() };
     for (const [k, v] of Object.entries(manualRef.current)) snap.bars[Number(k)] = cloneBars(v);
     for (const [k, v] of Object.entries(manualAlignRef.current)) snap.align[Number(k)] = { ...v };
     undoRef.current.push(snap);
@@ -1643,6 +1725,10 @@ export default function ScoreFollowPage() {
     manualRef.current = next;
     manualAlignRef.current = { ...snap.align };
     setManualBarsByPage({ ...next });
+    if (snap.meter) syncMeterMap({ ...snap.meter });
+    if (snap.barnum) syncBarNum({ ...snap.barnum });
+    if (snap.loopm) syncLoopM({ ...snap.loopm });
+    pushMetroPatch();
     const merged = mergeFromPages();
     if (!merged) {
       setAnalysis(null);
@@ -1659,12 +1745,12 @@ export default function ScoreFollowPage() {
     setSelectedBar(null);
     setStatus(label + (dropped ? ` · timing截断${dropped}个` : ""));
     emitMetricRendered();
-  }, [mergeFromPages, emitMetricRendered]);
+  }, [mergeFromPages, emitMetricRendered, syncMeterMap, syncBarNum, syncLoopM, pushMetroPatch]);
 
   const doUndo = useCallback(() => {
     const prev = undoRef.current.pop();
     if (!prev) { setStatus("没有可撤销的校正"); return; }
-    const snap: ManualSnap = { bars: {}, align: {} };
+    const snap: ManualSnap = { bars: {}, align: {}, ...snapExtras() };
     for (const [k, v] of Object.entries(manualRef.current)) snap.bars[Number(k)] = cloneBars(v);
     for (const [k, v] of Object.entries(manualAlignRef.current)) snap.align[Number(k)] = { ...v };
     redoRef.current.push(snap);
@@ -1674,13 +1760,111 @@ export default function ScoreFollowPage() {
   const doRedo = useCallback(() => {
     const nxt = redoRef.current.pop();
     if (!nxt) { setStatus("没有可重做的校正"); return; }
-    const snap: ManualSnap = { bars: {}, align: {} };
+    const snap: ManualSnap = { bars: {}, align: {}, ...snapExtras() };
     for (const [k, v] of Object.entries(manualRef.current)) snap.bars[Number(k)] = cloneBars(v);
     for (const [k, v] of Object.entries(manualAlignRef.current)) snap.align[Number(k)] = { ...v };
     undoRef.current.push(snap);
     restoreManual(nxt, "已重做校正");
   }, [restoreManual]);
 
+  // 全局 raw 序号(merge 顺序 = metric 顺序 = 引擎 raw 计数) → 引擎小节号(扣 skipBars)
+  const engineMeasureFromRaw = useCallback((raw: number): number => {
+    try {
+      const st = (window as unknown as Record<string, unknown>).__sgaMetro as
+        { skipBars?: Record<string, unknown> } | undefined;
+      const sk = st?.skipBars;
+      if (!sk) return raw;
+      let c = 0;
+      for (const k of Object.keys(sk)) { const n = Number(k); if (Number.isFinite(n) && n >= 1 && n <= raw) c++; }
+      return Math.max(1, raw - c);
+    } catch { return raw; }
+  }, []);
+  const rawOrdinalOf = useCallback((si: number, bi: number): number | null => {
+    if (!analysis) return null;
+    let raw = 0;
+    for (let r = 0; r < analysis.bars.length; r++) {
+      const row = analysis.bars[r];
+      for (let b = 0; b < row.length - 1; b++) { raw++; if (r === si && b === bi) return raw; }
+    }
+    return null;
+  }, [analysis]);
+  const sibiOfRaw = useCallback((raw: number): { si: number; bi: number } | null => {
+    if (!analysis || raw < 1) return null;
+    let n = 0;
+    for (let r = 0; r < analysis.bars.length; r++) {
+      const row = analysis.bars[r];
+      for (let b = 0; b < row.length - 1; b++) { n++; if (n === raw) return { si: r, bi: b }; }
+    }
+    return null;
+  }, [analysis]);
+  const totalEngineMeasures = useCallback((): number => {
+    if (!analysis) return 0;
+    let raw = 0;
+    for (const row of analysis.bars) raw += Math.max(0, row.length - 1);
+    return engineMeasureFromRaw(raw);
+  }, [analysis, engineMeasureFromRaw]);
+  const dispOf = useCallback((m: number): number => barNumRef.current[m] ?? m, []);
+  // 小节动作(先 pushUndo 再改, 改完推引擎; 显示号 canonical: 等于自身则删键)
+  const setBarBeats = useCallback((m: number, beats: number | null) => {
+    pushUndo();
+    const next = { ...meterMapRef.current };
+    if (beats == null) delete next[m]; else next[m] = Math.min(12, Math.max(1, Math.round(beats)));
+    syncMeterMap(next);
+    pushMetroPatch();
+    setStatus(beats == null ? `m${m} 拍号恢复默认` : `m${m} 拍号设为 ${beats} 拍${beats === 1 ? "(弱起 1/4)" : ""} · 显示第${dispOf(m)}小节`);
+  }, [pushUndo, syncMeterMap, pushMetroPatch, dispOf]);
+  const setBarDisp = useCallback((m: number, disp: number | null) => {
+    pushUndo();
+    const next = { ...barNumRef.current };
+    if (disp == null || disp === m) delete next[m];
+    else next[m] = Math.max(1, Math.round(disp));
+    syncBarNum(next);
+    pushMetroPatch();
+    setStatus(disp == null || disp === m ? `m${m} 显示号恢复默认` : `m${m} 显示为第${next[m] ?? m}小节`);
+  }, [pushUndo, syncBarNum, pushMetroPatch]);
+  const renumberFrom = useCallback((m: number, start: number) => {
+    pushUndo();
+    const total = totalEngineMeasures();
+    const next = { ...barNumRef.current };
+    const s = Math.max(1, Math.round(start));
+    for (let k = m; k <= total; k++) {
+      const v = s + (k - m);
+      if (v === k) delete next[k]; else next[k] = v;
+    }
+    syncBarNum(next);
+    pushMetroPatch();
+    setStatus(`从 m${m} 起顺排: 第${s}小节向后 · 共${Math.max(0, total - m + 1)}个`);
+  }, [pushUndo, syncBarNum, pushMetroPatch, totalEngineMeasures]);
+  const setLoopEnds = useCallback((from: number | null, to: number | null, on?: boolean) => {
+    pushUndo();
+    const cur = { ...loopMRef.current };
+    if (from != null) cur.from = Math.max(1, Math.round(from));
+    if (to != null) cur.to = Math.max(1, Math.round(to));
+    if (cur.to < cur.from) cur.to = cur.from;
+    cur.on = on !== undefined ? on : true;
+    syncLoopM(cur);
+    pushMetroPatch();
+    setStatus(cur.on ? `Loop 第${dispOf(cur.from)}–第${dispOf(cur.to)}小节 · 中间为练习区间` : "Loop 已关");
+  }, [pushUndo, syncLoopM, pushMetroPatch, dispOf]);
+  const clearLoopM = useCallback(() => {
+    pushUndo();
+    syncLoopM({ on: false, from: 1, to: 1 });
+    pushMetroPatch();
+    setStatus("Loop 已清除");
+  }, [pushUndo, syncLoopM, pushMetroPatch]);
+  const loopMarkTap = useCallback((m: number) => {
+    pushUndo();
+    const cur = { ...loopMRef.current };
+    let next: { on: boolean; from: number; to: number };
+    if (!cur.on) next = { on: true, from: m, to: m };
+    else if (cur.from !== cur.to) next = { on: true, from: m, to: m };
+    else next = { on: true, from: Math.min(cur.from, m), to: Math.max(cur.from, m) };
+    syncLoopM(next);
+    pushMetroPatch();
+    setStatus(next.from === next.to
+      ? `Loop 起点第${dispOf(next.from)}小节 · 再点一小节定终点`
+      : `Loop 第${dispOf(next.from)}–第${dispOf(next.to)}小节 · 中间为练习区间`);
+  }, [pushUndo, syncLoopM, pushMetroPatch, dispOf]);
   const canvasCoords = useCallback((clientX: number, clientY: number) => {
     const stack = stackRef.current;
     if (!stack || !analysis) return null;
@@ -1874,12 +2058,15 @@ export default function ScoreFollowPage() {
         return;
       }
       const hit = wijzerRef.current.x2time(p.x, p.y);
-      if (!hit) return;
+      if (!hit) { setSelectedBar(null); return; }
+      if (loopMark) { loopMarkTap(engineMeasureFromRaw(hit.measure + 1)); return; }
       placeCursor(hit.measure, hit.t);
+      const sibi = sibiOfRaw(hit.measure + 1);
+      if (sibi) setSelectedBar(sibi);
       // metro 点小节由引擎 host 监听统一处理(播放中=暖机重起, 未播放=只移动头),
       // 这里不再另发 metro-jump, 避免双通道重复重起
     },
-    [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, pageNum, placeCursor],
+    [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, pageNum, placeCursor, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw],
   );
 
   // 纠错新增小节线(长按/双击共用): 点位须落在某系统行内
@@ -2103,6 +2290,7 @@ export default function ScoreFollowPage() {
   }, [now, mediaURL]);
 
   const doPlay = useCallback(() => {
+    enterAutoFs();
     const m = mediaRef.current as any;
     if (m && mediaURL) { m.playbackRate = speed; void m.play(); }
     else {
@@ -2113,9 +2301,10 @@ export default function ScoreFollowPage() {
     setPlaying(true);
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(tick);
-  }, [mediaURL, speed, tick]);
+  }, [mediaURL, speed, tick, enterAutoFs]);
 
   const doPause = useCallback(() => {
+    exitAutoFs();
     if (countInTimerRef.current) {
       clearInterval(countInTimerRef.current);
       countInTimerRef.current = null;
@@ -2129,7 +2318,7 @@ export default function ScoreFollowPage() {
     }
     setPlaying(false);
     cancelAnimationFrame(rafRef.current);
-  }, [mediaURL, now]);
+  }, [mediaURL, now, exitAutoFs]);
 
   const doCountIn = useCallback(() => {
     if (countInTimerRef.current) clearInterval(countInTimerRef.current);
@@ -2182,6 +2371,9 @@ export default function ScoreFollowPage() {
       times: w.times,
       manualBarsByPage: manualRef.current,
       loop: { start: w.loopStart, end: w.loopEnd },
+      meterMap: Object.keys(meterMapRef.current).length ? { ...meterMapRef.current } : undefined,
+      barNumMap: Object.keys(barNumRef.current).length ? { ...barNumRef.current } : undefined,
+      metroLoop: loopMRef.current.on ? { ...loopMRef.current } : undefined,
     });
     const blob = new Blob([JSON.stringify(payload, null, 1)], { type: "application/json" });
     const a = document.createElement("a");
@@ -2481,7 +2673,7 @@ export default function ScoreFollowPage() {
       if (!st || typeof st.bpm !== "number") return null;
       const cfg: Record<string, unknown> = {};
       for (const k of ["bpm", "meter", "color", "opacity", "countIn", "seqText", "meterMap",
-        "skipBars", "loopOn", "loopFrom", "loopTo", "loopN", "sound", "showBarnums", "followY", "lang"]) {
+        "skipBars", "barNumMap", "loopOn", "loopFrom", "loopTo", "loopN", "sound", "showBarnums", "followY", "lang"]) {
         const v = st[k];
         if (v !== undefined && v !== null) cfg[k] = v;
       }
@@ -2551,6 +2743,7 @@ export default function ScoreFollowPage() {
       cleanView, darkTheme, lang,
       showSystems, showBars, showCursor, showLowConf, diagnosticMode,
       speed, profileName, loopA, loopB, synbox, embedMetro, pageNum,
+      meterMap: meterMapRef.current, barNumMap: barNumRef.current, metroLoop: loopMRef.current,
     })};`);
     const annotAll: { x: number; y: number; w: number; c: number; t: string; d: number; p?: number }[] = [];
     for (const [pn, arr] of Object.entries(annotsRef.current)) {
@@ -2922,6 +3115,28 @@ export default function ScoreFollowPage() {
       if (la !== undefined || lb !== undefined) {
         wijzerRef.current.setLoop(la ?? 0, lb ?? Math.max((la ?? 0) + 4, 4));
       }
+      if (u.meterMap && typeof u.meterMap === "object") {
+        const mm: Record<number, number> = {};
+        for (const [k, v] of Object.entries(u.meterMap as Record<string, unknown>)) { const m = Number(k); const b = Number(v); if (Number.isFinite(m) && Number.isFinite(b)) mm[m] = Math.min(12, Math.max(1, Math.round(b))); }
+        meterMapRef.current = mm; setMeterMap(mm);
+      }
+      if (u.barNumMap && typeof u.barNumMap === "object") {
+        const bn: Record<number, number> = {};
+        for (const [k, v] of Object.entries(u.barNumMap as Record<string, unknown>)) { const m = Number(k); const n2 = Number(v); if (Number.isFinite(m) && Number.isFinite(n2) && Math.round(n2) !== m) bn[m] = Math.max(1, Math.round(n2)); }
+        barNumRef.current = bn; setBarNumMap(bn);
+      }
+      if (u.metroLoop && typeof u.metroLoop === "object") {
+        const ml = u.metroLoop as Record<string, unknown>;
+        const lm = { on: ml.on === true, from: Math.max(1, Math.round(Number(ml.from) || 1)), to: Math.max(1, Math.round(Number(ml.to) || 1)) };
+        loopMRef.current = lm; setLoopM(lm);
+      }
+      try {
+        const mc2 = metroControl();
+        if (mc2) {
+          mc2.applyConfig({ meterMap: { ...meterMapRef.current }, barNumMap: { ...barNumRef.current }, loopOn: loopMRef.current.on, loopFrom: loopMRef.current.from, loopTo: loopMRef.current.to });
+          try { mc2.resync?.(); } catch { /* ignore */ }
+        }
+      } catch { /* 引擎未加载时跳过 */ }
       if (typeof u.synbox === "boolean") setSynbox(u.synbox);
       if (typeof u.embedMetro === "boolean") setEmbedMetro(u.embedMetro);
       if (typeof u.hideUI === "boolean") setChromeOpen(!u.hideUI);
@@ -3018,6 +3233,21 @@ export default function ScoreFollowPage() {
         manualRef.current = next;
         setManualBarsByPage(next);
       }
+      if (d.meterMap && typeof d.meterMap === "object") {
+        const mm: Record<number, number> = {};
+        for (const [k, v] of Object.entries(d.meterMap)) { const m = Number(k); const b = Number(v); if (Number.isFinite(m) && Number.isFinite(b)) mm[m] = Math.min(12, Math.max(1, Math.round(b))); }
+        syncMeterMap(mm);
+      }
+      if (d.barNumMap && typeof d.barNumMap === "object") {
+        const bn: Record<number, number> = {};
+        for (const [k, v] of Object.entries(d.barNumMap)) { const m = Number(k); const n2 = Number(v); if (Number.isFinite(m) && Number.isFinite(n2) && Math.round(n2) !== m) bn[m] = Math.max(1, Math.round(n2)); }
+        syncBarNum(bn);
+      }
+      if (d.metroLoop && typeof d.metroLoop === "object") {
+        const ml = d.metroLoop as { on?: unknown; from?: unknown; to?: unknown };
+        syncLoopM({ on: ml.on === true, from: Math.max(1, Math.round(Number(ml.from) || 1)), to: Math.max(1, Math.round(Number(ml.to) || 1)) });
+      }
+      pushMetroPatch();
       wijzerRef.current.loadTimes(d.times_arr);
       if (d.loop) wijzerRef.current.setLoop(d.loop.start, d.loop.end);
       setTapCount(wijzerRef.current.times.length);
@@ -3025,14 +3255,14 @@ export default function ScoreFollowPage() {
       if (pdfDocRef.current) void renderPage(pdfDocRef.current, pageNum);
       setStatus(`loaded ${wijzerRef.current.times.length} sync points` + (warnings.length ? ` · 注意: ${warnings.join("; ")}` : ""));
     }).catch(() => setStatus("timing file parse failed"));
-  }, [analysis, pageNum, pdfName, renderPage]);
+  }, [analysis, pageNum, pdfName, renderPage, syncMeterMap, syncBarNum, syncLoopM, pushMetroPatch]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (helpOpen) { e.preventDefault(); setHelpOpen(false); return; }
         if (preloadPreview) { closePreview(); return; }
-        setHelpOpen(false); setMenuOpen(false); setAdvOpen(false); setPie(null);
+        setHelpOpen(false); setMenuOpen(false); setAdvOpen(false); setPie(null); setSelectedBar(null); setLoopMark(false);
         return;
       }
       if (preloadPreview || helpOpen) return;
@@ -3051,7 +3281,7 @@ export default function ScoreFollowPage() {
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key.toLowerCase() === "t") { e.preventDefault(); setChromeOpen((v) => !v); return; }
-      if (e.key.toLowerCase() === "f") { e.preventDefault(); setMenuOpen((v) => !v); return; }
+      if (e.key.toLowerCase() === "f") { e.preventDefault(); void toggleFullScreen(); return; }
       if (e.key.toLowerCase() === "h") { e.preventDefault(); setHelpOpen((v) => !v); return; }
       if (e.key.toLowerCase() === "l") { e.preventDefault(); applyAdv("lncsr", opt.lncsr === 1 ? 0 : 1); return; }
       if (e.key.toLowerCase() === "m") { e.preventDefault(); setAdvOpen((v) => !v); return; }
@@ -3114,7 +3344,7 @@ export default function ScoreFollowPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast, correctMode, deleteSelectedBar, doUndo, doRedo, placeCursor, stepSystem, pageNum, numPages, renderPage, applyAdv, toggleCleanView, selectedBar, splitSelectedMeasure, mergeSelectedMeasure, preloadPreview, closePreview, helpOpen]);
+    }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast, correctMode, deleteSelectedBar, doUndo, doRedo, placeCursor, stepSystem, pageNum, numPages, renderPage, applyAdv, toggleCleanView, selectedBar, splitSelectedMeasure, mergeSelectedMeasure, preloadPreview, closePreview, helpOpen, toggleFullScreen, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw]);
 
   useEffect(() => {
     const m = mediaRef.current as any;
@@ -3356,11 +3586,12 @@ export default function ScoreFollowPage() {
         }} />
         <input ref={preloadInputRef} type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); e.target.value = ""; }} />
          <span className={styles.tbTitle} title={pdfName}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
+          {loopM.on && <span className={styles.tbGroup} title={lang === "zh" ? "节拍器练习区间(点谱面小节可改)" : "Metro practice range (tap score bars to change)"}>Loop {barNumRef.current[loopM.from] ?? loopM.from}–{barNumRef.current[loopM.to] ?? loopM.to}</span>}
         <span className={styles.tbSpacer} />
         <span className={styles.tbMenuWrap}>
           <button className={styles.tbBtn} aria-label={lang === "zh" ? "夜间模式" : "Night mode"} aria-pressed={darkTheme} onClick={() => setDarkTheme((value) => !value)} title={lang === "zh" ? "切换昼夜主题" : "Switch day/night theme"}>{darkTheme ? "☀" : "☾"}</button>
           <button className={styles.tbBtn} onClick={toggleLang} title="语言 / Language">{lang === "zh" ? "En" : "中"}</button>
-           <button className={styles.tbBtn} onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen} aria-controls="sf-settings" title={`${tx("settings")} (F)`}>⚙ {tx("settings")}</button>
+           <button className={styles.tbBtn} onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen} aria-controls="sf-settings" title={tx("settings")}>⚙ {tx("settings")}</button>
            {menuOpen && <div className={styles.tbMenu} id="sf-settings" role="region" aria-label={tx("settings")}>
             <div className={styles.tbMenuRow}>
               <label><input type="checkbox" checked={loopB > loopA} onChange={(e) => {
@@ -3377,14 +3608,55 @@ export default function ScoreFollowPage() {
               <button className={styles.tbBtn} onClick={doTap}>sync {tapCount > 0 ? `(${tapCount})` : ""}</button>
               <button className={styles.tbBtn} onClick={() => setAdvOpen((v) => !v)} title="Toggle control panel (M)">panel</button>
               <button className={styles.tbBtn} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }} title="Barline correction mode (C)">{correctMode ? "✓ correct" : "correct"}</button>
+              <button className={`${styles.tbBtn} ${loopMark ? styles.tbBtnOn : ""}`} onClick={() => setLoopMark((v) => !v)} title={lang === "zh" ? "谱面点选练习区间: 先点起点小节, 再点终点小节" : "Tap score to mark practice range: start bar first, then end bar"}>{loopMark ? tx("loopMarking") : tx("loopMark")}</button>
               <button className={styles.tbBtn} onClick={() => { setMenuOpen(false); setHelpOpen(true); }} title="Keyboard shortcuts and help">? help</button>
-              <button className={styles.tbBtn} onClick={toggleFullScreen} title="Toggle fullscreen">{fullScreen ? "exit full" : "full screen"}</button>
+              <button className={styles.tbBtn} onClick={toggleFullScreen} title="Toggle fullscreen (F)">{fullScreen ? "exit full" : "full screen"}</button>
               <button className={styles.tbBtn} onClick={() => setDarkTheme((v) => !v)} title="Toggle light/dark theme">{darkTheme ? "light" : "dark"}</button>
               <button className={styles.tbBtn} onClick={() => { setMenuOpen(false); setChromeOpen(false); }} title="Hide toolbar (T)">hide UI</button>
             </div>
           </div>}
         </span>
       </header>}
+      {chromeOpen && selectedBar && analysis && (() => {
+        const raw = rawOrdinalOf(selectedBar.si, selectedBar.bi);
+        if (raw == null) return null;
+        const m = engineMeasureFromRaw(raw);
+        const beats = meterMap[m] ?? 0;
+        const disp = barNumRef.current[m] ?? m;
+        const total = totalEngineMeasures();
+        return (
+          <div className={styles.barStrip} role="region" aria-label={tx("barSetup")}>
+            <span className={styles.barStripTitle}>{tx("barSetup")} · {disp === m ? `第${disp}小节` : `m${m}→第${disp}小节`}</span>
+            <span className={styles.tbGroup}>
+              <span>{tx("barMeter")}</span>
+              <select value={beats} onChange={(e) => setBarBeats(m, Number(e.target.value) || null)} title={lang === "zh" ? "该小节拍数(1=弱起1/4, 0=跟全局)" : "Beats for this bar (1 = 1/4 pickup, 0 = global)"}>
+                <option value={0}>{tx("meterDefault")}</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((b) => (<option key={b} value={b}>{b}</option>))}
+              </select>
+              {[1, 2, 3, 4, 6].map((b) => (
+                <button key={b} className={`${styles.tbBtn} ${beats === b ? styles.tbBtnOn : ""}`} onClick={() => setBarBeats(m, b)}>
+                  {b === 1 ? tx("pickup14") : b === 6 ? "6/8" : `${b}/4`}
+                </button>
+              ))}
+            </span>
+            <span className={styles.tbGroup}>
+              <span>{tx("barNo")}</span>
+              <input id="sf-barno" type="number" min={1} max={Math.max(1, total)} key={`bn-${m}`} defaultValue={disp}
+                onBlur={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && v >= 1 && v !== disp) setBarDisp(m, v); }}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+              <button className={styles.tbBtn} onClick={() => { const el = document.getElementById("sf-barno") as HTMLInputElement | null; const v = el ? Math.round(Number(el.value)) : disp; if (Number.isFinite(v) && v >= 1) renumberFrom(m, v); }} title={lang === "zh" ? "从该小节起按此号向后顺排" : "Renumber this and following bars from here"}>{tx("renumber")}</button>
+            </span>
+            <span className={styles.tbGroup}>
+              <span>{tx("loopToggle")}{loopM.on ? ` ${barNumRef.current[loopM.from] ?? loopM.from}–${barNumRef.current[loopM.to] ?? loopM.to}` : (lang === "zh" ? "关" : " off")}</span>
+              <button className={styles.tbBtn} onClick={() => setLoopEnds(m, null)}>{tx("loopFrom")}</button>
+              <button className={styles.tbBtn} onClick={() => setLoopEnds(null, m)}>{tx("loopTo")}</button>
+              <button className={`${styles.tbBtn} ${loopM.on ? styles.tbBtnOn : ""}`} onClick={() => setLoopEnds(null, null, !loopM.on)}>{loopM.on ? `✓${tx("loopToggle")}` : tx("loopToggle")}</button>
+              <button className={styles.tbBtn} onClick={clearLoopM}>{tx("loopClear")}</button>
+            </span>
+            <button className={styles.tbBtn} onClick={() => setSelectedBar(null)} title={tx("close")}>×</button>
+          </div>
+        );
+      })()}
 
       {/* 分析开关与存取已并入右侧 panel, 状态行见底部 statusbar */}
 
@@ -3467,7 +3739,7 @@ export default function ScoreFollowPage() {
               </div>
              </section>
               <AnalysisHelp lang={lang} />
-              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "设置" : "settings"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
+              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "全屏" : "fullscreen"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
            </div>
            <footer className={styles.helpFooter}><span>{lang === "zh" ? "提示：按钮也可以直接点击，快捷键适合专注演奏时使用。" : "Tip: every shortcut also has a button, so you can stay focused on the music."}</span><button className={styles.practicePlay} onClick={() => setHelpOpen(false)}>{lang === "zh" ? "开始练习" : "Start practicing"}</button></footer>
          </section>
@@ -3739,10 +4011,10 @@ export default function ScoreFollowPage() {
 
       <div className={styles.mainarea}>
       {mediaURL && mediaKind === "video" && (
-        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
+        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
       )}
       {mediaURL && mediaKind === "audio" && (
-        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
+        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
       )}
 
         <div

@@ -102,6 +102,9 @@ export interface TimingPayload {
   times_arr: TimeEntry[];
   manualBarsByPage?: Record<string, number[][]>;
   loop: { start: number; end: number };
+  meterMap?: Record<string, number>;
+  barNumMap?: Record<string, number>;
+  metroLoop?: { on: boolean; from: number; to: number };
 }
 
 export function buildTimingPayload(args: {
@@ -109,6 +112,9 @@ export function buildTimingPayload(args: {
   measureCount: number; times: TimeEntry[];
   manualBarsByPage?: Record<string, number[][]>;
   loop: { start: number; end: number };
+  meterMap?: Record<string, number>;
+  barNumMap?: Record<string, number>;
+  metroLoop?: { on: boolean; from: number; to: number };
 }): TimingPayload {
   const optSnap: Record<string, number | string> = {};
   for (const [k, v] of Object.entries(legacyOpt)) {
@@ -128,6 +134,9 @@ export function buildTimingPayload(args: {
     times_arr: args.times.map((e) => ({ t: 1 * e.t, mix: 1 * e.mix })),
     manualBarsByPage: args.manualBarsByPage,
     loop: args.loop,
+    meterMap: args.meterMap,
+    barNumMap: args.barNumMap,
+    metroLoop: args.metroLoop,
   };
 }
 
