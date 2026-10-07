@@ -23,13 +23,6 @@
 .tbMenuRow input[type="number"] { width: 52px; font: inherit; padding: 4px 6px; border: 1px solid hsl(240,5.9%,90%); border-radius: 6px; background: #fff; color: #1b1b1b; }
 .tbMenuRow input[type="range"] { flex: 1; }
 .tbMenuGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.barStrip { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #f6f8fc; border-bottom: 1px solid hsl(240,5.9%,90%); font-size: 12px; flex-wrap: wrap; }
-.page[data-theme="dark"] .barStrip { background: #202329; border-bottom-color: hsl(240,5.3%,26.1%); }
-.barStrip select { font: inherit; padding: 4px 6px; border: 1px solid hsl(240,5.9%,90%); border-radius: 6px; background: #fff; color: #1b1b1b; }
-.page[data-theme="dark"] .barStrip select { background: #2a2d33; border-color: #3a3f47; color: #e6e6e6; }
-.barStrip input[type="number"] { width: 56px; font: inherit; padding: 4px 6px; border: 1px solid hsl(240,5.9%,90%); border-radius: 6px; background: #fff; color: #1b1b1b; }
-.page[data-theme="dark"] .barStrip input[type="number"] { background: #2a2d33; border-color: #3a3f47; color: #e6e6e6; }
-.barStripTitle { font-weight: 700; white-space: nowrap; }
 .page[data-theme="dark"] .tbBtnOn { border-color: #5cdfff; color: #5cdfff; }
 .page[data-theme="dark"] .tbMenu { background: #1c1e22; color: #e6e6e6; border-color: #3a3f47; }
 .page[data-theme="dark"] .tbMenuRow input[type="number"] { background: #2a2d33; border-color: #3a3f47; color: #e6e6e6; }

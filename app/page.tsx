@@ -102,6 +102,8 @@ const STR: Record<string, { zh: string; en: string }> = {
   loopClear: { zh: "清除", en: "Clear" },
   loopMark: { zh: "圈Loop", en: "Mark loop" },
   loopMarking: { zh: "✓圈Loop中", en: "✓Marking" },
+  adjust: { zh: "调整", en: "Adjust" },
+  adjusting: { zh: "✓调整中", en: "✓Adjusting" },
   diagnostics: { zh: "诊断视图", en: "Diagnostics" },
   correctHint: { zh: "点击选中 · 拖动线条 · 长按/双击新增 · Ctrl+Z 撤销", en: "Click to select · drag a line · long-press/double-click to add · Ctrl+Z to undo" },
   exitCorrect: { zh: "完成校正", en: "Done correcting" },
@@ -562,6 +564,9 @@ export default function ScoreFollowPage() {
   const [barNumMap, setBarNumMap] = useState<Record<number, number>>({});
   const [loopM, setLoopM] = useState<{ on: boolean; from: number; to: number }>({ on: false, from: 1, to: 1 });
   const [loopMark, setLoopMark] = useState(false);
+  // 调整模式(对标纠错模式): 点小节弹设置框(拍号/小节号/Loop), 与纠错互斥
+  const [adjustMode, setAdjustMode] = useState(false);
+  const [barPop, setBarPop] = useState<{ x: number; y: number } | null>(null);
   const meterMapRef = useRef<Record<number, number>>({});
   const barNumRef = useRef<Record<number, number>>({});
   const loopMRef = useRef<{ on: boolean; from: number; to: number }>({ on: false, from: 1, to: 1 });
@@ -1333,6 +1338,8 @@ export default function ScoreFollowPage() {
     setTapCount(0);
     setSelectedBar(null);
     setPie(null);
+    setAdjustMode(false);
+    setBarPop(null);
     syncMeterMap({});
     syncBarNum({});
     syncLoopM({ on: false, from: 1, to: 1 });
@@ -1797,6 +1804,10 @@ export default function ScoreFollowPage() {
     }
     return null;
   }, [analysis]);
+  const engineOfSibi = useCallback((si: number, bi: number): number | null => {
+    const raw = rawOrdinalOf(si, bi);
+    return raw == null ? null : engineMeasureFromRaw(raw);
+  }, [rawOrdinalOf, engineMeasureFromRaw]);
   const totalEngineMeasures = useCallback((): number => {
     if (!analysis) return 0;
     let raw = 0;
@@ -2029,6 +2040,33 @@ export default function ScoreFollowPage() {
       if (suppressClickRef.current) { suppressClickRef.current = false; return; } // 长按新增后的抬手 click
       const p = canvasCoords(ev.clientX, ev.clientY);
       if (!p) return;
+      if (adjustMode) {
+        // 调整模式: 点小节/线都弹设置框, 点空关闭
+        const anchor = (cx: number, cy: number) => ({
+          x: Math.min(Math.max(8, cx - 140), window.innerWidth - 300),
+          y: Math.min(Math.max(8, cy - 60), window.innerHeight - 420),
+        });
+        const meas = findMeasureAt(p.x, p.y);
+        if (meas) {
+          const em = engineOfSibi(meas.si, meas.bi);
+          setSelectedBar(meas);
+          setBarPop(anchor(ev.clientX, ev.clientY));
+          if (em != null) setStatus(`第${dispOf(em)}小节 · 拍号/小节号/Loop`);
+          return;
+        }
+        const hit = findNearestBar(p.x, p.y);
+        const rowLen = hit ? (analysis?.bars[hit.si]?.length ?? 0) : 0;
+        if (hit && hit.bi < rowLen - 1) {
+          const em = engineOfSibi(hit.si, hit.bi);
+          setSelectedBar({ si: hit.si, bi: hit.bi });
+          setBarPop(anchor(ev.clientX, ev.clientY));
+          if (em != null) setStatus(`第${dispOf(em)}小节 · 拍号/小节号/Loop`);
+          return;
+        }
+        setSelectedBar(null);
+        setBarPop(null);
+        return;
+      }
       if (correctMode) {
         // 1) 点线: 精确选中该线; 2) 点面: 选中该小节左线; 3) 点空: 关闭
         // pie 锚点放在点击左上 45°(d=150), 不遮挡当前小节操作
@@ -2066,7 +2104,7 @@ export default function ScoreFollowPage() {
       // metro 点小节由引擎 host 监听统一处理(播放中=暖机重起, 未播放=只移动头),
       // 这里不再另发 metro-jump, 避免双通道重复重起
     },
-    [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, pageNum, placeCursor, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw],
+    [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, pageNum, placeCursor, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw, adjustMode, engineOfSibi, dispOf],
   );
 
   // 纠错新增小节线(长按/双击共用): 点位须落在某系统行内
@@ -3262,7 +3300,7 @@ export default function ScoreFollowPage() {
       if (e.key === "Escape") {
         if (helpOpen) { e.preventDefault(); setHelpOpen(false); return; }
         if (preloadPreview) { closePreview(); return; }
-        setHelpOpen(false); setMenuOpen(false); setAdvOpen(false); setPie(null); setSelectedBar(null); setLoopMark(false);
+        setHelpOpen(false); setMenuOpen(false); setAdvOpen(false); setPie(null); setSelectedBar(null); setBarPop(null); setLoopMark(false);
         return;
       }
       if (preloadPreview || helpOpen) return;
@@ -3285,8 +3323,14 @@ export default function ScoreFollowPage() {
       if (e.key.toLowerCase() === "h") { e.preventDefault(); setHelpOpen((v) => !v); return; }
       if (e.key.toLowerCase() === "l") { e.preventDefault(); applyAdv("lncsr", opt.lncsr === 1 ? 0 : 1); return; }
       if (e.key.toLowerCase() === "m") { e.preventDefault(); setAdvOpen((v) => !v); return; }
+      if (e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        if (adjustMode) { setAdjustMode(false); setSelectedBar(null); setBarPop(null); }
+        else { setAdjustMode(true); setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); }
+        return;
+      }
       if (e.key.toLowerCase() === "v") { e.preventDefault(); toggleCleanView(); return; }
-      if (e.key.toLowerCase() === "c") { e.preventDefault(); if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); return; }
+      if (e.key.toLowerCase() === "c") { e.preventDefault(); if (correctMode) { setSelectedBar(null); setPie(null); } else { setAdjustMode(false); setBarPop(null); } setCorrectMode(!correctMode); return; }
       if (correctMode && (e.key === "Delete" || e.key === "Del" || e.key === "Backspace")) { e.preventDefault(); deleteSelectedBar(); setPie(null); return; }
       if (correctMode && selectedBar && (e.key === "s" || e.key === "S")) { e.preventDefault(); splitSelectedMeasure(); return; }
       if (correctMode && selectedBar && (e.key === "a" || e.key === "A")) { e.preventDefault(); mergeSelectedMeasure("left"); return; }
@@ -3344,7 +3388,7 @@ export default function ScoreFollowPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast, correctMode, deleteSelectedBar, doUndo, doRedo, placeCursor, stepSystem, pageNum, numPages, renderPage, applyAdv, toggleCleanView, selectedBar, splitSelectedMeasure, mergeSelectedMeasure, preloadPreview, closePreview, helpOpen, toggleFullScreen, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw]);
+    }, [playing, doPlay, doPause, now, mediaURL, synbox, doTap, backupOne, adjustLast, correctMode, deleteSelectedBar, doUndo, doRedo, placeCursor, stepSystem, pageNum, numPages, renderPage, applyAdv, toggleCleanView, selectedBar, splitSelectedMeasure, mergeSelectedMeasure, preloadPreview, closePreview, helpOpen, toggleFullScreen, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw, adjustMode, engineOfSibi, dispOf]);
 
   useEffect(() => {
     const m = mediaRef.current as any;
@@ -3377,6 +3421,7 @@ export default function ScoreFollowPage() {
           { applyConfig?: (c: Record<string, unknown>) => void } | undefined;
         if (mc?.applyConfig) {
           mc.applyConfig(cfg);
+          try { (mc as unknown as { resync?: () => void })?.resync?.(); } catch { /* ignore */ }
           setStatus((s) => s + " · 链接演奏参数已应用");
           return;
         }
@@ -3607,7 +3652,7 @@ export default function ScoreFollowPage() {
               <button className={styles.tbBtn} onClick={doCountIn}>count-in</button>
               <button className={styles.tbBtn} onClick={doTap}>sync {tapCount > 0 ? `(${tapCount})` : ""}</button>
               <button className={styles.tbBtn} onClick={() => setAdvOpen((v) => !v)} title="Toggle control panel (M)">panel</button>
-              <button className={styles.tbBtn} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }} title="Barline correction mode (C)">{correctMode ? "✓ correct" : "correct"}</button>
+              <button className={styles.tbBtn} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } else { setAdjustMode(false); setBarPop(null); } setCorrectMode(!correctMode); }} title="Barline correction mode (C)">{correctMode ? "✓ correct" : "correct"}</button>
               <button className={`${styles.tbBtn} ${loopMark ? styles.tbBtnOn : ""}`} onClick={() => setLoopMark((v) => !v)} title={lang === "zh" ? "谱面点选练习区间: 先点起点小节, 再点终点小节" : "Tap score to mark practice range: start bar first, then end bar"}>{loopMark ? tx("loopMarking") : tx("loopMark")}</button>
               <button className={styles.tbBtn} onClick={() => { setMenuOpen(false); setHelpOpen(true); }} title="Keyboard shortcuts and help">? help</button>
               <button className={styles.tbBtn} onClick={toggleFullScreen} title="Toggle fullscreen (F)">{fullScreen ? "exit full" : "full screen"}</button>
@@ -3617,19 +3662,24 @@ export default function ScoreFollowPage() {
           </div>}
         </span>
       </header>}
-      {chromeOpen && selectedBar && analysis && (() => {
-        const raw = rawOrdinalOf(selectedBar.si, selectedBar.bi);
-        if (raw == null) return null;
-        const m = engineMeasureFromRaw(raw);
+
+      {/* 分析开关与存取已并入右侧 panel, 状态行见底部 statusbar */}
+      {barPop && selectedBar && analysis && (() => {
+        const m = engineOfSibi(selectedBar.si, selectedBar.bi);
+        if (m == null) return null;
         const beats = meterMap[m] ?? 0;
         const disp = barNumRef.current[m] ?? m;
         const total = totalEngineMeasures();
         return (
-          <div className={styles.barStrip} role="region" aria-label={tx("barSetup")}>
-            <span className={styles.barStripTitle}>{tx("barSetup")} · {disp === m ? `第${disp}小节` : `m${m}→第${disp}小节`}</span>
-            <span className={styles.tbGroup}>
+          <div className={styles.tbMenu} style={{ top: barPop.y, left: barPop.x, right: "auto", minWidth: 250, zIndex: 10002 }} role="dialog" aria-label={tx("barSetup")}>
+            <div className={styles.tbMenuRow}>
+              <strong>{tx("barSetup")} · {disp === m ? `第${disp}小节` : `m${m}→第${disp}小节`}</strong>
+              <span style={{ flex: 1 }} />
+              <button className={styles.tbBtn} onClick={() => { setSelectedBar(null); setBarPop(null); }} title={tx("close")}>×</button>
+            </div>
+            <div className={styles.tbMenuRow} style={{ flexWrap: "wrap" }}>
               <span>{tx("barMeter")}</span>
-              <select value={beats} onChange={(e) => setBarBeats(m, Number(e.target.value) || null)} title={lang === "zh" ? "该小节拍数(1=弱起1/4, 0=跟全局)" : "Beats for this bar (1 = 1/4 pickup, 0 = global)"}>
+              <select value={beats} onChange={(e) => setBarBeats(m, Number(e.target.value) || null)}>
                 <option value={0}>{tx("meterDefault")}</option>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((b) => (<option key={b} value={b}>{b}</option>))}
               </select>
@@ -3638,27 +3688,26 @@ export default function ScoreFollowPage() {
                   {b === 1 ? tx("pickup14") : b === 6 ? "6/8" : `${b}/4`}
                 </button>
               ))}
-            </span>
-            <span className={styles.tbGroup}>
+            </div>
+            <div className={styles.tbMenuRow}>
               <span>{tx("barNo")}</span>
               <input id="sf-barno" type="number" min={1} max={Math.max(1, total)} key={`bn-${m}`} defaultValue={disp}
                 onBlur={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && v >= 1 && v !== disp) setBarDisp(m, v); }}
                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
               <button className={styles.tbBtn} onClick={() => { const el = document.getElementById("sf-barno") as HTMLInputElement | null; const v = el ? Math.round(Number(el.value)) : disp; if (Number.isFinite(v) && v >= 1) renumberFrom(m, v); }} title={lang === "zh" ? "从该小节起按此号向后顺排" : "Renumber this and following bars from here"}>{tx("renumber")}</button>
-            </span>
-            <span className={styles.tbGroup}>
+            </div>
+            <div className={styles.tbMenuRow}>
               <span>{tx("loopToggle")}{loopM.on ? ` ${barNumRef.current[loopM.from] ?? loopM.from}–${barNumRef.current[loopM.to] ?? loopM.to}` : (lang === "zh" ? "关" : " off")}</span>
+            </div>
+            <div className={styles.tbMenuRow}>
               <button className={styles.tbBtn} onClick={() => setLoopEnds(m, null)}>{tx("loopFrom")}</button>
               <button className={styles.tbBtn} onClick={() => setLoopEnds(null, m)}>{tx("loopTo")}</button>
               <button className={`${styles.tbBtn} ${loopM.on ? styles.tbBtnOn : ""}`} onClick={() => setLoopEnds(null, null, !loopM.on)}>{loopM.on ? `✓${tx("loopToggle")}` : tx("loopToggle")}</button>
               <button className={styles.tbBtn} onClick={clearLoopM}>{tx("loopClear")}</button>
-            </span>
-            <button className={styles.tbBtn} onClick={() => setSelectedBar(null)} title={tx("close")}>×</button>
+            </div>
           </div>
         );
       })()}
-
-      {/* 分析开关与存取已并入右侧 panel, 状态行见底部 statusbar */}
 
        {chromeOpen && <nav className={styles.practicebar} aria-label={tx("practice")}>
           {!mediaURL ? (
@@ -3702,8 +3751,11 @@ export default function ScoreFollowPage() {
             <input type="range" min={0.1} max={4} step={0.05} value={speed} aria-label={tx("speed")} aria-valuetext={`${speed.toFixed(2)}×`} onChange={(e) => setSpeed(Number(e.target.value))} />
            <b>{speed.toFixed(2)}×</b>
          </label>
-           <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} aria-pressed={correctMode} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } setCorrectMode(!correctMode); }}>
+           <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} aria-pressed={correctMode} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } else { setAdjustMode(false); setBarPop(null); } setCorrectMode(!correctMode); }}>
              {correctMode ? tx("correcting") : tx("correct")}
+           </button>
+           <button className={`${styles.practiceBtn} ${adjustMode ? styles.practiceBtnActive : ""}`} aria-pressed={adjustMode} onClick={() => { if (adjustMode) { setSelectedBar(null); setBarPop(null); } else { setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); } setAdjustMode(!adjustMode); }} title="Bar adjust mode (E)">
+             {adjustMode ? tx("adjusting") : tx("adjust")}
            </button>
            <button className={styles.practiceBtn} onClick={() => { setReportOpen(true); setReportMsg(""); }} title={tx("reportTitle")}>{tx("reportIssue")}</button>
            <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} aria-pressed={cleanView} onClick={toggleCleanView}>{tx("cleanView")}</button>
@@ -3739,7 +3791,7 @@ export default function ScoreFollowPage() {
               </div>
              </section>
               <AnalysisHelp lang={lang} />
-              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "全屏" : "fullscreen"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
+              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "全屏" : "fullscreen"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>E</kbd>{lang === "zh" ? "调整模式" : "adjust"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
            </div>
            <footer className={styles.helpFooter}><span>{lang === "zh" ? "提示：按钮也可以直接点击，快捷键适合专注演奏时使用。" : "Tip: every shortcut also has a button, so you can stay focused on the music."}</span><button className={styles.practicePlay} onClick={() => setHelpOpen(false)}>{lang === "zh" ? "开始练习" : "Start practicing"}</button></footer>
          </section>

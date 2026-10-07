@@ -12,7 +12,7 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
   const zh = lang === "zh";
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  const [state, setState] = useState({ ready: false, playing: false, bpm: 66, countIn: 0, sound: "wood" });
+  const [state, setState] = useState({ ready: false, playing: false, bpm: 66, countIn: 0, sound: "wood", meter: 4 });
   const [notice, setNotice] = useState("");
   const root = useRef<HTMLDivElement>(null);
   const launch = useRef<HTMLButtonElement>(null);
@@ -28,7 +28,7 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
       const live = (window as unknown as { __sgaMetro?: Partial<typeof state> }).__sgaMetro;
       setState((previous) => {
         const next = { ready: !!api, playing: !!api?.isPlaying(), bpm: Number(live?.bpm ?? 66),
-          countIn: Number(live?.countIn ?? 0), sound: live?.sound ?? "wood" };
+          countIn: Number(live?.countIn ?? 0), sound: live?.sound ?? "wood", meter: Number(live?.meter ?? 4) };
         return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
       });
     };
@@ -59,8 +59,10 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
     return () => { clearInterval(timer); document.removeEventListener("pointerdown", outside); };
   }, [open, hidden]);
 
-  const configure = (config: { bpm?: number; countIn?: number; sound?: string }) => {
-    engine()?.applyConfig(config);
+  const configure = (config: { bpm?: number; countIn?: number; sound?: string; meter?: number }) => {
+    const api = engine();
+    api?.applyConfig(config);
+    if (config.meter != null) { try { (api as unknown as { resync?: () => void })?.resync?.(); } catch { /* ignore */ } }
     setState((previous) => ({ ...previous, ...config }));
     touch();
   };
@@ -89,6 +91,8 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
       <button className={styles.faster} disabled={!state.ready || state.bpm >= 300} onClick={() => configure({ bpm: Math.min(300, state.bpm + 2) })} aria-label={zh ? "加速 2 BPM" : "Faster by 2 BPM"}>+<small>2 BPM</small></button>
       <button className={styles.count} disabled={!state.ready} aria-pressed={state.countIn > 0} onClick={() => configure({ countIn: state.countIn ? 0 : 4 })}>{state.countIn || "—"}<small>{zh ? "预备拍" : "Count-in"}</small></button>
       <button className={styles.sound} disabled={!state.ready} onClick={() => configure({ sound: sounds[(sounds.indexOf(state.sound) + 1) % sounds.length] })}>♫<small>{zh ? ["木鱼", "响木", "滴声", "数字", "军鼓"][sounds.indexOf(state.sound)] ?? "音色" : state.sound}</small></button>
+      <button className={styles.meter} disabled={!state.ready} onClick={() => { const order = [2, 3, 4, 6]; configure({ meter: order[(order.indexOf(state.meter) + 1) % order.length] }); }}
+        aria-label={zh ? `全局拍号 ${state.meter}/4, 点击切换` : `Global meter ${state.meter}/4, tap to cycle`} title={zh ? "全局拍号(点小节可单独覆盖)" : "Global meter (per-bar override by tapping a bar)"}>{state.meter}<small>{zh ? "拍号" : "Meter"}</small></button>
       <span className={styles.idleHint}>{zh ? "闲置 4 秒收起" : "Hides after 4s idle"}</span>
     </div>}
     {open && <p role="status" className={styles.notice}>{!state.ready ? (zh ? "载入谱面后启用节拍器" : "Load a score to enable controls") : notice}</p>}
