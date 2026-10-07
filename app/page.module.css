@@ -6,7 +6,7 @@
 .page[data-fullscreen="true"] { position: fixed; inset: 0; z-index: 9999; }
 .showui { position: fixed; top: 8px; right: 8px; z-index: 10000; padding: 6px 10px; border-radius: 6px; border: 1px solid #aaa; background: rgba(255,255,255,.92); color: #1b1b1b; cursor: pointer; }
 .page[data-theme="dark"] { color: #e6e6e6; background: #16181c; color-scheme: dark; }
-.topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: #fff; border-bottom: 1px solid hsl(240,5.9%,90%); flex-wrap: nowrap; overflow-x: auto; min-height: 48px; }
+.topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: #fff; border-bottom: 1px solid hsl(240,5.9%,90%); flex-wrap: nowrap; overflow: hidden; min-height: 48px; }
 .page[data-theme="dark"] .topbar { background: #1c1e22; border-bottom-color: hsl(240,5.3%,26.1%); }
 .tbLogo { display: inline-flex; align-items: center; gap: 6px; margin: 0 6px 0 0; font-size: 15px; font-weight: 700; white-space: nowrap; }
 .tbLogoSvg { flex: 0 0 auto; }
@@ -396,8 +396,14 @@ a.secondary {
 }
 .tbLogo { color: var(--sf-ink); font-size: 13px; letter-spacing: .025em; font-weight: 700; padding-right: 11px; border-right: 1px solid var(--sf-border); }
 .tbLogoSvg { color: var(--sf-accent); }
-.tbTitle, .page[data-theme="dark"] .tbTitle { flex: 0 1 38ch; min-width: 0; max-width: none; color: var(--sf-muted); font-weight: 500; }
+.tbTitle, .page[data-theme="dark"] .tbTitle { flex: 1 1 auto; min-width: 0; max-width: none; color: var(--sf-muted); font-weight: 500; }
+.tbTitle[data-empty="true"] { font-weight: 400; }
 .tbMenuWrap { flex: 0 0 auto; display: inline-flex; gap: 8px; }
+.openWrap { position: relative; flex: none; }
+.openMenu { position: fixed; top: 64px; left: 12px; min-width: 230px; padding: 6px; border-radius: 12px; background: var(--sf-surface); border: 1px solid var(--sf-border); box-shadow: var(--sf-shadow); display: flex; flex-direction: column; gap: 2px; z-index: 10001; }
+.openItem { display: flex; gap: 10px; align-items: center; min-height: 40px; padding: 0 12px; border-radius: 8px; border: none; background: transparent; color: var(--sf-ink); font-size: 14px; cursor: pointer; text-align: left; white-space: nowrap; }
+.openItem:hover, .openItem:focus-visible { background: var(--sf-elevated); }
+.menuSep { height: 1px; background: var(--sf-border); margin: 4px 6px; }
 .tbBtn, .page[data-theme="dark"] .tbBtn,
 .practiceBtn, .page[data-theme="dark"] .practiceBtn,
 .pfileBtn, .page[data-theme="dark"] .pfileBtn {

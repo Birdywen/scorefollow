@@ -60,6 +60,7 @@ const STR: Record<string, { zh: string; en: string }> = {
   takePhoto: { zh: "拍照录谱", en: "Snap score photo" },
   loadMedia: { zh: "载入音频/视频", en: "Load audio/video" },
   settings: { zh: "设置", en: "Settings" },
+  open: { zh: "打开", en: "Open" },
   play: { zh: "▶ 播放", en: "▶ Play" },
   pause: { zh: "❚❚ 暂停", en: "❚❚ Pause" },
   metroPlay: { zh: "▶ 节拍器", en: "▶ Metro" },
@@ -688,6 +689,7 @@ export default function ScoreFollowPage() {
   const previewCloseRef = useRef<HTMLButtonElement>(null);
   const previewReturnRef = useRef<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState(false);
   // 异常上报(全自动 debug 通道): 原识别 + 校正结果 + 原 PDF 打包, 浏览器直发 GitHub
   const [reportOpen, setReportOpen] = useState(false);
   const [reportNote, setReportNote] = useState("");
@@ -3307,7 +3309,7 @@ export default function ScoreFollowPage() {
       if (e.key === "Escape") {
         if (helpOpen) { e.preventDefault(); setHelpOpen(false); return; }
         if (preloadPreview) { closePreview(); return; }
-        setHelpOpen(false); setMenuOpen(false); setAdvOpen(false); setPie(null); setSelectedBar(null); setBarPop(null); setLoopMark(false);
+        setHelpOpen(false); setMenuOpen(false); setOpenMenu(false); setAdvOpen(false); setPie(null); setSelectedBar(null); setBarPop(null); setLoopMark(false);
         return;
       }
       if (preloadPreview || helpOpen) return;
@@ -3626,12 +3628,17 @@ export default function ScoreFollowPage() {
       {!chromeOpen && <button className={styles.showui} onClick={() => setChromeOpen(true)} title="Show toolbar (T)">UI</button>}
       {chromeOpen && <header className={styles.topbar}>
         <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>MEGA-METRO</span>
-         <button className={`${styles.tbBtn} ${pdfName ? styles.tbBtnOn : ""}`} onClick={() => pdfInputRef.current?.click()} title={pdfName || tx("loadPdf")}>📄 {pdfName ? (pdfName.length > 16 ? pdfName.slice(0, 14) + "…" : pdfName) : tx("score")}</button>
-        <button className={styles.tbBtn} onClick={() => imgInputRef.current?.click()} title={tx("loadImage")}>🖼</button>
-        <button className={styles.tbBtn} onClick={() => void openCamera()} title={tx("takePhoto")}>📷</button>
-        <button className={`${styles.tbBtn} ${mediaURL ? styles.tbBtnOn : ""}`} onClick={() => mediaInputRef.current?.click()} title={mediaName || tx("loadMedia")}>🎵 {mediaName ? (mediaName.length > 16 ? mediaName.slice(0, 14) + "…" : mediaName) : tx("media")}</button>
-        <button className={styles.tbBtn} onClick={() => preloadInputRef.current?.click()} title={tx("loadPreload")}>📥</button>
-        <button className={styles.tbBtn} onClick={() => setTunerOpen(true)} title={tx("tuner")}>🎚</button>
+        <span className={styles.openWrap}>
+          <button className={`${styles.tbBtn} ${pdfName || mediaURL ? styles.tbBtnOn : ""}`} onClick={() => { setOpenMenu((v) => !v); setMenuOpen(false); }} aria-expanded={openMenu} aria-haspopup="menu" aria-controls="sf-open" title={tx("open")}>{tx("open")} ▾</button>
+          {openMenu && <div className={styles.openMenu} id="sf-open" role="menu" aria-label={tx("open")}>
+            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); pdfInputRef.current?.click(); }}>{pdfName ? "✓" : "📄"} {tx("loadPdf")}{pdfName ? ` · ${pdfName.length > 18 ? pdfName.slice(0, 16) + "…" : pdfName}` : ""}</button>
+            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); imgInputRef.current?.click(); }}>🖼 {tx("loadImage")}</button>
+            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); void openCamera(); }}>📷 {tx("takePhoto")}</button>
+            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); mediaInputRef.current?.click(); }}>{mediaURL ? "✓" : "🎵"} {tx("loadMedia")}</button>
+            <div className={styles.menuSep} role="separator" />
+            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); preloadInputRef.current?.click(); }}>📥 {tx("loadPreload")} · {tx("expertDev")}</button>
+          </div>}
+        </span>
         <input ref={pdfInputRef} type="file" accept=".pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPdfFile(f); e.target.value = ""; }} />
         <input ref={imgInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
         <input ref={camInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { if (e.target.files?.length) void onImageFile(e.target.files); e.target.value = ""; }} />
@@ -3643,13 +3650,14 @@ export default function ScoreFollowPage() {
           e.target.value = "";
         }} />
         <input ref={preloadInputRef} type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); e.target.value = ""; }} />
-         <span className={styles.tbTitle} title={pdfName}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
+         <span className={styles.tbTitle} data-empty={pdfName ? "false" : "true"} title={pdfName || undefined}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
           {loopM.on && <span className={styles.tbGroup} title={lang === "zh" ? "节拍器练习区间(点谱面小节可改)" : "Metro practice range (tap score bars to change)"}>Loop {barNumRef.current[loopM.from] ?? loopM.from}–{barNumRef.current[loopM.to] ?? loopM.to}</span>}
         <span className={styles.tbSpacer} />
         <span className={styles.tbMenuWrap}>
+          <button className={styles.tbBtn} aria-label={tx("tuner")} onClick={() => setTunerOpen(true)} title={tx("tuner")}>🎚</button>
           <button className={styles.tbBtn} aria-label={lang === "zh" ? "夜间模式" : "Night mode"} aria-pressed={darkTheme} onClick={() => setDarkTheme((value) => !value)} title={lang === "zh" ? "切换昼夜主题" : "Switch day/night theme"}>{darkTheme ? "☀" : "☾"}</button>
           <button className={styles.tbBtn} onClick={toggleLang} title="语言 / Language">{lang === "zh" ? "En" : "中"}</button>
-           <button className={styles.tbBtn} onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen} aria-controls="sf-settings" title={tx("settings")}>⚙ {tx("settings")}</button>
+           <button className={styles.tbBtn} onClick={() => { setMenuOpen((v) => !v); setOpenMenu(false); }} aria-expanded={menuOpen} aria-controls="sf-settings" title={tx("settings")}>⚙ {tx("settings")}</button>
            {menuOpen && <div className={styles.tbMenu} id="sf-settings" role="region" aria-label={tx("settings")}>
             <div className={styles.tbMenuRow}>
               <label><input type="checkbox" checked={loopB > loopA} onChange={(e) => {
