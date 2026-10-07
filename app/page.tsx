@@ -3671,7 +3671,7 @@ export default function ScoreFollowPage() {
         const disp = barNumRef.current[m] ?? m;
         const total = totalEngineMeasures();
         return (
-          <div className={styles.tbMenu} style={{ top: barPop.y, left: barPop.x, right: "auto", minWidth: 250, zIndex: 10002 }} role="dialog" aria-label={tx("barSetup")}>
+          <div className={styles.barPop} style={{ top: barPop.y, left: barPop.x, right: "auto" }} role="dialog" aria-label={tx("barSetup")}>
             <div className={styles.tbMenuRow}>
               <strong>{tx("barSetup")} · {disp === m ? `第${disp}小节` : `m${m}→第${disp}小节`}</strong>
               <span style={{ flex: 1 }} />

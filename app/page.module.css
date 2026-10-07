@@ -23,6 +23,17 @@
 .tbMenuRow input[type="number"] { width: 52px; font: inherit; padding: 4px 6px; border: 1px solid hsl(240,5.9%,90%); border-radius: 6px; background: #fff; color: #1b1b1b; }
 .tbMenuRow input[type="range"] { flex: 1; }
 .tbMenuGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.barPop { position: fixed; z-index: 10002; min-width: 250px; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; font-size: 13px; font-weight: 600; color: #1b1b1b;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: rgba(255,255,255,.62); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,.65); border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(30,60,120,.25), inset 0 1px 0 rgba(255,255,255,.6); }
+.page[data-theme="dark"] .barPop { background: rgba(28,30,34,.62); color: #e6e6e6; border-color: rgba(255,255,255,.14);
+  box-shadow: 0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12); }
+.barPop strong { font-weight: 800; letter-spacing: .02em; }
+.barPop select { font: inherit; font-weight: 700; padding: 4px 6px; border: 1px solid rgba(120,140,170,.4); border-radius: 8px; background: rgba(255,255,255,.7); color: inherit; }
+.page[data-theme="dark"] .barPop select { background: rgba(42,45,51,.7); border-color: rgba(255,255,255,.16); }
+.barPop .tbBtn { font-weight: 700; }
 .page[data-theme="dark"] .tbBtnOn { border-color: #5cdfff; color: #5cdfff; }
 .page[data-theme="dark"] .tbMenu { background: #1c1e22; color: #e6e6e6; border-color: #3a3f47; }
 .page[data-theme="dark"] .tbMenuRow input[type="number"] { background: #2a2d33; border-color: #3a3f47; color: #e6e6e6; }
