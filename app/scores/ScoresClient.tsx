@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import styles from "./scores.module.css";
 
-const BASE = "/scorefollow";
+const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
 
 type ScoreEntry = {
   path: string;

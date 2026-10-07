@@ -47,6 +47,8 @@ type OmrJob = { id: string; status: string; progress?: number; error?: string; r
 type AnalysisJob = { id: string; status: string; error?: string; result?: Result };
 
 const LOCAL_API = "http://127.0.0.1:8765";
+// 与 next.config.ts basePath 保持同步；root 构建时由 NEXT_PUBLIC_SF_BASE="" 覆盖
+const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
 const TAKES_KEY = "sf-takes-meta-v1";
 const MAX_TAKES = 3;
 // Keep browser recordings below this page's 180-second conversion limit.
@@ -129,7 +131,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     const oldLocal = saved && /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/?$/i.test(saved);
     const oldOrigin = saved && (saved.replace(/\/+$/, "") === location.origin || saved.replace(/\/+$/, "") === `${location.protocol}//${location.hostname}:8765`);
     if (saved && (local || (!oldLocal && !oldOrigin))) return saved;
-    return local ? LOCAL_API : `${location.origin}/scorefollow/analysis`;
+    return local ? LOCAL_API : `${location.origin}${BASE}/analysis`;
   });
   const [xmlFile, setXmlFile] = useState<File | null>(null);
   const [omrPdf, setOmrPdf] = useState<File | null>(null);
@@ -568,7 +570,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     <p className={styles.hint}>{zh ? "节拍器同步录音 · 最多 3 遍 · 只录麦克风" : "Metronome-synced takes · max 3 · mic only"}</p>
     <label className={styles.field}>{zh ? "分析服务地址" : "Analysis API URL"}
       <input type="url" placeholder="https://analysis.example.com" value={api} disabled={omrActive || recording || busyTakeId != null} onChange={(e) => setApi(e.target.value)} /></label>
-    {!api.trim() && <p className={styles.hint}>{zh ? "请输入分析服务地址；本站可使用同源 /scorefollow/analysis。" : "Enter the analysis API URL; this site uses /scorefollow/analysis."}</p>}
+    {!api.trim() && <p className={styles.hint}>{zh ? `请输入分析服务地址；本站可使用同源 ${BASE}/analysis。` : `Enter the analysis API URL; this site uses ${BASE}/analysis.`}</p>}
     <section className={styles.omr} aria-label={zh ? "从 PDF 生成 MusicXML" : "PDF to MusicXML"}>
       <h2>{zh ? "从 PDF 生成 MusicXML" : "PDF to MusicXML"}</h2>
       <p className={styles.hint}>{pdfName ? (zh ? `当前谱面：${pdfName}` : `Loaded score: ${pdfName}`) : (zh ? "可先载入 PDF 谱，或在下面另选 PDF" : "Load a score PDF or choose one below")}</p>

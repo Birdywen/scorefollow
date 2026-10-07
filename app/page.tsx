@@ -8,8 +8,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// 静态部署 basePath（next.config.ts 保持同步）
-const BASE = "/scorefollow";
+// 静态部署 basePath（next.config.ts 保持同步；root 构建时由 NEXT_PUBLIC_SF_BASE="" 覆盖）
+const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
 import {
   analyzePage,
   clearPageCache,

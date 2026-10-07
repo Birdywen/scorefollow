@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  basePath: "/scorefollow",
+  // SF_BASE_PATH=root → 域名根部署（无 basePath）；默认 /scorefollow
+  basePath: process.env.SF_BASE_PATH === "root" ? undefined : "/scorefollow",
   experimental: {
     workerThreads: false,
     cpus: 1,
