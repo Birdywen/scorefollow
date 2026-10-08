@@ -3332,7 +3332,7 @@ export default function ScoreFollowPage() {
       if (e.key.toLowerCase() === "h") { e.preventDefault(); setHelpOpen((v) => !v); return; }
       if (e.key.toLowerCase() === "l") { e.preventDefault(); applyAdv("lncsr", opt.lncsr === 1 ? 0 : 1); return; }
       if (e.key.toLowerCase() === "m") { e.preventDefault(); setAdvOpen((v) => !v); return; }
-      if (e.key.toLowerCase() === "e") {
+      if (e.key.toLowerCase() === "j") {
         e.preventDefault();
         if (adjustMode) { setAdjustMode(false); setSelectedBar(null); setBarPop(null); }
         else { setAdjustMode(true); setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); }
@@ -3343,12 +3343,6 @@ export default function ScoreFollowPage() {
       if (correctMode && (e.key === "Delete" || e.key === "Del" || e.key === "Backspace")) { e.preventDefault(); deleteSelectedBar(); setPie(null); return; }
       if (correctMode && selectedBar && (e.key === "s" || e.key === "S")) { e.preventDefault(); splitSelectedMeasure(); return; }
       if (correctMode && selectedBar && (e.key === "a" || e.key === "A")) { e.preventDefault(); mergeSelectedMeasure("left"); return; }
-      if (!correctMode && (e.key === "a" || e.key === "A")) {
-        e.preventDefault();
-        if (adjustMode) { setAdjustMode(false); setSelectedBar(null); setBarPop(null); }
-        else { setAdjustMode(true); setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); }
-        return;
-      }
       if (correctMode && selectedBar && (e.key === "d" || e.key === "D")) { e.preventDefault(); mergeSelectedMeasure("right"); return; }
       if (e.key === " ") {
         // 空格只控制节拍器开/关, 与播放彻底解耦(播放请按 P)。
@@ -3775,7 +3769,7 @@ export default function ScoreFollowPage() {
            <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} aria-pressed={correctMode} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } else { setAdjustMode(false); setBarPop(null); } setCorrectMode(!correctMode); }}>
              {correctMode ? tx("correcting") : tx("correct")}
            </button>
-           <button className={`${styles.practiceBtn} ${adjustMode ? styles.practiceBtnActive : ""}`} aria-pressed={adjustMode} onClick={() => { if (adjustMode) { setSelectedBar(null); setBarPop(null); } else { setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); } setAdjustMode(!adjustMode); }} title="Bar adjust mode (E)">
+           <button className={`${styles.practiceBtn} ${adjustMode ? styles.practiceBtnActive : ""}`} aria-pressed={adjustMode} onClick={() => { if (adjustMode) { setSelectedBar(null); setBarPop(null); } else { setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); } setAdjustMode(!adjustMode); }} title="Bar adjust mode (J)">
              {adjustMode ? tx("adjusting") : tx("adjust")}
            </button>
            <button className={styles.practiceBtn} onClick={() => { setReportOpen(true); setReportMsg(""); }} title={tx("reportTitle")}>{tx("reportIssue")}</button>
@@ -3812,7 +3806,7 @@ export default function ScoreFollowPage() {
               </div>
              </section>
               <AnalysisHelp lang={lang} />
-              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "全屏" : "fullscreen"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>E</kbd>/<kbd>A</kbd>{lang === "zh" ? "调整模式" : "adjust"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
+              <section className={styles.helpShortcuts}><h3>{lang === "zh" ? "更多快捷键" : "More shortcuts"}</h3><div className={styles.shortcutGrid}><span><kbd>F</kbd>{lang === "zh" ? "全屏" : "fullscreen"}</span><span><kbd>M</kbd>{lang === "zh" ? "控制面板" : "panel"}</span><span><kbd>V</kbd>{lang === "zh" ? "干净视图" : "clean view"}</span><span><kbd>L</kbd>{lang === "zh" ? "行光标" : "line cursor"}</span><span><kbd>C</kbd>{lang === "zh" ? "纠错模式" : "correction"}</span><span><kbd>J</kbd>{lang === "zh" ? "调整模式" : "adjust"}</span><span><kbd>P</kbd>{lang === "zh" ? "播放 / 暂停" : "play / pause"}</span><span><kbd>Space</kbd>{lang === "zh" ? "节拍器开 / 关" : "metronome on / off"}</span><span><kbd>Esc</kbd>{lang === "zh" ? "关闭窗口" : "close window"}</span></div></section>
            </div>
            <footer className={styles.helpFooter}><span>{lang === "zh" ? "提示：按钮也可以直接点击，快捷键适合专注演奏时使用。" : "Tip: every shortcut also has a button, so you can stay focused on the music."}</span><button className={styles.practicePlay} onClick={() => setHelpOpen(false)}>{lang === "zh" ? "开始练习" : "Start practicing"}</button></footer>
          </section>
