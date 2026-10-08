@@ -6,7 +6,7 @@ import styles from "./metro-dock.module.css";
 type Metro = { play: () => boolean; stop: () => boolean; isPlaying: () => boolean;
   applyConfig: (config: Record<string, unknown>) => void };
 const engine = () => (window as unknown as { __sgaMetroControl?: Metro }).__sgaMetroControl;
-const sounds = ["wood", "clave", "beep", "digital", "snare"];
+const sounds = ["wood", "clave", "beep", "digital", "snare", "voice_zh", "voice_en"];
 
 export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden: boolean }) {
   const zh = lang === "zh";
@@ -90,7 +90,7 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
       <button className={styles.slower} disabled={!state.ready || state.bpm <= 20} onClick={() => configure({ bpm: Math.max(20, state.bpm - 2) })} aria-label={zh ? "减速 2 BPM" : "Slower by 2 BPM"}>−<small>2 BPM</small></button>
       <button className={styles.faster} disabled={!state.ready || state.bpm >= 300} onClick={() => configure({ bpm: Math.min(300, state.bpm + 2) })} aria-label={zh ? "加速 2 BPM" : "Faster by 2 BPM"}>+<small>2 BPM</small></button>
       <button className={styles.count} disabled={!state.ready} aria-pressed={state.countIn > 0} onClick={() => configure({ countIn: state.countIn ? 0 : 4 })}>{state.countIn || "—"}<small>{zh ? "预备拍" : "Count-in"}</small></button>
-      <button className={styles.sound} disabled={!state.ready} onClick={() => configure({ sound: sounds[(sounds.indexOf(state.sound) + 1) % sounds.length] })}>♫<small>{zh ? ["木鱼", "响木", "滴声", "数字", "军鼓"][sounds.indexOf(state.sound)] ?? "音色" : state.sound}</small></button>
+      <button className={styles.sound} disabled={!state.ready} onClick={() => configure({ sound: sounds[(sounds.indexOf(state.sound) + 1) % sounds.length] })}>♫<small>{zh ? ["木鱼", "响木", "滴声", "数字", "军鼓", "人声·中", "人声·英"][sounds.indexOf(state.sound)] ?? "音色" : (({ voice_zh: "Voice·ZH", voice_en: "Voice·EN" } as Record<string, string>)[state.sound] ?? state.sound)}</small></button>
       <button className={styles.meter} disabled={!state.ready} onClick={() => { const order = [2, 3, 4, 6]; configure({ meter: order[(order.indexOf(state.meter) + 1) % order.length] }); }}
         aria-label={zh ? `全局拍号 ${state.meter}/4, 点击切换` : `Global meter ${state.meter}/4, tap to cycle`} title={zh ? "全局拍号(点小节可单独覆盖)" : "Global meter (per-bar override by tapping a bar)"}>{state.meter}<small>{zh ? "拍号" : "Meter"}</small></button>
     </div>}

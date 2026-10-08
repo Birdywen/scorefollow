@@ -1263,7 +1263,7 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = `${BASE}/metro-engine.js?v=20260928-robust`;
+    s.src = `${BASE}/metro-engine.js?v=20261008-voice`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
@@ -3423,7 +3423,7 @@ export default function ScoreFollowPage() {
     const countInRaw = (params.get("countIn") || "").trim();
     if (/^\d+$/.test(countInRaw)) cfg.countIn = Math.min(8, Math.max(0, parseInt(countInRaw, 10)));
     const sound = params.get("sound") || "";
-    if (["wood", "clave", "beep", "digital", "snare"].includes(sound)) cfg.sound = sound;
+    if (["wood", "clave", "beep", "digital", "snare", "voice_zh", "voice_en"].includes(sound)) cfg.sound = sound;
     const speedRaw = (params.get("speed") || "").trim();
     if (/^\d+(\.\d+)?$/.test(speedRaw)) setSpeed(Math.min(4, Math.max(0.1, Number(speedRaw))));
     if (!Object.keys(cfg).length) return;

@@ -25,9 +25,52 @@ function boot(){
     clave:   { hi:2200, lo:1400, wave:'square',   decay:0.06, volHi:0.45, volLo:0.25 },
     beep:    { hi:1200, lo:880,  wave:'sine',     decay:0.12, volHi:0.5,  volLo:0.3 },
     digital: { hi:1500, lo:1000, wave:'sawtooth', decay:0.05, volHi:0.35, volLo:0.2 },
-    snare:   { hi:2000, lo:800,  wave:'square',   decay:0.04, volHi:0.4,  volLo:0.25 }
+    snare:   { hi:2000, lo:800,  wave:'square',   decay:0.04, volHi:0.4,  volLo:0.25 },
+    voice_zh: { voice:'zh' },
+    voice_en: { voice:'en' }
 
   };
+
+  // ===== 人声数拍采样 (voice_zh/voice_en): 基址从引擎 script src 推导, 自动兼容 /scorefollow/ 与 root 双构建 =====
+  var VOICE_BASE = (function(){
+    try{
+      var s=document.querySelector('script[src*="metro-engine.js"]');
+      var raw=(s&&s.src)||'';
+      if(raw){ return raw.split('?')[0].replace(/\/metro-engine\.js$/, '') + '/voice'; }
+    }catch(e){}
+    return '/scorefollow/voice';
+  })();
+  var VOICE_BUF = { zh:{}, en:{} };
+  function voiceLang(){ var pr=SOUND_PRESETS[st.sound]; return (pr&&pr.voice)||null; }
+  function ensureVoice(lang){
+    var ac=st.audio; if(!ac||!lang) return;
+    if(typeof fetch!=='function') return;
+    for(var n=1;n<=8;n++){
+      if(VOICE_BUF[lang][n]) continue;
+      VOICE_BUF[lang][n]='loading';
+      (function(num){
+        fetch(VOICE_BASE+'/'+lang+'/'+num+'.wav').then(function(r){
+          if(!r.ok) throw new Error('http '+r.status);
+          return r.arrayBuffer();
+        }).then(function(ab){
+          ac.decodeAudioData(ab, function(buf){ VOICE_BUF[lang][num]=buf; },
+            function(){ VOICE_BUF[lang][num]=null; });
+        }).catch(function(){ VOICE_BUF[lang][num]=null; });
+      })(n);
+    }
+  }
+  function playVoice(lang, beat){
+    var ac=st.audio; if(!ac) return false;
+    var n=Math.max(1, Math.min(8, beat|0||1));
+    var buf=VOICE_BUF[lang]&&VOICE_BUF[lang][n];
+    if(!buf||buf==='loading') return false;
+    try{
+      var src=ac.createBufferSource(); src.buffer=buf;
+      var g=ac.createGain(); g.gain.value=1.0;
+      src.connect(g); g.connect(ac.destination); src.start();
+      return true;
+    }catch(e){ return false; }
+  }
 
   // ===== i18n 中英双语表 (改动2) =====
   var I18N = {
@@ -35,7 +78,7 @@ function boot(){
       title:'Practice Metronome', play:'▶ Play', stop:'■ Stop', start:'⏮ Start', gotobar:'Go to bar', end:'End ⏭',
       meter:'Meter', color:'Color', blue:'Blue', green:'Green', red:'Red', yellow:'Yellow', purple:'Purple',
       bg:'Background', normal:'Normal', sepia:'Sepia', softgray:'Soft gray', night:'Night', parch:'Parchment',
-      sound:'Sound', wood:'Wood', clave:'Clave', beep:'Beep', digital:'Digital', snare:'Snare',
+      sound:'Sound', wood:'Wood', clave:'Clave', beep:'Beep', digital:'Digital', snare:'Snare', voice_zh:'Voice·ZH', voice_en:'Voice·EN',
       barnums:'Bar nums', opacity:'Opacity', followy:'Follow Y', countin:'Count-in', sequence:'Sequence',
       metermap:'Meter map (bar:beats, 变拍号)', skipbars:'Skip bars (误判小节, 填当前显示号)',
       loop:'Loop', frombar:'From bar', tobar:'To bar', repeat:'Repeat', inf:'(0=inf)',
@@ -49,7 +92,7 @@ function boot(){
       title:'练习节拍器', play:'▶ 播放', stop:'■ 停止', start:'⏮ 开始', gotobar:'跳至小节', end:'结束 ⏭',
       meter:'拍号', color:'配色', blue:'蓝', green:'绿', red:'红', yellow:'黄', purple:'紫',
       bg:'背景', normal:'正常', sepia:'怀旧', softgray:'柔灰', night:'夜间', parch:'羊皮纸',
-      sound:'音色', wood:'木鱼', clave:'响木', beep:'滴声', digital:'数字', snare:'军鼓',
+      sound:'音色', wood:'木鱼', clave:'响木', beep:'滴声', digital:'数字', snare:'军鼓', voice_zh:'人声·中', voice_en:'人声·英',
       barnums:'小节号', opacity:'透明度', followy:'高亮位置', countin:'预备拍', sequence:'序列',
       metermap:'变拍号(小节:拍数)', skipbars:'跳过小节(误判,填显示号)',
       loop:'循环', frombar:'起始', tobar:'结束', repeat:'重复', inf:'(0=无限)',
@@ -91,7 +134,7 @@ function boot(){
     var optMap = {
       'sgColor':{blue:'blue',green:'green',red:'red',yellow:'yellow',purple:'purple'},
       'sgBg':{none:'normal',sepia:'sepia',gray:'softgray',night:'night',parch:'parch'},
-      'sgSound':{wood:'wood',clave:'clave',beep:'beep',digital:'digital',snare:'snare'}
+      'sgSound':{wood:'wood',clave:'clave',beep:'beep',digital:'digital',snare:'snare',voice_zh:'voice_zh',voice_en:'voice_en'}
     };
     for(var sid in optMap){
       var sel=document.getElementById(sid); if(!sel)continue;
@@ -339,8 +382,14 @@ function boot(){
     scroller.scrollTop=target;
   }
 
-  function click(hi){ var ac=st.audio; if(!ac)return;
+  function click(hi, beat){ var ac=st.audio; if(!ac)return;
     var pr = SOUND_PRESETS[st.sound] || SOUND_PRESETS.wood;
+    var vl = pr.voice || null;
+    if(vl){
+      var bn = (beat==null) ? (hi?1:2) : Math.max(1, Math.min(8, beat|0||1));
+      if(playVoice(vl, bn)) return;
+      pr = SOUND_PRESETS.wood;
+    }
     if(st.lastOsc){ try{ st.lastOsc.stop(); }catch(e){} }
     var o=ac.createOscillator(),g=ac.createGain();
     st.lastOsc=o;
@@ -381,7 +430,7 @@ function boot(){
     info.textContent='count-in '+n+'...';
     (function tick(){
       if(!st.playing){ setPlayBtn(false); st._countInTimer=null; return; }
-      click(i%BT===0);
+      click(i%BT===0,(i%BT)+1);
       i++; info.textContent='count-in '+(n-i+1);
       if(i>=n) st._countInTimer=setTimeout(function(){ st._countInTimer=null; cb(); }, spb*1000);
       else st._countInTimer=setTimeout(function(){ st._countInTimer=null; tick(); }, spb*1000);
@@ -393,6 +442,7 @@ function boot(){
   function start(){
     if(st.playing){ if(nowMs()-(st._startAt||0)<300) return; stop(); return; }
     if(!st.audio) st.audio=new (window.AudioContext||window.webkitAudioContext)();
+    ensureVoice(voiceLang());
     if(st.audio.state==='suspended') void st.audio.resume().catch(function(err){
       info.textContent='audio unavailable: '+(err&&err.message?err.message:'resume failed');
     });
@@ -438,12 +488,12 @@ function boot(){
       var spb=60/st.bpm, t0=performance.now(), nBeats=s1-s0+1;
       var startBeat=(startIdx!=null&&startIdx>=s0&&startIdx<=s1)?startIdx-s0:0;
       var lastBi=startBeat;
-      st.iSeq=s0+startBeat; lastRowY=-1; place(st.iSeq); click(B[st.iSeq][5]===1);
+      st.iSeq=s0+startBeat; lastRowY=-1; place(st.iSeq); click(B[st.iSeq][5]===1,B[st.iSeq][5]);
       info.textContent='seq '+(segI+1)+'/'+seq.length+' (m'+seq[segI][0]+'-'+seq[segI][1]+')';
       function fr(ts){ if(!st.playing) return;
         var bi=startBeat+Math.floor((ts-t0)/1000/spb);
         if(bi>=nBeats){ segI++; return playSeg(); }
-        if(bi!==lastBi){ lastBi=bi; var idx=s0+bi; st.iSeq=idx; place(idx); click(B[idx][5]===1); info.textContent='seq '+(segI+1)+'/'+seq.length+' (m'+seq[segI][0]+'-'+seq[segI][1]+')'; }
+        if(bi!==lastBi){ lastBi=bi; var idx=s0+bi; st.iSeq=idx; place(idx); click(B[idx][5]===1,B[idx][5]); info.textContent='seq '+(segI+1)+'/'+seq.length+' (m'+seq[segI][0]+'-'+seq[segI][1]+')'; }
         st.raf=requestAnimationFrame(fr);
       }
       st.raf=requestAnimationFrame(fr);
@@ -460,15 +510,15 @@ function boot(){
     var spb=60/st.bpm,t0=performance.now(),nBeats=s1-s0+1;
     var startBeat=st.iSeq-s0;
     var lastBi=startBeat;
-    lastRowY=-1; place(st.iSeq); click(B[st.iSeq][5]===1);
+    lastRowY=-1; place(st.iSeq); click(B[st.iSeq][5]===1,B[st.iSeq][5]);
     function fr(ts){ if(!st.playing) return;
       var bi=startBeat+Math.floor((ts-t0)/1000/spb);
       if(bi>=nBeats){ if(st.loopOn){ st.loopLeft--;
           if(st.loopLeft<=0){ finishAt(s0); return; }
-          t0=performance.now(); lastBi=0; lastRowY=-1; startBeat=0; st.iSeq=s0; place(s0); click(B[s0][5]===1);
+          t0=performance.now(); lastBi=0; lastRowY=-1; startBeat=0; st.iSeq=s0; place(s0); click(B[s0][5]===1,B[s0][5]);
           st.raf=requestAnimationFrame(fr); return;
         } else { finishAt(s0); return; } }
-      if(bi!==lastBi){ lastBi=bi; var idx=s0+bi; st.iSeq=idx; place(idx); click(B[idx][5]===1); }
+      if(bi!==lastBi){ lastBi=bi; var idx=s0+bi; st.iSeq=idx; place(idx); click(B[idx][5]===1,B[idx][5]); }
       st.raf=requestAnimationFrame(fr);
     }
     st.raf=requestAnimationFrame(fr);
@@ -484,7 +534,7 @@ function boot(){
     if(!B.length) return;
     idx=Math.max(0,Math.min(B.length-1,idx));
     if(st.raf) cancelAnimationFrame(st.raf);
-    st.iSeq=idx; lastRowY=-1; place(idx); click(B[idx][5]===1);
+    st.iSeq=idx; lastRowY=-1; place(idx); click(B[idx][5]===1,B[idx][5]);
     if(!st.playing) return;
     if(st._seq){
       var m=B[idx][4], seq=st._seq, si=(st._segI==null?0:st._segI), found=false;
@@ -717,7 +767,7 @@ function boot(){
       '<div style="flex:1"><div style="color:'+T.sub+';margin-bottom:3px" id=sgColorLbl>Color</div><select id=sgColor style="width:100%;'+selS()+'"><option value="blue" selected>Blue</option><option value="green">Green</option><option value="red">Red</option><option value="yellow">Yellow</option><option value="purple">Purple</option></select></div>'+
       '<div style="flex:1"><div style="color:'+T.sub+';margin-bottom:3px" id=sgBgLbl>Background</div><select id=sgBg style="width:100%;'+selS()+'"><option value="none" selected>Normal</option><option value="sepia">Sepia</option><option value="gray">Soft gray</option><option value="night">Night</option><option value="parch">Parchment</option></select></div></div>'+
     '<div style="display:flex;gap:8px;margin-bottom:10px;font-size:11px">'+
-      '<div style="flex:1"><div style="color:'+T.sub+';margin-bottom:3px" id=sgSoundLbl>Sound</div><select id=sgSound style="width:100%;'+selS()+'"><option value="wood" selected>Wood</option><option value="clave">Clave</option><option value="beep">Beep</option><option value="digital">Digital</option><option value="snare">Snare</option></select></div>'+
+      '<div style="flex:1"><div style="color:'+T.sub+';margin-bottom:3px" id=sgSoundLbl>Sound</div><select id=sgSound style="width:100%;'+selS()+'"><option value="wood" selected>Wood</option><option value="clave">Clave</option><option value="beep">Beep</option><option value="digital">Digital</option><option value="snare">Snare</option><option value="voice_zh">Voice·ZH</option><option value="voice_en">Voice·EN</option></select></div>'+
       '<div style="flex:1"><label style="display:flex;align-items:center;gap:6px;padding-top:18px;cursor:pointer"><input id=sgBarnum type=checkbox '+(st.showBarnums?'checked':'')+' style="accent-color:'+T.acc+'"><span style="color:'+T.fg+'" id=sgBarnumLbl>Bar nums</span></label></div></div>'+
     '<div style="display:flex;gap:14px;align-items:center;margin-bottom:12px;font-size:11px">'+
       '<div style="flex:1"><div style="color:'+T.sub+';margin-bottom:3px" id=sgOpacLbl>Opacity</div><div style="display:flex;align-items:center;gap:6px"><input id=sgOpac type=range min=10 max=60 value=28 style="flex:1;accent-color:'+T.acc+'"><b id=sgOpacV style="width:34px;text-align:right;color:'+T.acc+'">.28</b></div></div>'+
@@ -817,7 +867,7 @@ function boot(){
     rebuild();
   };
   document.getElementById('sgColor').onchange=function(){ st.color=this.value; applyShadeStyle(); };
-  document.getElementById('sgSound').onchange=function(){ st.sound=this.value; };
+  document.getElementById('sgSound').onchange=function(){ st.sound=this.value; ensureVoice(voiceLang()); };
   document.getElementById('sgBarnum').onchange=function(){ st.showBarnums=this.checked; applyBarnumStyle(); };
   document.getElementById('sgOpac').oninput=function(){ st.opacity=(+this.value)/100; document.getElementById('sgOpacV').textContent=st.opacity.toFixed(2).replace(/^0/,''); applyShadeStyle(); };
   document.getElementById('sgFollow').oninput=function(){ st.followY=Math.max(0.10,Math.min(0.60,(+this.value)/100)); document.getElementById('sgFollowV').textContent=Math.round(st.followY*100)+'%'; lastRowY=-1; if(B[st.iSeq]) place(st.iSeq); };
@@ -1134,7 +1184,7 @@ function boot(){
     for(var i=0;i<B.length;i++){ if(B[i][4]>=m){ idx=barFirst(i); break; } }
     if(idx<0) idx=0;
     if(st.playing) restartFromIdx(idx);
-    else { st.iSeq=idx; lastRowY=-1; place(idx); click(B[idx][5]===1); }
+    else { st.iSeq=idx; lastRowY=-1; place(idx); click(B[idx][5]===1,B[idx][5]); }
   });
   // ===== PracticeSession bridge: one shared firstBeatAt clock =====
   // React owns the session (startMeasure/bpm/count-in/firstBeatAt). Metro only
@@ -1180,6 +1230,7 @@ function boot(){
     __practicePrepare(d);
     __practiceSession=d;
     if(!st.audio){ try{ st.audio=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+    ensureVoice(voiceLang());
     try{ if(st.audio&&st.audio.state==='suspended') st.audio.resume(); }catch(e){}
     var spb=60/st.bpm, countIn=Math.max(0, +d.countInBeats||0);
     var countStart=d.firstBeatAt-countIn*spb*1000;
@@ -1191,7 +1242,7 @@ function boot(){
       var i=0, BT=Math.max(1, st.meter|0);
       (function tick(){
         if(!st.playing||__practiceSession!==d) return;
-        click(i%BT===0);
+        click(i%BT===0,(i%BT)+1);
         i++;
         if(i>=countIn){
           var remain=Math.max(0, d.firstBeatAt-performance.now());
