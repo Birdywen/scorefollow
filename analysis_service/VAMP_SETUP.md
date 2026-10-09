@@ -12,6 +12,32 @@ sudo apt-get install -y vamp-plugin-sdk g++ libboost-dev
 pip3 install --user vamp   # Python 桥（注意：不是已死的 Vampy）
 ```
 
+### 1b. 无 sudo 变体（rootless，经 Ubuntu 24.04 x86_64 实测通过，2026-10-10）
+
+无 root 时用 `apt-get download` + `dpkg-deb -x` 把头文件和运行库 stage 到
+`/tmp`，编译时加 `-I/-L` 指向它们，链接时 baked 绝对 rpath 指向 `~/.vamp`，
+全程不写 `/etc`、不用 sudo（构建日志见 `/tmp/vamp-build.log`，不提交）：
+
+```bash
+pip3 install --user setuptools                       # 先装：本机 managed python 缺 setuptools
+pip3 install --user --no-build-isolation vamp       # vamp 1.1.0 sdist 的 setup.py 在
+                                                    # build-isolation 下 import numpy 失败，关掉隔离即可（numpy 2.5.3 已就绪）
+mkdir -p /tmp/vamp-sdk-root /tmp/boost-root
+cd /tmp && apt-get download vamp-plugin-sdk libvamp-sdk2v5 libvamp-hostsdk3v5 \
+  && apt-get download libboost1.83-dev
+for f in vamp-plugin-sdk_*.deb libvamp-sdk2v5_*.deb libvamp-hostsdk3v5_*.deb; do
+  dpkg-deb -x "$f" /tmp/vamp-sdk-root
+done
+dpkg-deb -x libboost1.83-dev_*.deb /tmp/boost-root
+```
+
+第 2–3 节的 make 调用各追加
+`-I/tmp/vamp-sdk-root/usr/include -I/tmp/boost-root/usr/include`，
+`PLUGIN_LDFLAGS/LDFLAGS` 追加 `-L/tmp/vamp-sdk-root/usr/lib/x86_64-linux-gnu`
+和 `-Wl,-rpath,/home/user/.vamp`（注意：`$ORIGIN` 会被 make/sh 两轮展开吃掉，
+用绝对 rpath），然后把 `libvamp-sdk.so.2.10.0`（+ `libvamp-sdk.so.2` 软链）
+与两个插件 `.so` 一起拷进 `~/.vamp/` 即可，运行时无需 `LD_LIBRARY_PATH`。
+
 ## 2. pYIN（基频+音符跟踪）
 
 ```bash

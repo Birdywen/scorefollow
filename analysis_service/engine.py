@@ -13,6 +13,7 @@ from decimal import Decimal, InvalidOperation
 import numpy as np
 
 from .alignment import locate_excerpt, usable_events
+from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
@@ -791,9 +792,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if sync_mode == "manual-measures":
         measure_intervals = [{"measure": a["measure"], "startSec": a["audioSec"], "endSec": b["audioSec"]}
                              for a, b in zip(measure_sync, measure_sync[1:])]
+    # Additive rhythmic-structure annotation (beats/downbeats/phrases) on the
+    # active timeline. Read-only w.r.t. scoring: math, thresholds and existing
+    # keys are untouched; None/empty beat input falls back to the legacy grid.
+    rhythm = _annotate_rhythm(measure_intervals, beat_map=_effective_beat,
+                              sec_per_beat=sec_per_beat)
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
             "measureIntervals": measure_intervals,
             "measureSync": measure_sync,
+            "rhythm": rhythm,
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
                         "pitchToleranceCents": 15,
                         "timingCandidateNotes": timing_candidates,
