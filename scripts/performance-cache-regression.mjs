@@ -22,17 +22,23 @@ for (const field of ["xml", "audioId", "instrument", "bpm", "startMeasure", "syn
 }
 assert.ok(src.includes("take.id") && src.includes("take.blob.size"), "signature must include audio/take identity");
 assert.ok(src.includes("measureSync") && src.includes("firstBeatAudioSec"), "signature sync data must cover manual + metronome modes");
-// Ordering: cache-hit and in-flight checks run before any POST /jobs.
-const postIdx = src.indexOf("`${base}/jobs`");
-assert.ok(postIdx > 0, "POST /jobs must exist");
-assert.ok(src.indexOf("analysisCache.current.get(signature)") < postIdx, "cache hit must precede POST");
-assert.ok(src.indexOf("analysisInflight.current.has(signature)") < postIdx, "in-flight dedup must precede POST");
-assert.ok(src.indexOf("analysisInflight.current.delete(signature)") > postIdx, "in-flight entry must be released");
-// Failed results are never cached: the only store sits in the completed branch.
-const completedIdx = src.indexOf('job.status === "completed"');
-assert.ok(completedIdx > 0 && src.indexOf("analysisCache.current.set(") > completedIdx, "cache store must be inside the completed branch");
-const failedBranch = src.slice(src.indexOf('job.status === "failed"'), src.indexOf('job.status === "failed"') + 120);
-assert.ok(!failedBranch.includes("analysisCache"), "failed results must not be cached");
+// Ordering: cache-hit and in-flight checks run before the analysis submit.
+// After the state-machine extraction the HTTP POST lives in the hook
+// (app/hooks/useAnalysisJob.ts); the panel submits via analysisJob.submit.
+const hookSrc = await readFile("app/hooks/useAnalysisJob.ts", "utf8");
+assert.ok(hookSrc.includes("/jobs`"), "POST /jobs must exist in useAnalysisJob");
+const submitIdx = src.indexOf("analysisJob.submit(");
+assert.ok(submitIdx > 0, "panel must submit through the analysis job hook");
+assert.ok(src.indexOf("analysisCache.current.get(signature)") < submitIdx, "cache hit must precede submit");
+assert.ok(src.indexOf("analysisInflight.current.has(signature)") < submitIdx, "in-flight dedup must precede submit");
+assert.ok(src.includes("analysisInflight.current.delete(ctx.signature)"), "in-flight entry must be released");
+// Failed results are never cached: the only store sits in the success handler.
+const successIdx = src.indexOf("function handleAnalysisSuccess");
+const errorIdx = src.indexOf("function handleAnalysisError");
+assert.ok(successIdx > 0 && errorIdx > successIdx, "success/error handlers must exist");
+const storeIdx = src.indexOf("analysisCache.current.set(");
+assert.ok(storeIdx > successIdx && storeIdx < errorIdx, "cache store must sit in the success handler");
+assert.ok(!src.slice(errorIdx, errorIdx + 800).includes("analysisCache.current.set("), "failed results must not be cached");
 // No-score guidance: accessible, load-first, no false availability claims.
 assert.ok(src.includes("scoreLoaded"), "no-score state must be derived");
 assert.ok(src.includes('role="status"') && src.includes("!scoreLoaded"), "no-score guidance must be an accessible status");

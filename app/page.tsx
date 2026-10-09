@@ -547,6 +547,10 @@ export default function ScoreFollowPage() {
   const annotDragRef = useRef<{ idx: number; startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(null);
 
   const [status, setStatus] = useState("scorefollow 就绪 — 载入 PDF 谱开始");
+  // 谱面载入/识别的机器可测阶段: ready(空闲无谱) / loading(取文件) / recognizing(逐页分析) / ready-score(有谱可用) / error(失败).
+  // 文案保持双语原文, 阶段只经 setScorePhase 显式切换, 调参/光标等常规 status 不改阶段。
+  type ScorePhase = "ready" | "loading" | "recognizing" | "ready-score" | "error";
+  const [scorePhase, setScorePhase] = useState<ScorePhase>("ready");
   const [cursorInfo, setCursorInfo] = useState("");
   const [advOpen, setAdvOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
@@ -1098,6 +1102,7 @@ export default function ScoreFollowPage() {
       setNumPages(nPages);
       for (let n = 1; n <= nPages; n++) {
         if (gen !== renderGenRef.current) return; // 被更新一轮取代
+        setScorePhase("recognizing");
         setStatus(`rendering page: ${n}/${nPages}`);
         let canvas = document.createElement("canvas");
         let pageAna: { pageW: number; pageH: number } | null = null;
@@ -1166,6 +1171,7 @@ export default function ScoreFollowPage() {
         setCursorInfo("");
         setSelectedBar(null);
         setPie(null);
+        setScorePhase("error");
         setStatus(gSkip !== 0
           ? `skipn=${gSkip} 切掉了全部系统, 请调小绝对值后重试`
           : "未检测到谱表系统, 请检查谱面或调参后重试");
@@ -1202,6 +1208,7 @@ export default function ScoreFollowPage() {
       const analysisCacheAfter = getPageCacheStats();
       const analysisHits = analysisCacheAfter.hits - analysisCacheBefore.hits;
       const analysisMisses = analysisCacheAfter.misses - analysisCacheBefore.misses;
+      setScorePhase("ready-score");
       setStatus(`score: ${nPages} pages, ${merged.systems.length} systems, ${meas} measures, spatium ${merged.spatium.toFixed(1)}px, algo v${merged.algoVersion}` +
         (dropped ? ` · timing截断 ${kept}保留/${dropped}越界` : "") +
         (dk.length ? ` · deskew ${dk.join(" ")}` : "") +
@@ -1359,6 +1366,7 @@ export default function ScoreFollowPage() {
   }, []);
   const onPdfFile = useCallback(
     async (f: File) => {
+      setScorePhase("loading");
       setStatus(`loading ${f.name} ...`);
       setPerformanceOpen(false);
       try {
@@ -1375,6 +1383,7 @@ export default function ScoreFollowPage() {
         setPageNum(1);
         await renderPage(pdf, 1, f.name);
       } catch (err) {
+        setScorePhase("error");
         setStatus(`载入失败 ${f.name}: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
@@ -1388,14 +1397,15 @@ export default function ScoreFollowPage() {
   const onImageFile = useCallback(
     async (files: FileList | File[], preprocess = true) => {
       const picked = [...files].filter((f) => f.type.startsWith("image/"));
-      if (!picked.length) { setStatus("未选中图片文件"); return; }
+      if (!picked.length) { setScorePhase("error"); setStatus("未选中图片文件"); return; }
       setPerformanceOpen(false);
       const cur = pdfDocRef.current;
       try {
         if (cur?.__sfImage) {
           const room = Math.max(0, MAX_IMAGE_PAGES - cur.images.length);
           const list = picked.slice(0, Math.max(room, 0));
-          if (!list.length) { setStatus(`图片已达 ${MAX_IMAGE_PAGES} 页上限, 请先导出或新建`); return; }
+          if (!list.length) { setScorePhase("error"); setStatus(`图片已达 ${MAX_IMAGE_PAGES} 页上限, 请先导出或新建`); return; }
+          setScorePhase("loading");
           setStatus(`appending ${list.length} image(s) ...`);
           for (const f of list) cur.images.push({ ...(await decodeScoreImage(f as File, preprocess)), name: (f as File).name || `page-${cur.images.length + 1}` });
           cur.numPages = cur.images.length;
@@ -1409,6 +1419,7 @@ export default function ScoreFollowPage() {
           return;
         }
         const list = picked.slice(0, 12);
+        setScorePhase("loading");
         setStatus(`loading ${list.length} image(s) ...`);
         const images = [];
         for (const f of list) images.push({ ...(await decodeScoreImage(f as File, preprocess)), name: (f as File).name });
@@ -1423,6 +1434,7 @@ export default function ScoreFollowPage() {
         setPageNum(1);
         await renderPage(doc as any, 1, list[0].name);
       } catch (err) {
+        setScorePhase("error");
         setStatus(`图片载入失败: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
@@ -1523,6 +1535,7 @@ export default function ScoreFollowPage() {
       }
       await onImageFile(files, false); // 拍摄时已预处理, 合并时不再重复
     } catch (err) {
+      setScorePhase("error");
       setStatus(`连拍合并失败: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       for (const u of thumbs) { try { URL.revokeObjectURL(u); } catch { /* ignore */ } }
@@ -2892,7 +2905,8 @@ export default function ScoreFollowPage() {
   // + sga_config(节拍器预设→活引擎) + ui_state(界面预设, 含全屏/隐藏UI)
   const loadPreloadText = useCallback(async (txt: string, name: string, fullPath?: string) => {
     setPerformanceOpen(false);
-    if (!txt.includes("//# This page")) { setStatus("not a preload file(缺 //# This page 标记)"); return; }
+    if (!txt.includes("//# This page")) { setScorePhase("error"); setStatus("not a preload file(缺 //# This page 标记)"); return; }
+    setScorePhase("loading");
     renderGenRef.current++;
     if (advRenderTimer.current) {
       clearTimeout(advRenderTimer.current);
@@ -3035,7 +3049,7 @@ export default function ScoreFollowPage() {
       pdfNameRef.current = want || name.replace(/\.js$/i, ".pdf");
       setPdfName(pdfNameRef.current);
       setNumPages(pdf.numPages);
-    } else if (!pdf) { setStatus("无PDF可载入"); return; }
+    } else if (!pdf) { setScorePhase("error"); setStatus("无PDF可载入"); return; }
     // 4) 逐页分析(逐页 adv 生效) + metric 配对为人工校正
     const metricPages: unknown[] = Array.isArray(metric) ? (metric as unknown[]) : [];
     const metricWd = Number(metricPages[0]) || 0;
@@ -3043,6 +3057,7 @@ export default function ScoreFollowPage() {
     const nextManual: Record<number, number[][]> = {};
     for (let n = 1; n <= (pdf.numPages as number); n++) {
       // 按页快照由 renderAndAnalyze 自动叠加, 无需再逐页改全局
+      setScorePhase("recognizing");
       setStatus(`loading preload: 分析 p${n}/${pdf.numPages} ...`);
       const { a } = await renderAndAnalyze(pdf, n, off, undefined, undefined, false);
       if (!a) continue;
@@ -3212,6 +3227,7 @@ export default function ScoreFollowPage() {
       setPageNum(1);
     }
     const adopted = Object.keys(nextManual).length;
+    setScorePhase("ready-score");
     setStatus(`loaded preload ${name} · ${adopted} 页小节线已采用 · ${wijzerRef.current.times.length} sync points` +
       (pdfBytes ? " · PDF内嵌" : "") +
       (restored.length ? ` · 预设已恢复(${restored.join("+")})` : "") +
@@ -3219,7 +3235,7 @@ export default function ScoreFollowPage() {
   }, [renderPage, mediaURL]);
 
   const loadPreload = useCallback((f: File) => {
-    f.text().then((txt) => void loadPreloadText(txt, f.name)).catch(() => setStatus("preload 文件读取失败"));
+    f.text().then((txt) => void loadPreloadText(txt, f.name)).catch(() => { setScorePhase("error"); setStatus("preload 文件读取失败"); });
   }, [loadPreloadText]);
 
   // HoMR 音符模板门数据载入(scripts/homr-gate.py 产物): 校验形状后注入,
@@ -3552,6 +3568,7 @@ export default function ScoreFollowPage() {
     if (!name) return;
     // 只允许本站相对路径, 拒绝绝对 URL/反斜杠(防 open-fetch)
     if (/^[a-z][a-z0-9+.-]*:/i.test(name) || name.startsWith("//") || name.includes("\\")) {
+      setScorePhase("error");
       setStatus("URL preload 只允许本站相对路径");
       return;
     }
@@ -3559,6 +3576,7 @@ export default function ScoreFollowPage() {
     let dead = false;
     (async () => {
       try {
+        setScorePhase("loading");
         setStatus(`URL preload 载入中: ${name} ...`);
         const r = await fetch(`${BASE}/${name.replace(/^\/+/, "")}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -3568,7 +3586,7 @@ export default function ScoreFollowPage() {
         if (dead) return;
         applyUrlOverrides(params);
       } catch {
-        if (!dead) setStatus(`URL preload 载入失败: ${name}(文件须与本站同源可访问; file:// 下浏览器会拦截)`);
+        if (!dead) { setScorePhase("error"); setStatus(`URL preload 载入失败: ${name}(文件须与本站同源可访问; file:// 下浏览器会拦截)`); }
       }
     })();
     return () => { dead = true; };
@@ -3590,7 +3608,7 @@ export default function ScoreFollowPage() {
         await onPdfFile(new File([b], "demo-score.pdf", { type: "application/pdf" }));
         if (!dead) setStatus((s) => s + " · demo 谱已载入");
       } catch {
-        if (!dead) setStatus("demo 谱载入失败");
+        if (!dead) { setScorePhase("error"); setStatus("demo 谱载入失败"); }
       }
     })();
     return () => { dead = true; };
@@ -4229,7 +4247,7 @@ export default function ScoreFollowPage() {
       </div>
 
        <footer className={styles.statusbar}>
-         <span className={styles.statusmsg} role="status" aria-live="polite">{status}</span>
+         <span className={styles.statusmsg} role="status" aria-live="polite" data-testid="score-load-status" data-phase={scorePhase} data-has-score={analysis ? "true" : "false"}>{status}</span>
          {analysis && <span className={styles.statusFacts}>
            <span>{lang === "zh" ? `第 ${pageNum}/${numPages} 页` : `Page ${pageNum}/${numPages}`}</span>
            <span>{cursorInfo || `${barsTotal} ${tx("barUnit")}`}</span>
