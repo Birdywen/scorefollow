@@ -9,6 +9,7 @@ import {
 import VisualReport, { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
 import { isValidAnalysisResult, isValidJobEnvelope } from "@/lib/analysis-guard";
 import MeasureSyncEditor, { validateMarkers, type MeasureMarker, type SyncedAudio } from "./MeasureSyncEditor";
+import { useAnalysisJob } from "./hooks/useAnalysisJob";
 
 type Note = {
   id: string; measure: number; pitchMidi: number; expectedSec: number;
@@ -207,7 +208,6 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     return () => { window.clearInterval(timer); playbackRange.current = null; };
   }, [selectedId]);
   const alive = useRef(true);
-  const analyzeAbortRef = useRef<AbortController | null>(null);
   const startingRecordingRef = useRef(false);
   const takesRef = useRef<Take[]>([]);
   takesRef.current = takes;
@@ -215,6 +215,61 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   // signatures currently being analyzed to suppress duplicate POST /jobs.
   const analysisCache = useRef(new Map<string, Result>());
   const analysisInflight = useRef(new Set<string>());
+  // 当前分析任务关联的 take（hook 本身与 UI 解耦，take 绑定保留在面板层）。
+  const jobTakeRef = useRef<{ takeId: string; signature: string } | null>(null);
+  const analysisJob = useAnalysisJob({
+    endpoint: api,
+    pollingInterval: 1500,
+    // 与重构前一致：240 次 × 1500ms ≈ 360s；hook 默认 120s，仅面板显式覆盖。
+    timeout: 360000,
+    onSuccess: (hookResult) => { handleAnalysisSuccess(hookResult as unknown as Result); },
+    onError: (hookError) => { handleAnalysisError(hookError.message, hookError.phase, hookError.jobId); },
+  });
+  function handleAnalysisSuccess(hookResult: Result) {
+    const ctx = jobTakeRef.current;
+    if (!ctx || !alive.current) return;
+    try { analysisCache.current.set(ctx.signature, hookResult); } catch { /* cache failures must not break analysis */ }
+    try { analysisInflight.current.delete(ctx.signature); } catch { /* ignore */ }
+    jobTakeRef.current = null;
+    setError("");
+    updateTake(ctx.takeId, { result: hookResult, jobStatus: "completed", error: undefined });
+    setBusyTakeId(null);
+  }
+  function handleAnalysisError(message: string, phase: string, jobId: string | null) {
+    const ctx = jobTakeRef.current;
+    if (!alive.current) return;
+    if (!ctx) { setError(message); setBusyTakeId(null); return; }
+    try { analysisInflight.current.delete(ctx.signature); } catch { /* ignore */ }
+    const timedOut = phase === "polling" && /超时|timed out|timeout/i.test(message);
+    // 超时/取消走最终态，不与失败混淆；提交阶段失败记 failed。
+    const terminalStatus = timedOut ? "timed_out" : message === "__CANCELLED__" ? "cancelled" : "failed";
+    void jobId;
+    updateTake(ctx.takeId, { jobStatus: terminalStatus, error: terminalStatus === "cancelled" ? undefined : message });
+    if (terminalStatus !== "cancelled") setError(message);
+    jobTakeRef.current = null;
+    setBusyTakeId(null);
+  }
+  // 轮询中状态透出到 take.jobStatus（终端态由 onSuccess/onError 负责，避免竞写）。
+  useEffect(() => {
+    const ctx = jobTakeRef.current;
+    if (!ctx || !alive.current) return;
+    if (analysisJob.state === "validating" || analysisJob.state === "preparing") {
+      updateTake(ctx.takeId, { jobStatus: "preparing" });
+    } else if (analysisJob.state === "submitting") {
+      updateTake(ctx.takeId, { jobStatus: "submitting" });
+    } else if (analysisJob.state === "polling") {
+      updateTake(ctx.takeId, {
+        jobId: analysisJob.jobId ?? undefined,
+        jobStatus: analysisJob.remoteStatus ?? "polling",
+        error: undefined,
+      });
+    } else if (analysisJob.state === "cancelled") {
+      updateTake(ctx.takeId, { jobStatus: "cancelled" });
+    } else if (analysisJob.state === "timed_out") {
+      updateTake(ctx.takeId, { jobStatus: "timed_out" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisJob.state, analysisJob.jobId, analysisJob.remoteStatus, analysisJob.pollCount]);
   const zh = lang === "zh";
   const scoreLoaded = pdfMeasures > 0 || xmlFile !== null || (() => { try { return pdfBytes() != null; } catch { return false; } })();
   const omrActive = omrBusy || Boolean(omrJob && !["completed", "failed"].includes(omrJob.status));
@@ -224,8 +279,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
 
   useEffect(() => { alive.current = true; return () => {
     alive.current = false;
-    analyzeAbortRef.current?.abort();
-    analyzeAbortRef.current = null;
+    // 分析任务的中止与定时器清理已收敛到 useAnalysisJob 的卸载清理；
+    // 面板只负责录音/播放等本地资源。
     if (tickTimer.current) clearInterval(tickTimer.current);
     if (recordingStopTimer.current) clearTimeout(recordingStopTimer.current);
     if (recorder.current?.state === "recording") { try { recorder.current.stop(); } catch { /* noop */ } }
@@ -412,6 +467,19 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     if (recorder.current?.state === "recording") recorder.current.stop();
   }
 
+  function cancelAnalysis(takeId: string) {
+    const ctx = jobTakeRef.current;
+    analysisJob.cancel();
+    if (ctx) {
+      try { analysisInflight.current.delete(ctx.signature); } catch { /* ignore */ }
+      jobTakeRef.current = null;
+    }
+    if (alive.current) {
+      updateTake(takeId, { jobStatus: "cancelled", error: undefined });
+      setBusyTakeId(null);
+    }
+  }
+
   async function analyzeTake(take: Take, autoLocate = false) {
     if (!take.blob || !xmlFile || !api) { setError(zh ? "请提供分析地址、MusicXML 与录音" : "Provide the API URL, MusicXML and audio"); return; }
     const manual = !!take.measureSync?.length;
@@ -419,12 +487,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     const syncError = !manual && take.firstBeatAudioSec != null ? validateTakeSync(take.firstBeatAudioSec) : null;
     if (syncError) { setError(syncError); return; }
     if (xmlFile.size > 1_000_000) { setError("MusicXML > 1 MB"); return; }
-    const controller = new AbortController();
     let signature = "";
     try {
       const base = apiBase(api);
       // Build the cache signature from the exact request inputs before any
-      // POST, so dedup/hit checks run before aborting a previous analysis.
+      // POST, so dedup/hit checks run before cancelling a previous analysis.
       const xml = await xmlFile.text();
       if (manual && take.syncScoreXml !== xml) throw new Error("Confirm the measure sync for this MusicXML before analysis / 请先为当前 MusicXML 确认小节同步");
       const effectiveStart = autoLocate ? 0 : take.startMeasure;
@@ -446,9 +513,14 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       // Same inputs already being analyzed: skip the duplicate POST /jobs;
       // the in-flight request keeps driving this take to completion.
       try { if (analysisInflight.current.has(signature)) return; } catch { /* cache unavailable: fall through and analyze */ }
+      // 新任务提交时取消旧任务：先标记旧 take 为 cancelled，再让状态机接管。
+      const prev = jobTakeRef.current;
+      if (prev && prev.takeId !== take.id) {
+        try { analysisInflight.current.delete(prev.signature); } catch { /* ignore */ }
+        updateTake(prev.takeId, { jobStatus: "cancelled", error: undefined });
+      }
       try { analysisInflight.current.add(signature); } catch { /* ignore */ }
-      analyzeAbortRef.current?.abort();
-      analyzeAbortRef.current = controller;
+      jobTakeRef.current = { takeId: take.id, signature };
       setBusyTakeId(take.id); setError("");
       updateTake(take.id, { jobStatus: "preparing", error: undefined, result: undefined });
       localStorage.setItem("sf-analysis-api", base);
@@ -458,36 +530,26 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         syncMode,
         ...(manual ? { measureSync: take.measureSync } : take.firstBeatAudioSec != null ? { firstBeatAudioSec: take.firstBeatAudioSec } : {}),
       };
-      const response = await fetch(`${base}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
-      const data = await readJsonResponse<AnalysisJob>(response);
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      if (!isValidJobEnvelope(data)) throw new Error("分析服务返回了无效任务 / Analysis service returned an invalid job");
-      updateTake(take.id, { jobId: data.id, jobStatus: data.status });
-      for (let i = 0; i < 240; i++) {
-        await new Promise((r) => setTimeout(r, 1500));
-        if (!alive.current || controller.signal.aborted) return;
-        const poll = await fetch(`${base}/jobs/${data.id}`, { signal: controller.signal });
-        const job = await readJsonResponse<AnalysisJob>(poll);
-        if (!poll.ok) throw new Error(job.error || `HTTP ${poll.status}`);
-        if (!isValidJobEnvelope(job)) throw new Error("分析服务返回了无效任务 / Analysis service returned an invalid job");
-        updateTake(take.id, { jobStatus: job.status, error: job.error });
-        if (job.status === "completed") {
-          if (!isValidAnalysisResult(job.result)) throw new Error("分析服务返回了无效结果 / Analysis service returned an invalid result");
-          // Cache only validated completed results; failures never land here.
-          try { analysisCache.current.set(signature, job.result as Result); } catch { /* cache failures must not break analysis */ }
-          updateTake(take.id, { result: job.result as Result }); break;
-        }
-        if (job.status === "failed") break;
-      }
+      // 提交与轮询由 useAnalysisJob 驱动（含超时/取消/过期结果拒绝）；
+      // 成功/失败经 onSuccess/onError 回写 take，结果仍经 hook 内 analysis-guard 校验。
+      await analysisJob.submit(body);
+      if (!alive.current) return;
+      // submit 内校验失败会同步进入 failed 并触发 onError（已清理 busy）；
+      // 这里只处理 toWav/签名阶段的本地异常。
     } catch (exc) {
       if (alive.current && !(exc instanceof DOMException && exc.name === "AbortError")) {
-        setError(exc instanceof Error ? exc.message : String(exc));
-        updateTake(take.id, { jobStatus: "failed" });
+        const message = exc instanceof Error ? exc.message : String(exc);
+        // hook 驱动的失败已由 onError 回写；此处仅兜底本地准备阶段异常。
+        if (jobTakeRef.current?.takeId === take.id) {
+          try { if (signature) analysisInflight.current.delete(signature); } catch { /* ignore */ }
+          jobTakeRef.current = null;
+          setError(message);
+          updateTake(take.id, { jobStatus: "failed", error: message });
+          setBusyTakeId(null);
+        } else {
+          setError(message);
+        }
       }
-    } finally {
-      try { if (signature) analysisInflight.current.delete(signature); } catch { /* ignore */ }
-      if (analyzeAbortRef.current?.signal === controller.signal) analyzeAbortRef.current = null;
-      if (alive.current) setBusyTakeId(null);
     }
   }
 
@@ -696,6 +758,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
             <div className={styles.takeRow}>
               <button className={styles.omrButton} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take)}>
                 {busyTakeId === take.id ? (zh ? "分析中…" : "Analyzing…") : (zh ? "分析这一遍" : "Analyze")}</button>
+              {busyTakeId === take.id && <button className={styles.omrButton} onClick={() => cancelAnalysis(take.id)}>{zh ? "取消分析" : "Cancel"}</button>}
               <button className={styles.omrButton}
                 disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false || instrument === "piano" || take.firstBeatAudioSec != null}
                 title={instrument === "piano" ? (zh ? "自动定位暂不支持钢琴" : "Excerpt location is not available for piano") : take.firstBeatAudioSec != null ? (zh ? "已同步录音不能自动定位" : "Synced takes cannot use automatic excerpt location") : undefined}
@@ -707,7 +770,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
                 void deleteTakeBlob(take.id).catch(() => undefined);
                 if (selectedId === take.id) setSelectedId(null);
               }}>{zh ? "删除" : "Delete"}</button>
-              {take.jobStatus && <span className={styles.hint}>{take.jobStatus}</span>}
+              {take.jobStatus && <span className={styles.hint}>{take.jobStatus}{busyTakeId === take.id && analysisJob.pollCount > 0 ? ` · poll ${analysisJob.pollCount}` : ""}{busyTakeId === take.id && analysisJob.progress != null ? ` · ${analysisJob.progress}%` : ""}</span>}
               {take.result && <span className={styles.hint}>
                 {take.result.summary.autoLocated && (zh ? `定位第 ${take.result.summary.startMeasure}–${take.result.summary.endMeasure} 小节 · ` : `Located m${take.result.summary.startMeasure}–${take.result.summary.endMeasure} · `)}
                 {zh ? "综合音高" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</span>}
