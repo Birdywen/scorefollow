@@ -49,6 +49,59 @@ export function detectPitch(buf: Float32Array, sampleRate: number): number | nul
   return sampleRate / lag;
 }
 
+// getUserMedia 失败映射：纯函数，无浏览器/DOM 依赖，可单测。
+// 原始错误由调用方 console.debug 留档；UI 仅展示双语提示，onError(string) 契约不变。
+export function mapTunerMicError(input: unknown): string {
+  const name =
+    typeof input === "object" && input !== null && "name" in input
+      ? String((input as { name?: unknown }).name ?? "")
+      : "";
+  const rawMessage =
+    input instanceof Error
+      ? input.message
+      : typeof input === "string"
+        ? input
+        : typeof input === "object" && input !== null && "message" in input
+          ? String((input as { message?: unknown }).message ?? "")
+          : String(input ?? "");
+  const lowerName = name.toLowerCase();
+  const msg = `${rawMessage}`.toLowerCase();
+  const has = (...keys: string[]) =>
+    keys.some((k) => msg.includes(k) || lowerName.includes(k.toLowerCase()));
+
+  if (
+    name === "NotAllowedError" ||
+    name === "PermissionDeniedError" ||
+    has("permission denied", "permission-dismissed", "not allowed")
+  ) {
+    return "麦克风权限被拒绝，请在浏览器地址栏/站点设置中允许使用麦克风，或改用上传音频 / Microphone permission denied; please allow microphone access in your browser/site settings, or upload audio instead";
+  }
+  if (
+    name === "NotFoundError" ||
+    name === "DevicesNotFoundError" ||
+    name === "OverconstrainedError" ||
+    has("no microphone", "microphone not found", "no audio input", "device not found", "no device", "devicesnotfound")
+  ) {
+    return "未找到麦克风，请连接麦克风后重试，或改用上传音频 / No microphone found; please connect a microphone or upload audio instead";
+  }
+  if (
+    name === "NotReadableError" ||
+    name === "TrackStartError" ||
+    has("not readable", "trackstart", "microphone is busy", "microphone busy", "already in use", "in use", "could not start")
+  ) {
+    return "麦克风正忙或不可用，请关闭占用麦克风的应用后重试 / Microphone is busy or unavailable; please close other apps using the microphone and retry";
+  }
+  if (
+    name === "NotSupportedError" ||
+    has("not supported", "unsupported", "insecure", "secure context", "https", "localhost") ||
+    rawMessage.includes("不支持")
+  ) {
+    return "此页面无法使用麦克风，请使用 HTTPS/localhost，或改用上传音频 / Microphone unavailable on this page; use HTTPS/localhost or upload audio instead";
+  }
+  const detail = rawMessage || name || "unknown error";
+  return `调音器启动失败（${detail}），或改用上传音频 / Tuner failed to start (${detail}), or upload audio instead`;
+}
+
 export type UseTunerConfig = {
   onError?: (error: string) => void;
 };
@@ -174,7 +227,13 @@ export function useTuner(config: UseTunerConfig = {}) {
       };
       loop();
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      // 保留原始错误供调试，UI/回调只透出双语映射后的字符串。
+      try {
+        console.debug("[tuner] microphone error:", e);
+      } catch {
+        /* noop */
+      }
+      const message = mapTunerMicError(e);
       await cleanupResources();
       if (!mountedRef.current) return;
       // 若等待期间已被 reset（generation 变化），不再覆盖新状态。
