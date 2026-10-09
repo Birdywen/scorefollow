@@ -119,6 +119,28 @@ function takeId(): string {
   return `t-${Date.now()}-${Math.floor(Math.random() * 1e9).toString(36)}`;
 }
 
+// Session-scoped analysis cache (in-memory only, per panel mount): never
+// localStorage, never raw audio blobs — only validated completed Results keyed
+// by a signature of MusicXML content + audio/take identity + instrument + BPM
+// + start measure + sync mode/data. A result is reused only when every input
+// matches, so different takes or settings always re-submit. Failed results are
+// never stored. Invalidation scope: the whole cache dies with the panel
+// (unmount/reload); per-entry invalidation is unnecessary because any changed
+// input produces a different signature and misses.
+function hashSignature(text: string): string {
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(36);
+}
+
+function analysisSignature(input: {
+  xml: string; audioId: string; instrument: string; bpm: number;
+  startMeasure: number; syncMode: string; syncData: string;
+}): string {
+  return hashSignature([input.xml.length, input.xml, input.audioId, input.instrument,
+    String(input.bpm), String(input.startMeasure), input.syncMode, input.syncData].join("\n"));
+}
+
 export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio }: {
   lang: "zh" | "en"; pdfMeasures: number; pdfName: string; pdfBytes: () => ArrayBuffer | null;
   onJump: (measure: number) => void; onClose: () => void;
@@ -189,7 +211,12 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const startingRecordingRef = useRef(false);
   const takesRef = useRef<Take[]>([]);
   takesRef.current = takes;
+  // Session analysis cache: completed Results by input signature, plus the
+  // signatures currently being analyzed to suppress duplicate POST /jobs.
+  const analysisCache = useRef(new Map<string, Result>());
+  const analysisInflight = useRef(new Set<string>());
   const zh = lang === "zh";
+  const scoreLoaded = pdfMeasures > 0 || xmlFile !== null || (() => { try { return pdfBytes() != null; } catch { return false; } })();
   const omrActive = omrBusy || Boolean(omrJob && !["completed", "failed"].includes(omrJob.status));
   const selected = takes.find((t) => t.id === selectedId) ?? null;
   const result = selected?.result;
@@ -393,19 +420,42 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     if (syncError) { setError(syncError); return; }
     if (xmlFile.size > 1_000_000) { setError("MusicXML > 1 MB"); return; }
     const controller = new AbortController();
+    let signature = "";
     try {
       const base = apiBase(api);
+      // Build the cache signature from the exact request inputs before any
+      // POST, so dedup/hit checks run before aborting a previous analysis.
+      const xml = await xmlFile.text();
+      if (manual && take.syncScoreXml !== xml) throw new Error("Confirm the measure sync for this MusicXML before analysis / 请先为当前 MusicXML 确认小节同步");
+      const effectiveStart = autoLocate ? 0 : take.startMeasure;
+      const syncMode = manual ? "manual-measures" : take.firstBeatAudioSec != null ? "metronome" : "vamp-beat";
+      const syncData = JSON.stringify(manual ? take.measureSync : take.firstBeatAudioSec != null ? { firstBeatAudioSec: take.firstBeatAudioSec } : null);
+      signature = analysisSignature({
+        xml, audioId: `${take.id}:${take.blob.size}:${take.blob.type}`,
+        instrument, bpm: take.bpm, startMeasure: effectiveStart, syncMode, syncData,
+      });
+      // Completed result for the exact same inputs: reuse without POST /jobs,
+      // applied exactly like a fresh completed result.
+      let cached: Result | undefined;
+      try { cached = analysisCache.current.get(signature); } catch { cached = undefined; }
+      if (cached) {
+        setError("");
+        updateTake(take.id, { result: cached, jobStatus: "completed", error: undefined });
+        return;
+      }
+      // Same inputs already being analyzed: skip the duplicate POST /jobs;
+      // the in-flight request keeps driving this take to completion.
+      try { if (analysisInflight.current.has(signature)) return; } catch { /* cache unavailable: fall through and analyze */ }
+      try { analysisInflight.current.add(signature); } catch { /* ignore */ }
       analyzeAbortRef.current?.abort();
       analyzeAbortRef.current = controller;
       setBusyTakeId(take.id); setError("");
       updateTake(take.id, { jobStatus: "preparing", error: undefined, result: undefined });
       localStorage.setItem("sf-analysis-api", base);
-      const xml = await xmlFile.text();
-      if (manual && take.syncScoreXml !== xml) throw new Error("Confirm the measure sync for this MusicXML before analysis / 请先为当前 MusicXML 确认小节同步");
       const body = {
         scoreXml: xml, audioWavBase64: await toWav(take.blob),
-        bpm: take.bpm, instrument, startMeasure: autoLocate ? 0 : take.startMeasure,
-        syncMode: manual ? "manual-measures" : take.firstBeatAudioSec != null ? "metronome" : "vamp-beat",
+        bpm: take.bpm, instrument, startMeasure: effectiveStart,
+        syncMode,
         ...(manual ? { measureSync: take.measureSync } : take.firstBeatAudioSec != null ? { firstBeatAudioSec: take.firstBeatAudioSec } : {}),
       };
       const response = await fetch(`${base}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
@@ -423,6 +473,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         updateTake(take.id, { jobStatus: job.status, error: job.error });
         if (job.status === "completed") {
           if (!isValidAnalysisResult(job.result)) throw new Error("分析服务返回了无效结果 / Analysis service returned an invalid result");
+          // Cache only validated completed results; failures never land here.
+          try { analysisCache.current.set(signature, job.result as Result); } catch { /* cache failures must not break analysis */ }
           updateTake(take.id, { result: job.result as Result }); break;
         }
         if (job.status === "failed") break;
@@ -433,6 +485,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         updateTake(take.id, { jobStatus: "failed" });
       }
     } finally {
+      try { if (signature) analysisInflight.current.delete(signature); } catch { /* ignore */ }
       if (analyzeAbortRef.current?.signal === controller.signal) analyzeAbortRef.current = null;
       if (alive.current) setBusyTakeId(null);
     }
@@ -613,6 +666,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     <section className={styles.omr} aria-label={zh ? "同步录音" : "Synced recording"}>
       <h2>{zh ? "同步录音（节拍器 + 麦克风干声）" : "Synced recording (click + dry mic)"}</h2>
       <p className={styles.hint}>{zh ? "节拍器只从本机播放、不混入录音文件；录音只采集麦克风。建议戴耳机，预备拍不会计入分析。" : "Clicks play locally and are never mixed into the file; only the mic is recorded. Use headphones; count-in is excluded."}</p>
+      {!scoreLoaded && <p role="status" className={styles.hint}>{zh ? "尚未载入谱面：请先在上方载入 PDF 或导入 MusicXML，然后再录音或分析。" : "No score loaded: load a PDF or import MusicXML first, then record and analyze."}</p>}
       <label className={styles.field}>{zh ? "录音设备" : "Microphone"}
         <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
           <option value="">{zh ? "默认麦克风" : "Default microphone"}</option>
