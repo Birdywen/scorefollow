@@ -1,106 +1,18 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { IN_TUNE_CENTS, useTuner } from "./hooks/useTuner";
 import styles from "./page.module.css";
 
-// Chromatic tuner: mic -> autocorrelation pitch -> note + cents.
-// Same detector family as analysis_service track(): time-domain autocorr
-// with parabolic interpolation, RMS gate, A4 = 440 Hz fixed.
-const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const MIN_HZ = 55;   // below cello C1-ish floor, reject rumble
-const MAX_HZ = 1400; // above violin E7-ish ceiling, reject hiss
-const IN_TUNE_CENTS = 6;
-
-export function freqToReading(freq: number): { note: string; cents: number; hz: number } {
-  const m = 69 + 12 * Math.log2(freq / 440);
-  const r = Math.round(m);
-  return { note: `${NAMES[((r % 12) + 12) % 12]}${Math.floor(r / 12) - 1}`, cents: Math.round((m - r) * 100), hz: freq };
-}
-
-export function detectPitch(buf: Float32Array, sampleRate: number): number | null {
-  let sum = 0;
-  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-  if (Math.sqrt(sum / buf.length) < 0.01) return null; // silence gate
-  const minLag = Math.max(2, Math.floor(sampleRate / MAX_HZ));
-  const maxLag = Math.min(buf.length >> 1, Math.ceil(sampleRate / MIN_HZ));
-  let bestLag = -1, bestCorr = 0;
-  for (let lag = minLag; lag <= maxLag; lag++) {
-    let corr = 0;
-    for (let i = 0; i + lag < buf.length; i++) corr += buf[i] * buf[i + lag];
-    if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
-  }
-  if (bestLag < 0) return null;
-  // Parabolic interpolation around the peak for sub-sample lag.
-  const c = (lag: number) => {
-    let v = 0;
-    for (let i = 0; i + lag < buf.length; i++) v += buf[i] * buf[i + lag];
-    return v;
-  };
-  const y0 = c(bestLag - 1), y1 = bestCorr, y2 = c(bestLag + 1);
-  const denom = y0 - 2 * y1 + y2;
-  const shift = denom !== 0 ? (y0 - y2) / (2 * denom) : 0;
-  const lag = Math.abs(shift) < 1 ? bestLag + shift : bestLag;
-  return sampleRate / lag;
-}
+// 音高检测算法已抽取至 app/hooks/useTuner.ts（detectPitch / freqToReading，原样保留）。
+// 兼容旧导入：此前两者从本文件导出。
+export { detectPitch, freqToReading, IN_TUNE_CENTS, MAX_HZ, MIN_HZ } from "./hooks/useTuner";
 
 export default function TunerPanel({ lang, onClose }: { lang: "zh" | "en"; onClose: () => void }) {
   const zh = lang === "zh";
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState("");
-  const [reading, setReading] = useState<{ note: string; cents: number; hz: number } | null>(null);
-  const ctxRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef(0);
-  const lastRef = useRef(0);
-  const smoothRef = useRef<number[]>([]);
+  const { state, reading, error, start, stop } = useTuner({
+    onError: () => {},
+  });
 
-  useEffect(() => () => { void stop(); }, []);
-
-  async function start() {
-    try {
-      setError("");
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error(zh ? "浏览器不支持麦克风" : "Microphone not supported");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
-      });
-      const ctx = new AudioContext();
-      if (ctx.state === "suspended") await ctx.resume();
-      const src = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 4096;
-      src.connect(analyser);
-      const buf = new Float32Array(analyser.fftSize);
-      streamRef.current = stream;
-      ctxRef.current = ctx;
-      setRunning(true);
-      const loop = () => {
-        rafRef.current = requestAnimationFrame(loop);
-        const now = performance.now();
-        if (now - lastRef.current < 100) return; // 10 fps is plenty for a needle
-        lastRef.current = now;
-        analyser.getFloatTimeDomainData(buf);
-        const f = detectPitch(buf, ctx.sampleRate);
-        if (f == null) { setReading(null); return; }
-        const hist = smoothRef.current;
-        hist.push(f);
-        if (hist.length > 3) hist.shift();
-        const med = [...hist].sort((a, b) => a - b)[hist.length >> 1];
-        setReading(freqToReading(med));
-      };
-      loop();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      void stop();
-    }
-  }
-
-  async function stop() {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = 0;
-    smoothRef.current = [];
-    if (ctxRef.current) { try { await ctxRef.current.close(); } catch { /* noop */ } ctxRef.current = null; }
-    if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
-    setRunning(false);
-  }
+  const running = state === "running" || state === "requesting" || state === "stopping";
 
   const cents = reading?.cents ?? 0;
   const inTune = reading != null && Math.abs(cents) <= IN_TUNE_CENTS;
