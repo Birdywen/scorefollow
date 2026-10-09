@@ -96,3 +96,12 @@ curl -s http://127.0.0.1:8765/health
   节奏分必须以独立周期网格为参考才有意义。
 - `vamp.collect` 的 dict 键有 `RealTime` 类型，`float()` 转后再算；
   `notes["list"]` 项是 dict（timestamp/duration/values[Hz]）。
+
+## 7. 依赖与降级字段
+
+- 必需依赖见 `analysis_service/requirements.txt`（`numpy`、`mido`）；`vamp`
+  仅为可选插件桥，缺失时自动降级，测试环境无需安装。
+- 降级状态显式回传（不只记日志）：`result["summary"]["degraded"]`（bool）与
+  `result["summary"]["degradedReasons"]`（如 `pitch:builtin`、`onset:builtin`、
+  `beat:legacy`），由本次实际传感器可用性推导；三路全中时 `degraded` 为
+  false 且 reasons 为空。`sensors` 等既有字段保持不变。

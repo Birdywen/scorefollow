@@ -779,6 +779,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             measure_intervals.append({"measure": measure, "startSec": round(lo, 3), "endSec": round(hi, 3)})
     clipped = raw_clipped  # 归一化前测得, 见 read_wav 调用处
     sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
+    # Optional-plugin degradation is explicit in the payload (not logs only),
+    # derived from effective detector availability after engine guards
+    # (single-note pitch guard, beat_map length/tempo filtering). Beat counts
+    # as available only when the live vamp-beat grid is actually in use.
+    # Scoring math, thresholds and existing keys are untouched.
+    from .vamp_features import degradation_reasons as _degradation_reasons
+    _effective_beat = beat_map if sync_mode == "vamp-beat" else None
+    degraded_reasons = _degradation_reasons(pitch_notes, onset_hint, _effective_beat)
+    degraded = bool(degraded_reasons)
     if sync_mode == "manual-measures":
         measure_intervals = [{"measure": a["measure"], "startSec": a["audioSec"], "endSec": b["audioSec"]}
                              for a, b in zip(measure_sync, measure_sync[1:])]
@@ -805,6 +814,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "recordedFirstBeatSec": round(float(first_beat_audio_sec), 3) if first_beat_audio_sec is not None else None,
                         "estimatedLatencyMs": estimated_latency_ms,
                         "coveredSec": duration_sec, "sensors": sensors,
+                        "degraded": degraded, "degradedReasons": degraded_reasons,
                         "clipped": clipped, "detectedBpm": detected_bpm if detected_bpm is not None else mismatch_bpm,
                         "tempoMismatch": tempo_mismatch},
             "notes": aligned, "limitations": ["仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",

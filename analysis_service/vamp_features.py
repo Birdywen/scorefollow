@@ -82,3 +82,27 @@ def extract_beats(wav: bytes) -> list | None:
 def extract_all(wav: bytes) -> tuple:
     """Best-effort (pitch_notes, onsets, beats); 各自独立失败即 None。"""
     return extract_pitch_notes(wav), extract_onsets(wav), extract_beats(wav)
+
+
+def degradation_reasons(pitch_notes=None, onset_hint=None, beat_map=None) -> list:
+    """Explicit optional-plugin degradation, derived from live detector outputs.
+
+    Each sensor is independent: None/empty means that detector is unavailable
+    and the engine falls back (builtin pitch/onset, legacy tempo grid).
+    Callers pass the *effective* sensor values (after engine guards such as
+    the single-note pitch guard); never hardcode True. Empty list = no
+    degradation (vamp available and used).
+    """
+    reasons: list[str] = []
+    if not pitch_notes:
+        reasons.append("pitch:builtin")
+    if not onset_hint:
+        reasons.append("onset:builtin")
+    if not beat_map:
+        reasons.append("beat:legacy")
+    return reasons
+
+
+def is_degraded(pitch_notes=None, onset_hint=None, beat_map=None) -> bool:
+    """True when any optional detector fell back; see degradation_reasons."""
+    return bool(degradation_reasons(pitch_notes, onset_hint, beat_map))
