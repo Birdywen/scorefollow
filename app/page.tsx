@@ -6,7 +6,7 @@
  * + count-in / A-B 循环 / 变速 / TAP 建图 / advanced 识别参数面板
  * + 人工小节线校正层(manualBarsByPage) / 覆盖层开关 / timing 校验。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // 静态部署 basePath（next.config.ts 保持同步；root 构建时由 NEXT_PUBLIC_SF_BASE="" 覆盖）
 const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
@@ -578,7 +578,47 @@ export default function ScoreFollowPage() {
   const [expertOpen, setExpertOpen] = useState(() => { try { return localStorage.getItem("sf-expert-open") === "1"; } catch { return false; } });
   // 调整模式(对标纠错模式): 点小节弹设置框(拍号/小节号/Loop), 与纠错互斥
   const [adjustMode, setAdjustMode] = useState(false);
-  const [barPop, setBarPop] = useState<{ x: number; y: number } | null>(null);
+  const [barPop, setBarPop] = useState<{ x: number; y: number; tapX: number; tapY: number; mL: number; mT: number; mR: number; mB: number } | null>(null);
+  const barPopRef = useRef<HTMLDivElement>(null);
+  // adjust 弹框避让布局：旧 anchor 按固定偏移 (cx-140, cy-60) 落点，无视弹框 min-width 250px / 约 420px 高
+  // 的实际尺寸与被点小节位置，必盖住被点小节。新规则：layout effect 实测弹框盒后按 右→左→下→上 择侧，
+  // 与小节盒保持 >=12px 间隙并夹紧视口；视口过小无法兼顾时保弹框全可见（允许重叠，可操作优先）。
+  useLayoutEffect(() => {
+    if (!barPop) return;
+    const el = barPopRef.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const GAP = 12, EDGE = 8;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const clampRange = (v: number, lo: number, hi: number) => (hi < lo ? lo : Math.min(Math.max(v, lo), hi));
+    const m = { left: barPop.mL, top: barPop.mT, right: barPop.mR, bottom: barPop.mB };
+    const overlaps = (x: number, y: number) =>
+      x < m.right + GAP && x + box.width > m.left - GAP && y < m.bottom + GAP && y + box.height > m.top - GAP;
+    console.log("[layout]", { boxW: box.width, boxH: box.height, mL: m.left, mT: m.top, mR: m.right, mB: m.bottom, tapX: barPop.tapX, tapY: barPop.tapY, currentX: barPop.x, currentY: barPop.y });
+    const fits = (x: number, y: number) => x >= EDGE && y >= EDGE && x + box.width <= vw - EDGE && y + box.height <= vh - EDGE;
+    const cy = clampRange(barPop.tapY - box.height / 2, EDGE, vh - box.height - EDGE);
+    const cx = clampRange(barPop.tapX - box.width / 2, EDGE, vw - box.width - EDGE);
+    const cands = [
+      { x: m.right + GAP, y: cy },
+      { x: m.left - GAP - box.width, y: cy },
+      { x: cx, y: m.bottom + GAP },
+      { x: cx, y: m.top - GAP - box.height },
+    ];
+    for (const c of cands) {
+      const x = clampRange(c.x, EDGE, vw - box.width - EDGE);
+      const y = clampRange(c.y, EDGE, vh - box.height - EDGE);
+      console.log("[cand]", { rawX: Math.round(c.x), rawY: Math.round(c.y), clampedX: Math.round(x), clampedY: Math.round(y), fits: fits(x, y), overlaps: overlaps(x, y) });
+      if (fits(x, y) && !overlaps(x, y)) {
+        console.log("[adopt]", { x: Math.round(x), y: Math.round(y) });
+        if (Math.abs(x - barPop.x) > 0.5 || Math.abs(y - barPop.y) > 0.5) setBarPop({ ...barPop, x, y });
+        return;
+      }
+    }
+    const fx = clampRange(barPop.x, EDGE, vw - box.width - EDGE);
+    const fy = clampRange(barPop.y, EDGE, vh - box.height - EDGE);
+    if (Math.abs(fx - barPop.x) > 0.5 || Math.abs(fy - barPop.y) > 0.5) setBarPop({ ...barPop, x: fx, y: fy });
+  }, [barPop]);
   const meterMapRef = useRef<Record<number, number>>({});
   const barNumRef = useRef<Record<number, number>>({});
   const loopMRef = useRef<{ on: boolean; from: number; to: number }>({ on: false, from: 1, to: 1 });
@@ -2057,6 +2097,24 @@ export default function ScoreFollowPage() {
     [analysis],
   );
 
+  // 被点小节的客户端矩形：与 findMeasureAt 同一套谱面坐标，经 stack 盒换算到 client 坐标，供弹框避让用
+  const measureClientRect = useCallback(
+    (si: number, bi: number): { left: number; top: number; right: number; bottom: number } | null => {
+      if (!analysis) return null;
+      const stack = stackRef.current;
+      if (!stack) return null;
+      const r = stack.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      const s = analysis.systems[si];
+      const row = analysis.bars[si] ?? [];
+      if (!s || row.length < 2 || bi < 0 || bi > row.length - 2) return null;
+      const y1 = s.cs[0] - analysis.spatium, y2 = s.cs[s.cs.length - 1] + analysis.spatium;
+      const sx = r.width / analysis.pageW, sy = r.height / analysis.pageH;
+      return { left: r.left + row[bi] * sx, top: r.top + y1 * sy, right: r.left + row[bi + 1] * sx, bottom: r.top + y2 * sy };
+    },
+    [analysis],
+  );
+
   const onScoreClick = useCallback(
     (ev: React.MouseEvent) => {
       if (suppressClickRef.current) { suppressClickRef.current = false; return; } // 长按新增后的抬手 click
@@ -2064,15 +2122,18 @@ export default function ScoreFollowPage() {
       if (!p) return;
       if (adjustMode) {
         // 调整模式: 点小节/线都弹设置框, 点空关闭
-        const anchor = (cx: number, cy: number) => ({
+        // 初猜沿用旧固定偏移，携带 tap 点与小节盒给 layout effect 做实测择侧（旧偏移必盖小节，仅作首帧初值，绘制前即被纠正）
+        const anchor = (cx: number, cy: number, m: { left: number; top: number; right: number; bottom: number } | null) => ({
           x: Math.min(Math.max(8, cx - 140), window.innerWidth - 300),
           y: Math.min(Math.max(8, cy - 60), window.innerHeight - 420),
+          tapX: cx, tapY: cy,
+          mL: m?.left ?? cx, mT: m?.top ?? cy, mR: m?.right ?? cx, mB: m?.bottom ?? cy,
         });
         const meas = findMeasureAt(p.x, p.y);
         if (meas) {
           const em = engineOfSibi(meas.si, meas.bi);
           setSelectedBar(meas);
-          setBarPop(anchor(ev.clientX, ev.clientY));
+          setBarPop(anchor(ev.clientX, ev.clientY, measureClientRect(meas.si, meas.bi)));
           if (em != null) setStatus(`第${dispOf(em)}小节 · 拍号/小节号/Loop`);
           return;
         }
@@ -2081,7 +2142,7 @@ export default function ScoreFollowPage() {
         if (hit && hit.bi < rowLen - 1) {
           const em = engineOfSibi(hit.si, hit.bi);
           setSelectedBar({ si: hit.si, bi: hit.bi });
-          setBarPop(anchor(ev.clientX, ev.clientY));
+          setBarPop(anchor(ev.clientX, ev.clientY, measureClientRect(hit.si, hit.bi)));
           if (em != null) setStatus(`第${dispOf(em)}小节 · 拍号/小节号/Loop`);
           return;
         }
@@ -2126,7 +2187,7 @@ export default function ScoreFollowPage() {
       // metro 点小节由引擎 host 监听统一处理(播放中=暖机重起, 未播放=只移动头),
       // 这里不再另发 metro-jump, 避免双通道重复重起
     },
-    [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, pageNum, placeCursor, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw, adjustMode, engineOfSibi, dispOf],
+    [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, measureClientRect, pageNum, placeCursor, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw, adjustMode, engineOfSibi, dispOf],
   );
 
   // 纠错新增小节线(长按/双击共用): 点位须落在某系统行内
@@ -3704,7 +3765,7 @@ export default function ScoreFollowPage() {
         const disp = barNumRef.current[m] ?? m;
         const total = totalEngineMeasures();
         return (
-          <div className={styles.barPop} style={{ top: barPop.y, left: barPop.x, right: "auto" }} role="dialog" aria-label={tx("barSetup")}>
+          <div ref={barPopRef} className={styles.barPop} style={{ top: barPop.y, left: barPop.x, right: "auto" }} role="dialog" aria-label={tx("barSetup")}>
             <div className={styles.tbMenuRow}>
               <strong>{tx("barSetup")} · {disp === m ? `第${disp}小节` : `m${m}→第${disp}小节`}</strong>
               <span style={{ flex: 1 }} />
@@ -4247,7 +4308,7 @@ export default function ScoreFollowPage() {
       </div>
 
        <footer className={styles.statusbar}>
-         <span className={styles.statusmsg} role="status" aria-live="polite" data-testid="score-load-status" data-phase={scorePhase} data-has-score={analysis ? "true" : "false"}>{status}</span>
+         <span className={styles.statusmsg} role="status" aria-live="polite" data-testid="score-load-status" data-phase={scorePhase} data-has-score={analysis ? "true" : "false"}>{status}{/* 纯 CSS spinner：仅 loading/recognizing 可见，其余阶段仍在 DOM 但隐藏；状态由 role=status 文本播报，spinner aria-hidden 不重复打扰读屏 */}<span className={styles.loadSpin} data-active={scorePhase === "loading" || scorePhase === "recognizing"} aria-hidden="true" /></span>
          {analysis && <span className={styles.statusFacts}>
            <span>{lang === "zh" ? `第 ${pageNum}/${numPages} 页` : `Page ${pageNum}/${numPages}`}</span>
            <span>{cursorInfo || `${barsTotal} ${tx("barUnit")}`}</span>

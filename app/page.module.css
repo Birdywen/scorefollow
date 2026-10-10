@@ -469,6 +469,16 @@ a.secondary {
 .statusmsg, .page[data-theme="dark"] .statusmsg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sf-muted); }
 .statusFacts { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .statusFacts > span + span { padding-left: 9px; border-left: 1px solid var(--sf-border); }
+/* PDF 载入 spinner：纯 CSS @keyframes，无依赖；仅 data-active=true（loading/recognizing）可见，
+   其余阶段 display:none 但保留在 DOM；prefers-reduced-motion 下退为不旋转的脉冲指示。 */
+.loadSpin { display: none; width: 11px; height: 11px; margin-left: 8px; border-radius: 50%;
+  border: 2px solid rgba(120,140,170,.35); border-top-color: #4a6a8a; vertical-align: -1px; }
+.loadSpin[data-active="true"] { display: inline-block; animation: sf-spin .8s linear infinite; }
+@keyframes sf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .loadSpin[data-active="true"] { animation: sf-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes sf-pulse { 50% { opacity: .3; } }
 .statusWarning { color: #9a5800; font-weight: 700; }
 .statusTechnical { font-family: ui-monospace, monospace; white-space: nowrap; }
 .modalBackdrop { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10100; padding: 18px; background: rgba(14, 24, 39, .65); }

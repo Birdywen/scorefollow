@@ -12,6 +12,8 @@
 .primary { width: 100%; min-height: 42px; margin: 16px 0 4px; border: 0; border-radius: 9px; background: #215dd4; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .primary:disabled { opacity: .5; cursor: not-allowed; }
 .error { padding: 10px 12px; border-radius: 10px; background: var(--sf-error-bg, #fff2e8); color: var(--sf-error-ink, #7b3618); line-height: 1.6; overflow-wrap: anywhere; }
+/* 引擎降级提示: 与 .error 同构但用警告色，title  tooltip 解释完整插件缺失 */
+.warn { padding: 8px 10px; border-radius: 10px; background: var(--sf-warn-bg, #fff8e6); color: var(--sf-warn-ink, #7b5a18); border: 1px solid var(--sf-warn-border, #f0dfae); line-height: 1.6; font-size: 12px; overflow-wrap: anywhere; }
 .report { margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--sf-border); }
 .report h2 { font-size: 16px; margin: 0 0 12px; }
 .report h3 { font-size: 13px; }

@@ -19,10 +19,18 @@ type Note = {
   timingStatus?: "correct" | "early" | "late" | "uncertain" | "unscored";
   matchStatus?: "matched" | "uncertain";
 };
+type Rhythm = {
+  source?: string; beats?: number[];
+  downbeats?: { measure: number; sec: number }[];
+  phrases?: { index: number; startMeasure: number; endMeasure: number; startSec: number; endSec: number }[];
+  phraseMeasures?: number;
+};
 type Result = {
   version: string; instrument?: string; notes: Note[]; limitations: string[];
   measureIntervals?: { measure: number; startSec: number; endSec: number }[];
+  rhythm?: Rhythm;
   summary: { pitchScore: number | null; rhythmScore: number | null;
+    degraded?: boolean; degradedReasons?: string[];
     outlierNotes?: number; scoredPitchNotes?: number;
     pitchToleranceCents?: number;
     timingCandidateNotes?: number;
@@ -132,6 +140,17 @@ function hashSignature(text: string): string {
   let hash = 5381;
   for (let i = 0; i < text.length; i++) hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
   return (hash >>> 0).toString(36);
+}
+
+// degradedReasons(后端原文: pitch:builtin / onset:builtin / beat:legacy)译为短标签；
+// 未知原因原样保留，保证未来新增原因也不丢信息、不抛错。
+function degradedLabels(reasons: string[] | undefined, zh: boolean): string {
+  const map: Record<string, string> = zh
+    ? { "pitch:builtin": "音高", "onset:builtin": "起音", "beat:legacy": "节拍" }
+    : { "pitch:builtin": "pitch", "onset:builtin": "onset", "beat:legacy": "beat" };
+  const list = (reasons ?? []).filter((r) => typeof r === "string" && r);
+  if (!list.length) return zh ? "内置算法" : "builtin detectors";
+  return list.map((r) => map[r] ?? r).join(zh ? "、" : "/");
 }
 
 function analysisSignature(input: {
@@ -849,6 +868,16 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       {result.instrument !== "piano" && result.summary.pitchToleranceCents !== 15 && <p role="status" className={styles.hint}>{zh ? "这是旧评分规则的报告。图表已按 ±15 音分显示；请更新分析服务并重新分析，刷新分数与错音数量。" : "This report uses the old scoring rules. Charts now use ±15 cents; update the analysis service and reanalyze to refresh the score and wrong-note totals."}</p>}
       <div className={styles.scores}><div><b>{result.summary.pitchScore ?? "—"}</b>{zh ? "综合音高" : "Pitch"}</div>
         <div><b>{result.summary.rhythmScore ?? "—"}</b>{zh ? "跟拍" : "Timing"}</div></div>
+      {/* 引擎状态: 后端已回传 degraded/degradedReasons(旧报告缺失则不渲染, 不抛错) */}
+      {result.summary.degraded === true && <p role="status" className={styles.warn} title={zh ? "完整 vamp 插件（pYIN + QM）不可用，已退回内置算法；分数仍可参考，但起音与节拍精度低于完整算法" : "Full vamp plugins (pYIN + QM) unavailable; fell back to builtin detectors. Scores still apply but onset/beat precision is lower"}>
+        {zh ? `降级算法：${degradedLabels(result.summary.degradedReasons, true)}` : `Degraded engine: ${degradedLabels(result.summary.degradedReasons, false)}`}
+      </p>}
+      {result.summary.degraded === false && <p className={styles.hint}>{zh ? "完整算法 ✓" : "full analysis ✓"}</p>}
+      {/* 节奏结构: 只读展示 result.rhythm，缺失时整段不渲染 */}
+      {result.rhythm && ((result.rhythm.beats?.length ?? 0) > 0 || (result.rhythm.phrases?.length ?? 0) > 0) && <p className={styles.hint}>
+        {zh ? `节奏结构 · ${result.rhythm.source === "vamp-beat" ? "实测拍点" : "固定速度网格"} · 拍 ${result.rhythm.beats?.length ?? 0} · 每乐句 ${result.rhythm.phraseMeasures ?? "—"} 小节 · 乐句 ${result.rhythm.phrases?.length ?? 0}`
+          : `Structure · ${result.rhythm.source === "vamp-beat" ? "detected beats" : "fixed-tempo grid"} · beats ${result.rhythm.beats?.length ?? 0} · ${result.rhythm.phraseMeasures ?? "—"} bars/phrase · ${result.rhythm.phrases?.length ?? 0} phrases`}
+      </p>}
       <VisualReport
         zh={zh}
         notes={result.notes}
