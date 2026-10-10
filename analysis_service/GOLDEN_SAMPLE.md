@@ -21,6 +21,9 @@ performed onset seconds), never derived from engine output:
    Score pitch stays 72; the deviation is in the performance.
 3. **late** — note `n3` rendered +200 ms late (`LATE_OFFSET_MS`). Score onset
    stays nominal; the deviation is in the performance.
+4. **long** — 24 in-tune, on-time notes (~24.25 s, pitches cycle the same
+   five score pitches). Exists so the real vamp chain has enough audio for
+   the QM BarBeatTracker to lock; see Degraded below.
 
 Each builder returns `{name, wav, xml, bpm, instrument, ground_truth}` plus
 the variant's target note id and offset. Tests call the real scoring path
@@ -45,7 +48,7 @@ per-note error (191 ms measured, 9 ms off) stays well inside `TIMING_MS_TOL`.
 No assertion was weakened to force a pass; the offset was chosen so the
 honest ordering holds.
 
-## Measured values (builtin/legacy, vamp absent, 2026-10-10)
+## Measured values, short fixtures (builtin/legacy, 2026-10-10)
 
 | Fixture | pitchScore | rhythmScore | timingAccuracy | stability | offsetMs | spreadMs | wrong | per-note pitch (c) | per-note timing (ms) |
 |---|---|---|---|---|---|---|---|---|---|
@@ -53,16 +56,37 @@ honest ordering holds.
 | detuned n3 +60 c | 89 | 96 | 96 | 98 | -10 | 3 | 1 | n3 59.3 (sharp/wrong_pitch), rest ≈ -0.7 | same as clean |
 | late n3 +200 ms | 100 | 91 | 77 | 91 | 6 | 16 | 0 | all correct (≈ -0.7) | n3 191 (late), n2 -6, n4 17, n5 -13 |
 
+## Measured values, long fixture (live vamp, 2026-10-10)
+
+`extract_all` on the long wav: pYIN 24 segments, QM onsets 48 (attack +
+release per note, merged), QM beats 25. `analyze(..., sync_mode="vamp-beat")`:
+
+| Fixture | pitchScore | rhythmScore | timingAccuracy | stability | offsetMs | spreadMs | wrong/correct | degraded | sensors |
+|---|---|---|---|---|---|---|---|---|---|
+| long 24-note | 100 | 94 | 95 | 98 | -14 | 4 | 0 / 24 | False (`[]`) | fused-pitch, qm-onset |
+
+`detectedBpm` 60.1, `coveredSec` 24.25. `rhythm.source == "vamp-beat"` with
+24 beats (0.104…23.104, clipped to the analyzed span), 24 downbeats and
+6 phrases of 4 measures. The same long wav through the legacy path stays
+`degraded: True` with pitch 100 / rhythm 96.
+
 Ordering (asserted, not just absolute): clean pitchScore 100 >
 detuned 89 (drop 11 >= 5); clean timingAccuracy 96 > late 77
 (drop 19 >= 5); clean rhythmScore 96 > late 91.
 
-Degraded: all three fixtures run with no optional sensors, so
+Degraded: the three short fixtures run with no optional sensors, so
 `sensors == ["builtin"]`, `summary.degraded is True`, and
 `degradedReasons == ["pitch:builtin", "onset:builtin", "beat:legacy"]`.
-The test also drives `vamp_features.extract_all` through the real
-`import vamp` failure path (`sys.modules {"vamp": None}`) and asserts
-`(None, None, None)` before checking the engine payload.
+This is structural, not environmental: the QM BarBeatTracker needs >= 4
+beats and returns nothing on 5.25 s of pure sine (measured beats = 0 on the
+5-note fixture, 17 on 8 notes, 25 on 24 notes), so short fixtures can never
+clear `beat:legacy` no matter which plugins are installed. The long fixture
+is the counter-proof: with all three live sensors firing, `degraded is
+False` and `degradedReasons == []`. The original test still drives
+`vamp_features.extract_all` through the real `import vamp` failure path
+(`sys.modules {"vamp": None}`) and asserts `(None, None, None)` before
+checking the engine payload; the new long tests skip with an explicit
+reason only when the bridge or plugin `.so` files are genuinely absent.
 
 ## Determinism
 

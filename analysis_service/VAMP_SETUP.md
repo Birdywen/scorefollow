@@ -3,7 +3,7 @@
 分析服务默认只依赖 numpy。装好本页插件后，`analysis_service/server.py`
 会在每次 `/jobs` 分析时自动试用 pYIN（基频）+ QM（起音）；缺插件时引擎
 静默退回自研检测，前端零改动。结果 `summary.sensors` 标明本次用的耳朵：
-`["pyin-pitch", "qm-onset"]` 或 `["builtin"]`。
+`["fused-pitch", "qm-onset"]`（pYIN 补盲区的融合基频 + QM 起音）或 `["builtin"]`。
 
 ## 1. 系统包
 

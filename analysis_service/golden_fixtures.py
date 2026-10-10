@@ -154,3 +154,49 @@ def build_late():
         "late_note_id": f"n{LATE_NOTE_INDEX + 1}",
         "late_offset_ms": LATE_OFFSET_MS,
     }
+
+
+# Fixture 4 (long): 24 in-tune, on-time notes (~24.25 s). The 5-note fixtures
+# are too short for the QM BarBeatTracker (needs >= 4 beats; on 5.25 s of
+# pure sine it returns nothing, so the short path stays beat:legacy by
+# design). 24 steady quarter notes give the tracker enough context to lock,
+# exercising the real non-degraded path (degraded False). Pitches cycle the
+# same five score pitches so musicxml_for_pitches still applies.
+LONG_NOTE_COUNT = 24
+LONG_PITCHES = tuple(FIXTURE_PITCHES[i % len(FIXTURE_PITCHES)]
+                     for i in range(LONG_NOTE_COUNT))
+
+
+def _ground_truth_for(pitches, detune_cents_map=None, offset_sec_map=None):
+    """Declared ground truth for an arbitrary pitch list (long fixture)."""
+    detune_cents_map = detune_cents_map or {}
+    offset_sec_map = offset_sec_map or {}
+    truth = []
+    for index, midi in enumerate(pitches):
+        score_onset = NOMINAL_FIRST_ONSET_SEC + index * NOTE_SPACING_SEC
+        performed_onset = score_onset + float(offset_sec_map.get(index, 0.0))
+        truth.append(
+            {
+                "id": f"n{index + 1}",
+                "pitchMidi": midi,
+                "scoreOnsetSec": round(score_onset, 3),
+                "performedOnsetSec": round(performed_onset, 3),
+                "renderedDetuneCents": float(detune_cents_map.get(index, 0.0)),
+                "renderedOffsetMs": round(float(offset_sec_map.get(index, 0.0)) * 1000.0, 1),
+            }
+        )
+    return truth
+
+
+def build_long():
+    """Fixture 4: long in-tune, on-time performance for the vamp path."""
+    np.random.seed(RANDOM_SEED)
+    wav = _encode_wav(_render(LONG_PITCHES))
+    return {
+        "name": "long",
+        "wav": wav,
+        "xml": musicxml_for_pitches(LONG_PITCHES),
+        "bpm": BPM,
+        "instrument": INSTRUMENT,
+        "ground_truth": _ground_truth_for(LONG_PITCHES),
+    }

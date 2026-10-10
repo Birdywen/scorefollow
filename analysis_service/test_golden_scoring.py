@@ -13,10 +13,12 @@ import numpy as np
 from . import vamp_features
 from .engine import analyze
 from .golden_fixtures import (
+    LONG_NOTE_COUNT,
     RANDOM_SEED,
     build_clean,
     build_detuned,
     build_late,
+    build_long,
 )
 
 # Tolerance: pitch cents. Autocorrelation tracker uses a ~93 ms Hann window
@@ -58,6 +60,23 @@ def _by_id(notes, note_id):
         if note["id"] == note_id:
             return note
     raise AssertionError(f"missing note {note_id}")
+
+
+def _require_vamp_plugins(testcase):
+    """Skip guard for the live-vamp tests: skip only when vamp is genuinely
+    unavailable (python bridge or plugin .so files missing), with an explicit
+    reason. Never silently passes: once plugins are proven present, callers
+    must assert on live detector output."""
+    try:
+        import vamp
+    except ImportError:
+        testcase.skipTest("vamp python bridge not installed")
+    required = ("pyin:pyin", "qm-vamp-plugins:qm-onsetdetector",
+                "qm-vamp-plugins:qm-barbeattracker")
+    found = [p for p in vamp.list_plugins() if p in required]
+    if len(found) < len(required):
+        testcase.skipTest(f"vamp plugins unavailable, found={sorted(found)}")
+    return vamp
 
 
 class GoldenScoringTests(unittest.TestCase):
@@ -141,6 +160,32 @@ class GoldenScoringTests(unittest.TestCase):
             LATE_ACCURACY_DROP_MIN,
         )
         self.assertGreater(clean["summary"]["rhythmScore"], late["summary"]["rhythmScore"])
+
+    def test_long_fixture_extract_all_sensors_fire(self):
+        _require_vamp_plugins(self)
+        fix = build_long()
+        pitch, onsets, beats = vamp_features.extract_all(fix["wav"])
+        # Plugins proven present above: every sensor must produce output.
+        self.assertTrue(pitch, "pYIN returned no note segments on the long fixture")
+        self.assertTrue(onsets, "QM onset detector returned no onsets on the long fixture")
+        self.assertTrue(beats, "QM beat tracker returned no beats on the long fixture")
+
+    def test_long_fixture_vamp_beat_is_not_degraded(self):
+        _require_vamp_plugins(self)
+        fix = build_long()
+        pitch, onsets, beats = vamp_features.extract_all(fix["wav"])
+        self.assertTrue(pitch and onsets and beats)
+        result = analyze(fix["wav"], fix["xml"], fix["bpm"], fix["instrument"],
+                         sync_mode="vamp-beat", pitch_notes=pitch,
+                         onset_hint=onsets, beat_map=beats)
+        summary = result["summary"]
+        self.assertEqual(summary["syncMode"], "vamp-beat")
+        self.assertFalse(summary["degraded"])
+        self.assertEqual(summary["degradedReasons"], [])
+        self.assertIn("fused-pitch", summary["sensors"])
+        self.assertIn("qm-onset", summary["sensors"])
+        self.assertEqual(summary["noteCount"], LONG_NOTE_COUNT)
+        self.assertGreaterEqual(summary["pitchScore"], CLEAN_PITCH_SCORE_MIN)
 
     def test_builtin_degraded_when_vamp_absent(self):
         # Real import-failure path: `import vamp` raises, each extractor

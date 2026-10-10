@@ -9,7 +9,7 @@ import unittest
 import numpy as np
 
 from .engine import analyze
-from .golden_fixtures import RANDOM_SEED, build_clean
+from .golden_fixtures import LONG_NOTE_COUNT, RANDOM_SEED, build_clean, build_long
 from .rhythm_annotator import PHRASE_MEASURES, annotate_rhythm
 
 
@@ -92,6 +92,40 @@ class RhythmAnnotatorTests(unittest.TestCase):
                          onset_hint=onsets, beat_map=beats)
         self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
         self.assertEqual(result["rhythm"]["source"], "vamp-beat")
+
+    def test_long_fixture_rhythm_uses_live_vamp_grid(self):
+        from . import vamp_features
+        try:
+            import vamp
+        except ImportError:
+            self.skipTest("vamp python bridge not installed")
+        required = ("pyin:pyin", "qm-vamp-plugins:qm-onsetdetector",
+                    "qm-vamp-plugins:qm-barbeattracker")
+        found = [p for p in vamp.list_plugins() if p in required]
+        if len(found) < len(required):
+            self.skipTest(f"vamp plugins unavailable, found={sorted(found)}")
+        np.random.seed(RANDOM_SEED)
+        fix = build_long()
+        pitch, onsets, beats = vamp_features.extract_all(fix["wav"])
+        self.assertTrue(pitch and onsets and beats)
+        result = analyze(fix["wav"], fix["xml"], fix["bpm"], fix["instrument"],
+                         sync_mode="vamp-beat", pitch_notes=pitch,
+                         onset_hint=onsets, beat_map=beats)
+        self.assertFalse(result["summary"]["degraded"])
+        rhythm = result["rhythm"]
+        self.assertEqual(rhythm["source"], "vamp-beat")
+        for key in ("beats", "downbeats", "phrases"):
+            self.assertTrue(rhythm[key], f"rhythm[{key!r}] is empty")
+        # Monotonic structure: beats strictly increase, downbeats and
+        # phrases advance with the analyzed measures.
+        self.assertTrue(all(b < c for b, c in zip(rhythm["beats"], rhythm["beats"][1:])))
+        secs = [d["sec"] for d in rhythm["downbeats"]]
+        self.assertTrue(all(b < c for b, c in zip(secs, secs[1:])))
+        self.assertEqual([d["measure"] for d in rhythm["downbeats"]],
+                         [m["measure"] for m in result["measureIntervals"]])
+        starts = [p["startSec"] for p in rhythm["phrases"]]
+        self.assertTrue(all(b < c for b, c in zip(starts, starts[1:])))
+        self.assertEqual(rhythm["phrases"][-1]["endMeasure"], LONG_NOTE_COUNT)
 
 
 if __name__ == "__main__":
