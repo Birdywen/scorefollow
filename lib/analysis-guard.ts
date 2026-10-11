@@ -3,7 +3,24 @@
  * version/notes/limitations/summary 逐项收紧, 任一项不合即拒收, 面板只显示错误。 */
 
 function numOrNull(v: unknown): boolean {
-  return typeof v === "number" || v === null;
+  return v === null || (typeof v === "number" && Number.isFinite(v));
+}
+
+function scoreOrNull(v: unknown): boolean {
+  return v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100);
+}
+
+function countValue(v: unknown): boolean {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+function measureValue(v: unknown): boolean {
+  return typeof v === "number" && Number.isInteger(v) && v >= 1;
+}
+
+/** 面板按整数小节号做 Math.max/onJump；小数字/NaN 会污染 scoreMeasures 并误报对齐错误。 */
+function noteMeasure(v: unknown): boolean {
+  return measureValue(v);
 }
 
 export function isValidAnalysisResult(r: unknown): boolean {
@@ -22,18 +39,23 @@ export function isValidAnalysisResult(r: unknown): boolean {
   for (const n of o.notes) {
     if (!n || typeof n !== "object") return false;
     const nn = n as Record<string, unknown>;
-    if (typeof nn.id !== "string" || typeof nn.measure !== "number") return false;
+    if (typeof nn.id !== "string" || !nn.id || !noteMeasure(nn.measure)) return false;
     if (!numOrNull(nn.expectedSec) || !numOrNull(nn.performedSec)) return false;
     if (!numOrNull(nn.pitchErrorCents) || !numOrNull(nn.timingErrorMs)) return false;
-    if (typeof nn.confidence !== "number" || typeof nn.status !== "string") return false;
+    if (typeof nn.confidence !== "number" || !Number.isFinite(nn.confidence) || nn.confidence < 0) return false;
+    if (typeof nn.status !== "string" || !nn.status) return false;
   }
   const s = o.summary;
   if (!s || typeof s !== "object") return false;
   const ss = s as Record<string, unknown>;
-  if (!numOrNull(ss.pitchScore) || !numOrNull(ss.rhythmScore)) return false;
+  if (!scoreOrNull(ss.pitchScore) || !scoreOrNull(ss.rhythmScore)) return false;
   if (!numOrNull(ss.timingOffsetMs) || !numOrNull(ss.timingSpreadMs)) return false;
-  if (typeof ss.noteCount !== "number" || typeof ss.voicedNotes !== "number") return false;
-  if (typeof ss.timedNotes !== "number" || typeof ss.confidence !== "string") return false;
+  if (!countValue(ss.noteCount) || !countValue(ss.voicedNotes)) return false;
+  if (!countValue(ss.timedNotes) || typeof ss.confidence !== "string" || !ss.confidence) return false;
+  // 面板用 measureCount 做 PDF/MusicXML 对齐判断(number === number)；字符串会恒为 false 并误报。
+  if (ss.measureCount !== undefined && !(typeof ss.measureCount === "number" && Number.isInteger(ss.measureCount) && ss.measureCount >= 0)) return false;
+  if (ss.startMeasure !== undefined && !measureValue(ss.startMeasure)) return false;
+  if (ss.endMeasure !== undefined && !measureValue(ss.endMeasure)) return false;
   return true;
 }
 

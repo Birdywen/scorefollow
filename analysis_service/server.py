@@ -42,11 +42,24 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
             # 钢琴走独立复音通道: 转录即传感器, 不经过单声部 FFT 管道
             from .piano_engine import analyze_piano
             result = analyze_piano(audio, xml, bpm, start_measure)
+            # Piano does not depend on vamp plugins; report no vamp degradation.
+            summary = result.get("summary", {})
+            summary.setdefault("degraded", False)
+            summary.setdefault("degradedReasons", [])
         else:
             # 有 Vamp 插件就用 pYIN+QM 当耳朵, 没有则引擎退回自研检测(前端无感)
             pitch_notes, onset_hint, beat_map = vamp_features.extract_all(audio)
             result = analyze(audio, xml, bpm, instrument, start_measure, first_beat_audio_sec, sync_mode,
                              pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map, measure_sync=measure_sync)
+            # Defensive overlay: engine already sets summary.degraded from
+            # effective availability; keep it, only fill if missing so the
+            # job payload always exposes degradation (not logs only).
+            summary = result.get("summary", {})
+            if "degraded" not in summary or "degradedReasons" not in summary:
+                effective_beat = beat_map if summary.get("syncMode") == "vamp-beat" else None
+                reasons = vamp_features.degradation_reasons(pitch_notes, onset_hint, effective_beat)
+                summary.setdefault("degraded", bool(reasons))
+                summary.setdefault("degradedReasons", reasons)
         update = {"status": "completed", "result": result}
     except Exception as exc:
         update = {"status": "failed", "error": str(exc) if isinstance(exc, ValueError) else "分析失败，请检查音频和谱面"}

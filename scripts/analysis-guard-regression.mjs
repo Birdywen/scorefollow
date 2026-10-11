@@ -35,4 +35,24 @@ for (const measureIntervals of [{}, null, [null], [{ ...interval, startSec: -1 }
 assert.equal(guard.isValidAnalysisResult({ ...valid, notes: [{ ...note, measure: "1" }] }), false);
 assert.equal(guard.isValidAnalysisResult({ ...valid, summary: { ...summary, noteCount: "1" } }), false);
 assert.equal(guard.isValidAnalysisResult({ ...valid, limitations: [null] }), false);
+// 回归:面板按整数小节号做 Math.max/onJump,按数值计数与 0-100 分数渲染;非法值必须拒收。
+assert.equal(guard.isValidAnalysisResult({
+  ...valid, summary: { ...summary, measureCount: 6, startMeasure: 1, endMeasure: 6 },
+}), true);
+// 真实引擎输出 confidence 可略超 1(如 1.02),必须放行。
+assert.equal(guard.isValidAnalysisResult({ ...valid, notes: [{ ...note, confidence: 1.02 }] }), true);
+for (const badNote of [{ ...note, measure: 1.5 }, { ...note, measure: NaN },
+  { ...note, measure: Infinity }, { ...note, measure: 0 }, { ...note, id: "" },
+  { ...note, confidence: NaN }, { ...note, confidence: Infinity }, { ...note, confidence: -0.5 }, { ...note, status: "" }]) {
+  assert.equal(guard.isValidAnalysisResult({ ...valid, notes: [badNote] }), false);
+}
+for (const badSummary of [{ ...summary, pitchScore: Infinity }, { ...summary, pitchScore: NaN },
+  { ...summary, pitchScore: 101 }, { ...summary, pitchScore: -1 },
+  { ...summary, rhythmScore: Infinity }, { ...summary, noteCount: 1.5 },
+  { ...summary, noteCount: -1 }, { ...summary, voicedNotes: -1 }, { ...summary, timedNotes: 0.5 },
+  { ...summary, timingOffsetMs: Infinity }, { ...summary, timingSpreadMs: NaN },
+  { ...summary, confidence: "" }, { ...summary, measureCount: "6" },
+  { ...summary, measureCount: 1.5 }, { ...summary, startMeasure: 1.5 }, { ...summary, endMeasure: 0 }]) {
+  assert.equal(guard.isValidAnalysisResult({ ...valid, summary: badSummary }), false);
+}
 console.log("ANALYSIS_GUARD_REGRESSION_PASS");

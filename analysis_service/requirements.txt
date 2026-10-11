@@ -1,0 +1,6 @@
+# ScoreFollow analysis_service runtime dependencies.
+# Install: pip install -r analysis_service/requirements.txt
+numpy
+mido
+# Optional (degraded gracefully to builtin detectors when absent):
+# vamp  # pYIN + QM plugins; build recipe in analysis_service/VAMP_SETUP.md

@@ -1,0 +1,20 @@
+import { chromium } from '@playwright/test';
+const URL='http://localhost:3000/scorefollow/';
+const PDF='/home/user/scorefollow/public/chopin.pdf';
+const b=await chromium.launch();
+const p=await b.newPage({viewport:{width:1280,height:800}});
+p.on('console', msg => console.log('[browser]', msg.text()));
+await p.goto(URL,{waitUntil:'domcontentloaded'});
+await p.waitForSelector('header',{timeout:30000});
+const ins=p.locator('input[type="file"]');
+for(let i=0;i<await ins.count();i++){const a=(await ins.nth(i).getAttribute('accept'))||'';if(a.includes('pdf')){await ins.nth(i).setInputFiles(PDF);break;}}
+await p.waitForSelector('[data-testid="score-load-status"][data-has-score="true"]',{timeout:60000});
+await p.waitForTimeout(1200);
+await p.keyboard.press('j');
+await p.waitForTimeout(400);
+const box=await p.locator('#notation').first().boundingBox();
+const tx=box.x+box.width*0.55, ty=box.y+box.height*0.45;
+console.log('[click]', {tx, ty});
+await p.mouse.click(tx,ty);
+await p.waitForTimeout(600);
+await b.close();
