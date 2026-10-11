@@ -28,6 +28,9 @@ type Rhythm = {
 type Result = {
   version: string; instrument?: string; notes: Note[]; limitations: string[];
   measureIntervals?: { measure: number; startSec: number; endSec: number }[];
+  measureScores?: { measure: number; pitchScore: number | null; noteCount: number; scoredNotes: number }[];
+  syncSuggestion?: { appliedOffsetSec: number; candidates: { offsetSec: number; medianResidualMs: number; pitchMatchRate: number }[]; causal: boolean; timedNotes: number } | null;
+  suggestedMeasureSync?: { measure: number; audioSec: number }[];
   rhythm?: Rhythm;
   summary: { pitchScore: number | null; rhythmScore: number | null;
     degraded?: boolean; degradedReasons?: string[];
@@ -161,10 +164,11 @@ function analysisSignature(input: {
     String(input.bpm), String(input.startMeasure), input.syncMode, input.syncData].join("\n"));
 }
 
-export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio }: {
+export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio, onApplyMeasureSync }: {
   lang: "zh" | "en"; pdfMeasures: number; pdfName: string; pdfBytes: () => ArrayBuffer | null;
   onJump: (measure: number) => void; onClose: () => void;
   getSyncedAudio?: () => SyncedAudio | null;
+  onApplyMeasureSync?: (markers: { measure: number; audioSec: number }[]) => string | null;
 }) {
   const [api, setApi] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -195,6 +199,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const [busyTakeId, setBusyTakeId] = useState<string | null>(null);
   const [startingRecording, setStartingRecording] = useState(false);
   const [error, setError] = useState("");
+  const [syncMsg, setSyncMsg] = useState("");
   const [showDemo, setShowDemo] = useState(false);
   const [mockNotes] = useState(makeMockNotes);
   const [mockTakes] = useState<CompareTake[]>(makeMockTakes);
@@ -908,6 +913,15 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         ? (zh ? `钢琴音符匹配分（F1）· 漏音 ${result.summary.missedNotes ?? "—"} · 多音 ${result.summary.extraNotes ?? "—"}；两者均影响分数。录音内静音仍计入覆盖范围。` : `Piano note F1 · Missed ${result.summary.missedNotes ?? "—"} · Extra ${result.summary.extraNotes ?? "—"}; both affect the score. Recorded silence remains in scope.`)
         : (zh ? "旧版钢琴音高分仅评价已匹配音符，不含漏音、多音扣分；请更新服务后重新分析。" : "Older piano scores evaluate matched notes only, without missed/extra penalties; update the service and reanalyze.")}</p>}
       {pdfMeasures > 0 && !canJump && <p className={styles.error}>{zh ? `谱面有 ${pdfMeasures} 小节、MusicXML 有 ${scoreMeasures} 小节；请核对后再映射到 PDF。` : `PDF has ${pdfMeasures} measures; MusicXML has ${scoreMeasures}. Verify alignment before mapping.`}</p>}
+      {(result.suggestedMeasureSync?.length ?? 0) > 0 && canJump && onApplyMeasureSync && <div>
+        <button className={styles.omrButton} onClick={() => {
+          const err = onApplyMeasureSync(result.suggestedMeasureSync ?? []);
+          if (err) { setError(err); setSyncMsg(""); }
+          else { setError(""); setSyncMsg(zh ? `已写入光标同步（${result.suggestedMeasureSync?.length ?? 0} 个小节起点，随 preload 导出）` : `Cursor sync applied (${result.suggestedMeasureSync?.length ?? 0} measure starts, exported with preload)`); }
+        }}>{zh ? "将自动小节同步写入光标" : "Apply auto measure sync to cursor"}</button>
+        {result.syncSuggestion && <span className={styles.hint}>{zh ? `全局偏移 ${result.syncSuggestion.appliedOffsetSec}s · 候选 ${result.syncSuggestion.candidates.map((c) => c.offsetSec).join("/")}` : `offset ${result.syncSuggestion.appliedOffsetSec}s · candidates ${result.syncSuggestion.candidates.map((c) => c.offsetSec).join("/")}`}</span>}
+        {syncMsg && <p role="status" className={styles.hint}>{syncMsg}</p>}
+      </div>}
       <h3>{zh ? "复习片段" : "Review moments"} ({issues.length})</h3>
       {issues.length === 0 && <p className={styles.hint}>{zh ? "没有明确的问题；请检查可判比例。" : "No definite issues; check coverage above."}</p>}
       <ol className={styles.issues}>{issues.slice(0, 40).map((note) => <li key={note.id}>

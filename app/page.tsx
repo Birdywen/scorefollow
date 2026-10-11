@@ -4034,6 +4034,21 @@ export default function ScoreFollowPage() {
             return { url: mediaURL, name: mediaName || "Synced audio", measureCount: barsTotal,
               markers: wijzerRef.current.times.map((entry) => ({ measure: entry.mix + 1, audioSec: entry.t })) };
           }}
+          onApplyMeasureSync={(markers) => {
+            const w = wijzerRef.current;
+            if (!w.measures.length) return lang === "zh" ? "谱面尚未分析出小节" : "Score measures not analyzed yet";
+            const entries = markers
+              .filter((m) => Number.isInteger(m.measure) && m.measure >= 1 && Number.isFinite(m.audioSec) && m.audioSec >= 0)
+              .map((m) => ({ t: Math.round(m.audioSec * 1000) / 1000, mix: m.measure - 1 }))
+              .filter((e) => e.mix < w.measures.length);
+            if (entries.length < 2) return lang === "zh" ? "自动同步点不足" : "Not enough auto sync points";
+            for (let i = 1; i < entries.length; i++) {
+              if (!(entries[i].t > entries[i - 1].t)) return lang === "zh" ? "自动同步点时间不递增" : "Auto sync points are not increasing";
+            }
+            w.loadTimes(entries);
+            setTapCount(entries.length);
+            return null;
+          }}
          onJump={(measure) => placeCursor(measure - 1)} onClose={() => setPerformanceOpen(false)} />}
         {chromeOpen && advOpen && (
           <aside id="sf-control-panel" className={`${styles.advpanel} ${styles.controlPanel}`} aria-label={tx("panelBtn")}>
