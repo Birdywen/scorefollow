@@ -6,8 +6,8 @@
 set -euo pipefail
 OLLAMA_HOST="${OLLAMA_HOST:-http://100.88.202.126:11434}"
 VISION_MODEL="${VISION_MODEL:-qwen3.8:27b}"
-# VISION_BACKEND=ollama（默认，本地 5090 不花钱）| gsk（Genspark 云端看图，更细，耗额度）
-VISION_BACKEND="${VISION_BACKEND:-ollama}"
+# VISION_BACKEND=gsk（默认，云端看图更细）| ollama（本地 5090 免费兜底）
+VISION_BACKEND="${VISION_BACKEND:-gsk}"
 OUTDIR="${OUTDIR:-/tmp/opencode/visual}"
 mkdir -p "$OUTDIR"
 
