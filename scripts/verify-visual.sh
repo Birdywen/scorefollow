@@ -42,6 +42,7 @@ EOF
   PROMPT="用中文描述这张网页截图：顶栏按钮、主体内容/空态文字、右下角元素、有无明显错位或报错弹窗。只说看到的，不要推测。"
   if [ "${VISION_ASCII:-0}" = "1" ]; then
     PROMPT="先用中文一句话说页面状态正常与否。然后用ASCII字符画一个页面线框布局图（顶栏/主体/按钮/右下角位置），框内标注关键文字。最后列出顶栏按钮清单。"
+  fi
   if [ "$VISION_BACKEND" = "gsk" ]; then
     export PATH="$HOME/.local/npm-global/bin:$PATH"
     WRAP=$(gsk upload "$SMALL" | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['file_wrapper_url'])")
