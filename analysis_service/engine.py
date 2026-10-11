@@ -242,10 +242,10 @@ def _hint_track(signal: np.ndarray, rate: int,
     return times, pitches, energy, conf
 
 
-def classify_pitch(cents: float | None, detected_midi: float | None) -> str:
+def classify_pitch(cents: float | None, detected_midi: float | None, tolerance: float = 25.0) -> str:
     """Cents 判音: 物理不可能 Verdict uncertain, 差整八度单列 octave,
-    ±15 音分内 correct, 之外 sharp/flat。MIDI 只做存储, 判定全是 cents
-    (1 半音=100, 1 八度=1200)。"""
+    ±tolerance 音分内 correct, 之外 sharp/flat。MIDI 只做存储, 判定全是 cents
+    (1 半音=100, 1 八度=1200)。默认 tolerance=25¢ 平衡反馈敏感度；严格模式可用 15¢。"""
     if cents is None:
         return "uncertain"
     if detected_midi is not None and (detected_midi < 36 or detected_midi > 96):
@@ -257,9 +257,9 @@ def classify_pitch(cents: float | None, detected_midi: float | None) -> str:
     # not a reliable intonation verdict. Keep the raw measurement for replay.
     if abs(cents) > 1200:
         return "outlier"
-    if cents > 15:
+    if cents > tolerance:
         return "sharp"
-    if cents < -15:
+    if cents < -tolerance:
         return "flat"
     return "correct"
 
@@ -359,7 +359,8 @@ def _interp_beats(beats: np.ndarray, med: float, anchor: int, rel_beat: float) -
 
 
 def _select_grid_scale(beats: np.ndarray, med: float, anchor: int, notes: list,
-                       base_beat: float, times, pitches, confidence, scales) -> float | None:
+                       base_beat: float, times, pitches, confidence, scales,
+                       anchor_shift: float = 0.0) -> float | None:
     """用音高证据验网格刻度：候选 1.0=四分脉冲 1:1，1.5=附点脉冲 /1.5。
     窗内音高中位数与谱面音差 ≤1.5 半音算命中；赢家须 ≥0.6，多候选时还须
     ≥1.4 倍于次名，单候选须 ≥0.7，否则 None。只统计录音覆盖的音符。"""
@@ -377,8 +378,8 @@ def _select_grid_scale(beats: np.ndarray, med: float, anchor: int, notes: list,
         hit = total = 0
         for n in cov:
             rel = n["onsetBeat"] - base_beat
-            t0 = _interp_beats(beats, med, anchor, rel / scale)
-            t1 = _interp_beats(beats, med, anchor, (rel + n["durationBeat"]) / scale)
+            t0 = _interp_beats(beats, med, anchor, rel / scale) + anchor_shift
+            t1 = _interp_beats(beats, med, anchor, (rel + n["durationBeat"]) / scale) + anchor_shift
             lo, hi = t0 + (t1 - t0) * 0.3, t1 - (t1 - t0) * 0.3
             m = (t >= lo) & (t <= hi) & np.isfinite(p) & (c >= 0.7)
             if int(m.sum()) < 3:
@@ -401,7 +402,8 @@ def _select_grid_scale(beats: np.ndarray, med: float, anchor: int, notes: list,
 def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: int = 1,
             first_beat_audio_sec: float | None = None, sync_mode: str = "legacy",
             pitch_notes: list | None = None, onset_hint: list | None = None,
-            beat_map: list | None = None, measure_sync: list | None = None) -> dict:
+            beat_map: list | None = None, measure_sync: list | None = None,
+            pitch_tolerance_cents: float = 25.0) -> dict:
     """pitch_notes: [(start_sec, end_sec, midi)] 外部基频传感器(pYIN); onset_hint: [sec]
     外部起音传感器(QM)。两者都可选, 为空时退回自研检测, 打分逻辑不变。
     sync_mode="vamp-beat": 用 QM 拍点时间轴做活网格, 需 beat_map=[sec...]。"""
@@ -533,15 +535,25 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             base_beat = notes[0]["onsetBeat"]
             beats = np.asarray(sorted(float(b) for b in beat_map))
             med = float(np.median(np.diff(beats)))
+            # Beat trackers may emit a short, off-phase pickup before locking
+            # onto the pulse. Do not count that pickup as a full score beat:
+            # it shifts every subsequent note by a subdivision. Only discard
+            # unstable startup intervals, never deviations later in the take.
+            audio_anchor = location_anchor if auto_located else onsets[0]
+            startup = np.flatnonzero((beats[:-1] <= audio_anchor) &
+                                     (np.diff(beats) < 0.75 * med))
+            repaired_start = bool(len(startup))
+            if repaired_start:
+                beats = beats[int(startup[-1]) + 1:]
             detected_bpm = round(60 / med, 1) if med > 0 else None
             audio_anchor = location_anchor if auto_located else onsets[0]
             anchor = int(np.argmin(np.abs(beats - audio_anchor)))
-            anchor_shift = audio_anchor - beats[anchor] if auto_located else 0.0
+            anchor_shift = audio_anchor - beats[anchor] if auto_located or repaired_start else 0.0
             if needs_vote:
                 scales = (1.0, 1.5) if tracker_beat_quarters(xml) == 1.5 else (1.0,)
                 picked = _select_grid_scale(
                     beats, med, anchor, notes, notes[0]["onsetBeat"],
-                    times, pitches, confidence, scales)
+                    times, pitches, confidence, scales, anchor_shift)
                 if picked is None:
                     beat_map = None
                     sync_mode = "legacy"
@@ -716,7 +728,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         if onset is None and duration < 0.25 and cents is not None and abs(cents) > 200:
             cents = None
             quality = 0.0
-        pitch_status = classify_pitch(cents, detected)
+        pitch_status = classify_pitch(cents, detected, pitch_tolerance_cents)
         if cents is not None and pitch_status in ("sharp", "flat", "correct"):
             pitch_errors.append(abs(cents))
         timing_eligible = (bool(manual_boundaries) or note_index > 0) and not (manual_boundaries and abs(note["onsetBeat"] - manual_boundaries[note["measure"]]) < 1e-6)
@@ -742,8 +754,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if pitch_errors and len(pitch_errors) / len(notes) >= .6:
         # Capped mean keeps one noisy frame bounded, but unlike a median it cannot
         # hide a substantial minority of clearly wrong notes.
-        # Within the accepted +/-15 cents band there is no pitch penalty.
-        penalties = np.maximum(np.asarray(pitch_errors) - 15, 0)
+        # Within the accepted tolerance band there is no pitch penalty.
+        penalties = np.maximum(np.asarray(pitch_errors) - pitch_tolerance_cents, 0)
         pitch_score = round(max(0, 100 - float(np.mean(np.minimum(penalties, 100))) * 1.2))
         in_tune = [abs(float(n["pitchErrorCents"])) for n in aligned if n["pitchStatus"] == "correct"]
         intonation_score = 100 if in_tune else None
@@ -802,7 +814,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             "measureSync": measure_sync,
             "rhythm": rhythm,
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
-                        "pitchToleranceCents": 15,
+                        "pitchToleranceCents": pitch_tolerance_cents,
                         "timingCandidateNotes": timing_candidates,
                         "timingReference": "within-manually-synced-measures" if manual_boundaries else "automatic",
                         "outlierNotes": sum(n["pitchStatus"] == "outlier" for n in aligned),

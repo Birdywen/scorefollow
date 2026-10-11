@@ -123,6 +123,23 @@ class GoldenScoringTests(unittest.TestCase):
             self.assertAlmostEqual(note["pitchErrorCents"], 0.0, delta=PITCH_CENTS_TOL)
             self.assertEqual(note["pitchStatus"], "correct")
 
+    def test_short_startup_beat_does_not_shift_pitch_or_hide_wrong_notes(self):
+        # A spurious pickup before the first note is not a full beat. Keep
+        # the subsequent pulse spacing, and still penalize a real detuning.
+        for build in (build_clean, build_detuned):
+            fix = build()
+            first = fix["ground_truth"][0]["scoreOnsetSec"]
+            beats = [first - 0.1] + [first + 0.2 + i for i in range(8)]
+            result = analyze(fix["wav"], fix["xml"], fix["bpm"], fix["instrument"],
+                             sync_mode="vamp-beat", beat_map=beats)
+            self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
+            for truth in fix["ground_truth"]:
+                note = _by_id(result["notes"], truth["id"])
+                self.assertAlmostEqual(note["pitchErrorCents"], truth["renderedDetuneCents"],
+                                       delta=PITCH_CENTS_TOL)
+            if build is build_detuned:
+                self.assertEqual(_by_id(result["notes"], fix["detuned_note_id"])["pitchStatus"], "sharp")
+
     def test_single_note_late(self):
         fix = build_late()
         result = analyze(fix["wav"], fix["xml"], fix["bpm"], fix["instrument"])

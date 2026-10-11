@@ -34,7 +34,8 @@ API_TOKEN = os.environ.get("ANALYSIS_API_TOKEN", "")
 
 
 def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_measure: int,
-        first_beat_audio_sec: float | None = None, sync_mode: str = "legacy", measure_sync=None) -> None:
+        first_beat_audio_sec: float | None = None, sync_mode: str = "legacy", measure_sync=None,
+        pitch_tolerance_cents: float = 25.0) -> None:
     with lock:
         jobs[job_id]["status"] = "analyzing"
     try:
@@ -50,7 +51,8 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
             # 有 Vamp 插件就用 pYIN+QM 当耳朵, 没有则引擎退回自研检测(前端无感)
             pitch_notes, onset_hint, beat_map = vamp_features.extract_all(audio)
             result = analyze(audio, xml, bpm, instrument, start_measure, first_beat_audio_sec, sync_mode,
-                             pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map, measure_sync=measure_sync)
+                             pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map, 
+                             measure_sync=measure_sync, pitch_tolerance_cents=pitch_tolerance_cents)
             # Defensive overlay: engine already sets summary.degraded from
             # effective availability; keep it, only fill if missing so the
             # job payload always exposes degradation (not logs only).
@@ -157,6 +159,9 @@ class Handler(BaseHTTPRequestHandler):
                 sync_mode = request.get("syncMode", "vamp-beat")
                 first_beat = request.get("firstBeatAudioSec")
                 measure_sync = request.get("measureSync")
+                pitch_tolerance_cents = request.get("pitchToleranceCents", 25.0)
+                if not isinstance(pitch_tolerance_cents, (int, float)) or not 10 <= pitch_tolerance_cents <= 50:
+                    raise ValueError("pitchToleranceCents 须在 10–50 音分之间")
                 if instrument not in ("violin", "viola", "cello", "piano") or not 30 <= bpm <= 200:
                     raise ValueError("无效的乐器或 BPM")
                 if type(start_measure) is not int or not 0 <= start_measure <= notes[-1]["measure"]:
@@ -196,7 +201,8 @@ class Handler(BaseHTTPRequestHandler):
             pool.submit(run_omr, job_id, pdf, filename, rest_beats)
         else:
             pool.submit(run, job_id, audio, xml, bpm, instrument, start_measure,
-                        float(first_beat) if first_beat is not None else None, sync_mode, measure_sync)
+                        float(first_beat) if first_beat is not None else None, sync_mode, measure_sync,
+                        float(pitch_tolerance_cents))
         self.respond(202, {"id": job_id, "status": "queued"})
 
     def do_GET(self) -> None:

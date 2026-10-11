@@ -318,18 +318,27 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(classify_pitch(0.0, 69.0), "correct")
         self.assertEqual(classify_pitch(15.0, 69.0), "correct")
         self.assertEqual(classify_pitch(-15.0, 69.0), "correct")
-        self.assertEqual(classify_pitch(15.1, 69.0), "sharp")
-        self.assertEqual(classify_pitch(-15.1, 69.0), "flat")
+        # Default tolerance is 25 cents; strict mode keeps the old 15-cent band.
+        self.assertEqual(classify_pitch(24.9, 69.0), "correct")
+        self.assertEqual(classify_pitch(-24.9, 69.0), "correct")
+        self.assertEqual(classify_pitch(25.1, 69.0), "sharp")
+        self.assertEqual(classify_pitch(-25.1, 69.0), "flat")
+        self.assertEqual(classify_pitch(15.1, 69.0, tolerance=15.0), "sharp")
+        self.assertEqual(classify_pitch(-15.1, 69.0, tolerance=15.0), "flat")
 
     def test_accepted_intonation_has_no_pitch_penalty(self):
         for cents in (-10, 10):
             result = analyze(recording(detune=cents), score(), 60, "violin")
             self.assertEqual(result["summary"]["pitchScore"], 100)
             self.assertEqual(result["summary"]["wrongPitchNotes"], 0)
-            self.assertEqual(result["summary"]["pitchToleranceCents"], 15)
-        outside = analyze(recording(detune=25), score(), 60, "violin")
+        self.assertEqual(result["summary"]["pitchToleranceCents"], 25)
+        outside = analyze(recording(detune=40), score(), 60, "violin")
         self.assertEqual(outside["summary"]["wrongPitchNotes"], 5)
         self.assertLess(outside["summary"]["pitchScore"], 100)
+        # Strict mode restores the 15-cent band.
+        strict = analyze(recording(detune=20), score(), 60, "violin", pitch_tolerance_cents=15)
+        self.assertEqual(strict["summary"]["pitchToleranceCents"], 15)
+        self.assertEqual(strict["summary"]["wrongPitchNotes"], 5)
         self.assertEqual(classify_pitch(1200.0, 69.0), "octave")
         self.assertEqual(classify_pitch(-1190.0, 48.0 - 11.9), "octave")
         # 大提琴最低 C2=36: 实测低于此是次谐波误判, 不得计错音。
