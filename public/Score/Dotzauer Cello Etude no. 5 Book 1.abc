@@ -1,0 +1,26 @@
+X:1
+T:Title
+L:1/8
+M:6/8
+I:linebreak $
+K:C
+V:1 bass nm="Voice0"
+V:1
+"^Allegro"!f!"^Staccato" .A,,"^marcato".C,.E, .A,.C.A, | .E,.A,.E, .C,.E,.C, | %2
+ .A,,.D,.F, .A,.D.A, | .vF,.A,.F, .D,.F,.D, |"^simile" A,,D,^G, B,DB, | v^G,B,G, D,G,D, | %6
+ C,E,A, CA,E, | A,E,C, E,C,A,, | F,,A,,C, F,A,C | B,CA, F,C,A,, | E,,A,,C, E,A,C | B,CA, E,C,A,, | %12
+ ^D,,A,,C, ^F,A,C | B,CA, ^F,C,A,, | =D,,A,,C, ^F,A,C | B,CA, ^F,D,F, |"^cresc." G,B,D G,_B,D | %17
+ ^F,A,D =F,A,D | E,^G,B, DCB, | A,^G,^F, E,F,G, |!ff! A,B,C =G,A,C | ^F,A,C E,A,C | %22
+"^cresc." D,^F,A, CB,A, | G,^F,E, D,E,F, |!p! G,B,D =F,B,D | E,G,C _E,G,C | D,=F,A, CA,F, | %27
+ D,F,G, B,G,F, | C,E,G, C,_E,G, | B,,D,G, _B,,D,G, |"^cresc." A,,^C,E, G,E,D, | ^C,E,G, _B,A,G, | %32
+ ^F,A,=C G,A,C | ^F,A,C _E,A,C | D,^F,A, CA,G, | ^F,A,^C D=CA, |!f! _B,DB, A,CA, | %37
+ vG,_B,"^dim."G, v=F,A,F, | E,G,E, D,F,D, |!p! C,E,G, CD_B, | A,CA, vG,_B,G, | vF,A,F, E,G,E, | %42
+ D,F,D, C,E,C, |"^cresc." _B,,D,F, _B,CA, | vG,_B,G, vF,A,F, | E,G,E, D,F,D, | %46
+ v^C,E,C, u=B,,D,B,, |!mf! A,,^C,E, A,_B,G, | vF,A,F, E,G,E, | D,F,D,"^dim." C,E,C, | %50
+ v_B,,D,B,, A,,C,A,, | G,,_B,,G,, vF,,A,,F,, |!p! E,,=B,,D, E,D,B,, | C,E,A, CB,A, | %54
+ ^G,B,D, F,E,D, | C,E,A,, C,B,,A,, |"^cresc." D,,F,,v_B,, D,C,B,, | ^D,,A,,=B,, C,B,,A,, | %58
+ E,,A,,C, E,A,C | DB,^G, E,D,B,, |!f! A,,C,E, A,CA, | vG,B,G, vF,A,F, | E,G,E, D,F,D, | %63
+ vC,E,C, vB,,D,B,, |!p! A,,C,E, A,CA, | vG,B,G, vF,A,F, | E,G,E, D,F,D, | vC,E,C, vB,,D,B,, | %68
+"^cresc." A,,C,E, A,E,C, | A,,^C,E, G,E,C, | A,,D,^F, A,F,D, | A,,D,=F, ^G,F,D, | %72
+!f! A,,^C,E, A,E,C, | A,,^C,E, =G,E,C, | A,,D,E, ^F,E,D, | A,,D,E, =F,E,D, | %76
+ A,,"^pesante."C,E, A,CA, | E,A,E, C,E,"^Rit."C, |"^2." !fermata!A,,6 |] %79

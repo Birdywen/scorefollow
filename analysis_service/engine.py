@@ -17,7 +17,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.2"
+VERSION = "string-mono-0.3"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -264,6 +264,151 @@ def classify_pitch(cents: float | None, detected_midi: float | None, tolerance: 
     return "correct"
 
 
+def _displaced_match(note_index: int, notes: list, detected: float, tolerance: float):
+    """节奏优先归因: 本窗音高超差时, 在 ±4 音/±6 拍内找音高匹配的邻音。
+    找到返回 (new_cents, neighbor_measure), 否则 None。音准按邻音判对,
+    错位由计时误差在节奏侧扣分 (小节错位是节奏错, 不是音准错)。"""
+    center_beat = notes[note_index]["onsetBeat"]
+    for j in range(max(0, note_index - 4), min(len(notes), note_index + 5)):
+        if j == note_index:
+            continue
+        if abs(notes[j]["onsetBeat"] - center_beat) > 6.0:
+            continue
+        cents = round((detected - notes[j]["pitchMidi"]) * 100, 1)
+        if abs(cents) <= tolerance:
+            return cents, notes[j]["measure"]
+    return None
+
+
+def _drop_player_outliers(aligned: list, tolerance: float) -> bool:
+    """动态剔除极端音 (原地改 aligned, 返回是否启用剔除)。
+    门控: ≥10 个已判音且中位|偏差|≤40¢ —— 演奏者整体准才配剔除, 防止差生靠剔除刷分。
+    剔除: 偏离个人中位 >150¢, 上限 max(2, 10%)。被剔音保留原始值供回放,
+    状态记 dropped, 不计入音准分, 数量在 summary 明示。"""
+    scored = [n for n in aligned if n.get("pitchStatus") in ("sharp", "flat", "correct")
+              and n.get("pitchErrorCents") is not None]
+    if len(scored) < 10:
+        return False
+    med_signed = float(np.median([n["pitchErrorCents"] for n in scored]))
+    if float(np.median([abs(n["pitchErrorCents"]) for n in scored])) > 40:
+        return False
+    cap = max(2, len(scored) // 10)
+    dropped = 0
+    for n in sorted(scored, key=lambda n: abs(n["pitchErrorCents"] - med_signed), reverse=True):
+        if dropped >= cap:
+            break
+        if abs(n["pitchErrorCents"] - med_signed) <= 150:
+            break
+        n["pitchStatus"] = "dropped"
+        n["status"] = "dropped-outlier"
+        n["dropReason"] = "extreme-vs-player-median"
+        dropped += 1
+    return dropped > 0
+
+
+def _measure_scores(aligned: list, tolerance: float) -> list:
+    """小节分 (动态窗口): 本小节音权 1.0, 相邻小节边界音 (上小节尾音/下小节首音)
+    权 0.5 —— 切分 bleed 不冤枉本小节。只读, 不动逐音判定。"""
+    by_measure: dict[int, list] = {}
+    for n in aligned:
+        by_measure.setdefault(n["measure"], []).append(n)
+    measures = sorted(by_measure)
+    out = []
+    for i, m in enumerate(measures):
+        pool = [(n, 1.0) for n in by_measure[m]
+                if n.get("pitchStatus") in ("sharp", "flat", "correct")]
+        for nb in (measures[i - 1] if i > 0 else None,
+                   measures[i + 1] if i + 1 < len(measures) else None):
+            if nb is None:
+                continue
+            edge = [n for n in by_measure[nb]
+                    if n.get("pitchStatus") in ("sharp", "flat", "correct")]
+            if not edge:
+                continue
+            pool.append((edge[-1] if nb < m else edge[0], 0.5))
+        if not pool:
+            out.append({"measure": m, "pitchScore": None, "noteCount": len(by_measure[m]),
+                        "scoredNotes": 0})
+            continue
+        penalties = np.minimum(np.array([max(0.0, abs(n["pitchErrorCents"]) - tolerance)
+                                          for n, _ in pool]), 100)
+        weights = np.array([w for _, w in pool])
+        score = round(max(0, 100 - float(np.sum(penalties * weights) / np.sum(weights)) * 1.2))
+        out.append({"measure": m, "pitchScore": score, "noteCount": len(by_measure[m]),
+                    "scoredNotes": len(pool)})
+    return out
+
+
+def _suggest_measure_sync(aligned: list, intervals: list, duration: float) -> tuple:
+    """音频-小节自动标注: 全局 offset 网格搜索 (±0.5s/20ms 步进), 目标是计时残差
+    中位最小 (音准匹配率与 offset 无关, 只做兜底参考); 取前 3 候选 (≥60ms 间隔),
+    相对零位移改善 <15ms 则保持 0 (防抖动)。最优位移平移小节边界 (钳制≥0)。
+    逐音 syncMeasure 左→右因果锁定 (单调不回退, 后调不影响已标); 无起音的音给候选小节。
+    只读于打分, 只动边界展示与 manual 种子。返回 (suggestion, shifted, markers)。"""
+    timed = [n for n in aligned if n.get("performedSec") is not None]
+    if not timed or not intervals:
+        return None, intervals, []
+    exp = np.array([n["expectedSec"] for n in timed])
+    perf = np.array([n["performedSec"] for n in timed])
+    pitch_ok = [n.get("pitchErrorCents") is not None and abs(n["pitchErrorCents"]) <= 50
+                for n in timed]
+    match_rate = round(float(np.mean(pitch_ok)), 3) if pitch_ok else 0.0
+    base_resid = float(np.median(np.abs(perf - exp)))
+    ranked = []
+    for off100 in range(-50, 51, 2):
+        off = off100 / 100.0
+        resid = float(np.median(np.abs(perf - (exp + off))))
+        ranked.append((resid, off))
+    ranked.sort()
+    candidates = []
+    for resid, off in ranked:
+        if all(abs(off - c["offsetSec"]) >= 0.06 for c in candidates):
+            candidates.append({"offsetSec": round(off, 2),
+                               "medianResidualMs": round(resid * 1000),
+                               "pitchMatchRate": match_rate})
+        if len(candidates) >= 3:
+            break
+    best = candidates[0]["offsetSec"] if base_resid - candidates[0]["medianResidualMs"] / 1000 >= 0.015 else 0.0
+    shifted = []
+    for item in intervals:
+        lo = max(0.0, round(item["startSec"] + best, 3))
+        hi = min(duration, round(item["endSec"] + best, 3))
+        if hi > lo:
+            shifted.append({"measure": item["measure"], "startSec": lo, "endSec": hi})
+    markers = []
+    if shifted:
+        for item in shifted:
+            markers.append({"measure": item["measure"], "audioSec": item["startSec"]})
+        markers.append({"measure": shifted[-1]["measure"] + 1,
+                        "audioSec": shifted[-1]["endSec"]})
+        increasing = all(b["audioSec"] > a["audioSec"] for a, b in zip(markers, markers[1:]))
+        in_range = all(0 <= m["audioSec"] <= duration for m in markers)
+        if not (increasing and in_range):
+            markers = []
+    first, last = (shifted[0]["measure"], shifted[-1]["measure"]) if shifted else (0, 0)
+
+    def label(sec: float) -> int:
+        for item in shifted:
+            if item["startSec"] <= sec < item["endSec"]:
+                return item["measure"]
+        nearest = min(shifted, key=lambda item: abs((item["startSec"] + item["endSec"]) / 2 - sec))
+        return nearest["measure"]
+
+    prev = first - 1
+    for n in aligned:
+        sec = n["performedSec"] if n.get("performedSec") is not None else n["expectedSec"] + best
+        lab = max(label(sec), prev) if shifted else n["measure"]
+        n["syncMeasure"] = lab
+        prev = lab
+        if n.get("performedSec") is None:
+            n["syncCandidates"] = [m for m in (lab - 1, lab, lab + 1) if first <= m <= last]
+        else:
+            n["syncCandidates"] = None
+    suggestion = {"appliedOffsetSec": round(best, 2), "candidates": candidates,
+                  "causal": True, "timedNotes": len(timed)}
+    return suggestion, shifted, markers
+
+
 def measure_start_beats(xml: str, include_end: bool = False) -> dict[int, float]:
     """Map 1-based measure number -> absolute downbeat in quarter-note beats.
 
@@ -397,6 +542,52 @@ def _select_grid_scale(beats: np.ndarray, med: float, anchor: int, notes: list,
     if others and agree[best] >= 1.4 * max(others):
         return best
     return None
+
+
+def _select_grid_phase(beats: np.ndarray, med: float, anchor: int, notes: list,
+                       base_beat: float, pitch_notes: list, beat_quarters: float,
+                       base_shift: float = 0.0) -> float:
+    """用 pYIN 音符段验活网格相位：QM 只给拍点时间戳，相位不可信。
+    6/8 这类连续八分音符里最近拍点有 50% 概率锁到弱拍相位（半个脉冲偏差），
+    前导拍点漏检时还会差整脉冲；网格整体平移半/一个脉冲后，每个音符窗口
+    落到邻音上，时值看似正常但音高全错（Dotzauer No.5 实测：相位差 1 个
+    八分音符时 pitchScore 0→100 只差这一项）。
+    候选 {0, +0.5, -0.5, +1, -1} 个脉冲：每个音符取期望起音最近的 pYIN 段首
+    （一个脉冲内，否则该音弃权），段内音高与谱面差 ≤1.5 半音算命中；
+    赢家须 ≥0.6 且领先次名 ≥0.15，否则 0.0（保持原锚点）。只统计录音覆盖的
+    音符；可投票音符 <8 直接弃权，避免短片段误判。返回脉冲数偏移。"""
+    if med <= 0 or len(beats) < 2 or not notes or not pitch_notes:
+        return 0.0
+    span = (float(beats[-1]) - float(beats[0])) / med
+    cov = [n for n in notes if n["onsetBeat"] - base_beat <= span + 2.0]
+    if len(cov) < 8:
+        return 0.0
+    try:
+        seg_starts = np.array([float(a) for a, _, _ in pitch_notes])
+        seg_midis = np.array([float(m) for _, _, m in pitch_notes])
+    except (TypeError, ValueError):
+        return 0.0
+    if len(seg_starts) == 0:
+        return 0.0
+    cands = (0.0, 0.5, -0.5, 1.0, -1.0)
+    agree: dict[float, float] = {}
+    for cand in cands:
+        hit = total = 0
+        for n in cov:
+            rel = n["onsetBeat"] - base_beat
+            t0 = _interp_beats(beats, med, anchor, rel / beat_quarters) + base_shift + cand * med
+            j = int(np.argmin(np.abs(seg_starts - t0)))
+            if abs(float(seg_starts[j]) - t0) > med:
+                continue
+            total += 1
+            if abs(float(seg_midis[j]) - n["pitchMidi"]) <= 1.5:
+                hit += 1
+        agree[cand] = hit / total if total >= 8 else 0.0
+    best = min(cands, key=lambda c: (-agree[c], abs(c)))
+    if agree[best] < 0.6:
+        return 0.0
+    runner = max((agree[c] for c in cands if c != best), default=0.0)
+    return best if agree[best] - runner >= 0.15 else 0.0
 
 
 def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: int = 1,
@@ -559,6 +750,13 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                     sync_mode = "legacy"
                 else:
                     beat_quarters = picked
+            if sync_mode == "vamp-beat" and pitch_notes and beat_quarters:
+                # 相位投票：最近拍点锚点在连续八分音符/前导拍点漏检时可能差
+                # 半个或一个脉冲；用 pYIN 段验相位，赢家平移 anchor_shift。
+                # 弃权/模糊时返回 0.0，保持原锚点（只读于打分，只动网格）。
+                anchor_shift += _select_grid_phase(
+                    beats, med, anchor, notes, base_beat,
+                    pitch_notes, beat_quarters, anchor_shift) * med
             if tracker_beat_quarters(xml) == 1.5 and not needs_vote \
                     and detected_bpm is not None:
                 # 直接锁住的复拍子网格：面板按惯例是附点口径，detectedBpm
@@ -720,6 +918,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             detected = float(np.median(pitches[valid])) if np.count_nonzero(valid) >= 4 else None
             cents = round((detected - note["pitchMidi"]) * 100, 1) if detected is not None else None
             quality = round(float(np.median(confidence[valid])), 2) if cents is not None else 0.0
+        # 节奏优先归因: 本窗超差但邻音 (±4 音/±6 拍) 匹配时, 音准按邻音判对,
+        # 错位由计时误差在节奏侧扣分 (小节错位是节奏错, 不是音准错)。
+        raw_cents, displaced, displaced_from = None, False, None
+        if cents is not None and detected is not None and abs(cents) > pitch_tolerance_cents:
+            hit = _displaced_match(note_index, notes, detected, pitch_tolerance_cents)
+            if hit is not None:
+                raw_cents, displaced_from = cents, hit[1]
+                cents = hit[0]
+                displaced = True
         delta = round((onset - expected) * 1000) if onset is not None else None
         if cents is not None:
             measured_count += 1
@@ -729,8 +936,6 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             cents = None
             quality = 0.0
         pitch_status = classify_pitch(cents, detected, pitch_tolerance_cents)
-        if cents is not None and pitch_status in ("sharp", "flat", "correct"):
-            pitch_errors.append(abs(cents))
         timing_eligible = (bool(manual_boundaries) or note_index > 0) and not (manual_boundaries and abs(note["onsetBeat"] - manual_boundaries[note["measure"]]) < 1e-6)
         timing_candidates += int(timing_eligible)
         if delta is not None and timing_eligible:
@@ -743,7 +948,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "expectedEndSec": round(expected + duration, 3),
                         "pitchErrorCents": cents, "timingErrorMs": delta if timing_eligible else None,
                         "confidence": quality, "pitchStatus": pitch_status, "timingStatus": timing_status,
+                        "rawPitchErrorCents": raw_cents, "pitchDisplaced": displaced,
+                        "displacedFromMeasure": displaced_from,
                         "matchStatus": "matched" if cents is not None else "uncertain", "status": status})
+    # 动态剔除极端音 (门控见 _drop_player_outliers); 音准分按剔除后重建,
+    # dropped/octave/outlier 一律不计入。
+    trim_active = _drop_player_outliers(aligned, pitch_tolerance_cents)
+    pitch_errors = [abs(float(n["pitchErrorCents"])) for n in aligned
+                    if n.get("pitchStatus") in ("sharp", "flat", "correct")]
     # 不将不可判断的音符作为正确或错误；节奏得分只在至少三个起音可匹配时给出。
     pitch_score = None
     intonation_score = None
@@ -804,6 +1016,17 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if sync_mode == "manual-measures":
         measure_intervals = [{"measure": a["measure"], "startSec": a["audioSec"], "endSec": b["audioSec"]}
                              for a, b in zip(measure_sync, measure_sync[1:])]
+    # 小节分 (动态窗口, 只读) + 音频-小节自动标注 (全局 offset + 因果锁定, 只动边界)。
+    # manual 模式边界来自用户手点, 不平移, 只给 syncMeasure=measure。
+    measure_scores = _measure_scores(aligned, pitch_tolerance_cents)
+    if sync_mode == "manual-measures":
+        sync_suggestion, suggested_sync = None, []
+        for n in aligned:
+            n["syncMeasure"] = n["measure"]
+            n["syncCandidates"] = None
+    else:
+        sync_suggestion, measure_intervals, suggested_sync = _suggest_measure_sync(
+            aligned, measure_intervals, duration_sec)
     # Additive rhythmic-structure annotation (beats/downbeats/phrases) on the
     # active timeline. Read-only w.r.t. scoring: math, thresholds and existing
     # keys are untouched; None/empty beat input falls back to the legacy grid.
@@ -812,12 +1035,18 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     return {"version": VERSION, "instrument": instrument, "bpm": bpm, "mode": "fixed-tempo-monophonic",
             "measureIntervals": measure_intervals,
             "measureSync": measure_sync,
+            "measureScores": measure_scores,
+            "syncSuggestion": sync_suggestion,
+            "suggestedMeasureSync": suggested_sync,
             "rhythm": rhythm,
             "summary": {"pitchScore": pitch_score, "intonationScore": intonation_score,
                         "pitchToleranceCents": pitch_tolerance_cents,
                         "timingCandidateNotes": timing_candidates,
                         "timingReference": "within-manually-synced-measures" if manual_boundaries else "automatic",
                         "outlierNotes": sum(n["pitchStatus"] == "outlier" for n in aligned),
+                        "droppedOutlierNotes": sum(n.get("pitchStatus") == "dropped" for n in aligned),
+                        "outlierTrimActive": trim_active,
+                        "displacedPitchNotes": sum(bool(n.get("pitchDisplaced")) for n in aligned),
                         "scoredPitchNotes": len(pitch_errors),
                         "correctPitchNotes": correct_pitch_notes, "wrongPitchNotes": wrong_pitch_notes,
                         "octaveUncertainNotes": octave_uncertain_notes,

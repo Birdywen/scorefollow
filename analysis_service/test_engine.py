@@ -471,8 +471,9 @@ class EngineTests(unittest.TestCase):
                          beat_map=[0.12 + i for i in range(6)])
         self.assertEqual(result["summary"]["syncMode"], "vamp-beat")
         self.assertFalse(result["summary"]["tempoMismatch"])
+        shift = result["syncSuggestion"]["appliedOffsetSec"]
         for interval, note in zip(result["measureIntervals"], result["notes"]):
-            self.assertAlmostEqual(interval["startSec"], note["expectedSec"], places=3)
+            self.assertAlmostEqual(interval["startSec"], note["expectedSec"] + shift, places=3)
             self.assertAlmostEqual(interval["endSec"] - interval["startSec"], 1, places=3)
 
     def _compound_audio(self, eighth_sec):
