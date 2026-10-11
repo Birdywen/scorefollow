@@ -6,6 +6,8 @@
 set -euo pipefail
 OLLAMA_HOST="${OLLAMA_HOST:-http://100.88.202.126:11434}"
 VISION_MODEL="${VISION_MODEL:-qwen3.8:27b}"
+# VISION_BACKEND=ollama（默认，本地 5090 不花钱）| gsk（Genspark 云端看图，更细，耗额度）
+VISION_BACKEND="${VISION_BACKEND:-ollama}"
 OUTDIR="${OUTDIR:-/tmp/opencode/visual}"
 mkdir -p "$OUTDIR"
 
@@ -37,10 +39,17 @@ for line in logs[:10]:
 print("CONSOLE_COUNT:", len(logs))
 EOF
   python3 -c "from PIL import Image; im=Image.open('$SHOT'); im.thumbnail((1280,9999)); im.save('$SMALL',quality=80)"
-  B64=$(base64 -w0 "$SMALL")
-  timeout 170 curl -s -m 160 "$OLLAMA_HOST/api/chat" -H 'Content-Type: application/json' \
-    -d "{\"model\":\"$VISION_MODEL\",\"think\":false,\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"用中文描述这张网页截图：顶栏按钮、主体内容/空态文字、右下角元素、有无明显错位或报错弹窗。只说看到的，不要推测。\",\"images\":[\"$B64\"]}]}" \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['message']['content'])"
+  PROMPT="用中文描述这张网页截图：顶栏按钮、主体内容/空态文字、右下角元素、有无明显错位或报错弹窗。只说看到的，不要推测。"
+  if [ "$VISION_BACKEND" = "gsk" ]; then
+    export PATH="$HOME/.local/npm-global/bin:$PATH"
+    WRAP=$(gsk upload "$SMALL" | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['file_wrapper_url'])")
+    timeout 170 gsk analyze -i "$WRAP" -r "$PROMPT" | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['results'][0]['result'])"
+  else
+    B64=$(base64 -w0 "$SMALL")
+    timeout 170 curl -s -m 160 "$OLLAMA_HOST/api/chat" -H 'Content-Type: application/json' \
+      -d "{\"model\":\"$VISION_MODEL\",\"think\":false,\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\",\"images\":[\"$B64\"]}]}" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['message']['content'])"
+  fi
   echo
 done
 echo "ALL_VISUAL_DONE"
