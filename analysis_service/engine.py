@@ -700,7 +700,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     voiced = np.flatnonzero(np.isfinite(pitches) & (energy > max(0.012, np.max(energy) * 0.10)))
     if not len(active) or not len(voiced):
         raise ValueError("无法检测到演奏")
-    onsets = [float(times[active[0]])]
+    # 时间零点锚在首个有音高的帧: 前导宽带噪声 (室噪/备弓) 能量过门限但无音高,
+    # 不能当首音起音, 否则整条期望时间线提前、逐音对到邻音。只向前回溯
+    # <= 60 ms 的连续有能量帧, 补回音头 (起振帧音高尚未稳定)。
+    _gate = max(0.012, float(np.max(energy)) * 0.10)
+    _k = int(voiced[0])
+    while _k > 0 and energy[_k - 1] > _gate and times[_k - 1] >= times[int(voiced[0])] - 0.06:
+        _k -= 1
+    onsets = [float(times[_k])]
     for i in range(2, len(times)):
         if energy[i] < 0.012:
             continue
@@ -939,7 +946,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # 错位由计时误差在节奏侧扣分 (小节错位是节奏错, 不是音准错)。
         raw_cents, displaced, displaced_from = None, False, None
         if cents is not None and detected is not None and abs(cents) > pitch_tolerance_cents:
-            hit = _displaced_match(note_index, notes, detected, pitch_tolerance_cents)
+            # 起音落在本音自己的位置 (偏差 <= max(80 ms, 25% 时值)) 时音高窗测的就是本音:
+            # 恰好等于邻音音高是拉错音, 不是错位。只有起音漏检或明显偏移才按邻音归因。
+            on_time = onset is not None and abs(onset - expected) <= max(0.08, duration * 0.25)
+            hit = None if on_time else _displaced_match(note_index, notes, detected, pitch_tolerance_cents)
             if hit is not None:
                 raw_cents, displaced_from = cents, hit[1]
                 cents = hit[0]
