@@ -84,7 +84,8 @@ def extract_all(wav: bytes) -> tuple:
     return extract_pitch_notes(wav), extract_onsets(wav), extract_beats(wav)
 
 
-def degradation_reasons(pitch_notes=None, onset_hint=None, beat_map=None) -> list:
+def degradation_reasons(pitch_notes=None, onset_hint=None, beat_map=None,
+                        beat_requested: bool = True) -> list:
     """Explicit optional-plugin degradation, derived from live detector outputs.
 
     Each sensor is independent: None/empty means that detector is unavailable
@@ -98,7 +99,10 @@ def degradation_reasons(pitch_notes=None, onset_hint=None, beat_map=None) -> lis
         reasons.append("pitch:builtin")
     if not onset_hint:
         reasons.append("onset:builtin")
-    if not beat_map:
+    # A beat grid is only a requirement when the caller asked for beat
+    # following (vamp-beat). Legacy and manual timelines never consume it,
+    # so its absence there is not a fallback and must not warn the user.
+    if beat_requested and not beat_map:
         reasons.append("beat:legacy")
     return reasons
 

@@ -222,7 +222,9 @@ class GoldenScoringTests(unittest.TestCase):
             self.assertTrue(summary["degraded"])
             self.assertIn("pitch:builtin", summary["degradedReasons"])
             self.assertIn("onset:builtin", summary["degradedReasons"])
-            self.assertIn("beat:legacy", summary["degradedReasons"])
+            # Legacy timelines never consume a beat grid, so its absence is not a
+            # fallback; vamp-beat requests still report beat:legacy.
+            self.assertNotIn("beat:legacy", summary["degradedReasons"])
 
 
 if __name__ == "__main__":

@@ -863,10 +863,13 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             first_beat_audio_sec: float | None = None, sync_mode: str = "legacy",
             pitch_notes: list | None = None, onset_hint: list | None = None,
             beat_map: list | None = None, measure_sync: list | None = None,
-            pitch_tolerance_cents: float = 25.0) -> dict:
+            pitch_tolerance_cents: float = 25.0, _beat_requested: bool | None = None) -> dict:
     """pitch_notes: [(start_sec, end_sec, midi)] 外部基频传感器(pYIN); onset_hint: [sec]
     外部起音传感器(QM)。两者都可选, 为空时退回自研检测, 打分逻辑不变。
     sync_mode="vamp-beat": 用 QM 拍点时间轴做活网格, 需 beat_map=[sec...]。"""
+    # Beat following as the caller requested it, kept across internal
+    # vamp-beat -> legacy fallbacks and the rescue re-run (degradation).
+    _beat_req = (sync_mode == "vamp-beat") if _beat_requested is None else bool(_beat_requested)
     validate_instrument(instrument, ["violin", "viola", "cello"])
     validate_bpm(bpm, min_bpm=30, max_bpm=200)
     if sync_mode not in ("legacy", "metronome", "vamp-beat", "manual-measures"):
@@ -1324,7 +1327,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     # Scoring math, thresholds and existing keys are untouched.
     from .vamp_features import degradation_reasons as _degradation_reasons
     _effective_beat = beat_map if sync_mode == "vamp-beat" else None
-    degraded_reasons = _degradation_reasons(pitch_notes, onset_hint, _effective_beat)
+    degraded_reasons = _degradation_reasons(pitch_notes, onset_hint, _effective_beat,
+                                            beat_requested=_beat_req)
     degraded = bool(degraded_reasons)
     if sync_mode == "manual-measures":
         measure_intervals = [{"measure": a["measure"], "startSec": a["audioSec"], "endSec": b["audioSec"]}
@@ -1409,7 +1413,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         if _plan["markers"]:
             _xml2 = transpose_score_xml(xml, _plan["shift"]) if _plan["shift"] else xml
             _rescued = analyze(wav, _xml2, bpm, instrument, _plan["start_measure"],
-                               sync_mode="manual-measures", measure_sync=_plan["markers"],
+                               sync_mode="manual-measures", measure_sync=_plan["markers"], _beat_requested=_beat_req,
                                pitch_notes=pitch_notes, onset_hint=onset_hint,
                                pitch_tolerance_cents=pitch_tolerance_cents)
             _summary = _rescued["summary"]

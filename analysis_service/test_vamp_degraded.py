@@ -28,7 +28,9 @@ class VampDegradedTests(unittest.TestCase):
         self.assertTrue(summary["degraded"])
         self.assertIn("pitch:builtin", summary["degradedReasons"])
         self.assertIn("onset:builtin", summary["degradedReasons"])
-        self.assertIn("beat:legacy", summary["degradedReasons"])
+        # Legacy timelines never consume a beat grid, so its absence is not a
+        # fallback; vamp-beat requests still report beat:legacy.
+        self.assertNotIn("beat:legacy", summary["degradedReasons"])
         # Backward compatibility: existing keys remain.
         self.assertIn("sensors", summary)
         self.assertEqual(summary["sensors"], ["builtin"])

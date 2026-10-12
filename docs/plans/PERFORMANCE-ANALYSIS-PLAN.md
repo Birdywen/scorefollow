@@ -95,3 +95,12 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 刚性网格得到“还行但明显不对”的分数（如 79/56）时 `_needs_rescue_check` 不触发，而补救可得 95/82；门槛需重新校准。
 - 前端乐器默认 `violin`，大提琴谱不会自动切换；应按谱号/音域推断或提示。
 - 补救失败时 shift 0/+12 的真实 ValueError 被 `boundary_failure` 文案覆盖，诊断信息不完整。
+
+
+## 2026-10-12 降级提示误报：legacy/手动小节下的 beat:legacy
+
+- 现象：Suzuki 回放音高/起音均为完整 vamp（fused-pitch、qm-onset），页面仍显示“降级算法：节拍”，quality.issues 含 builtin_detectors。
+- 根因：engine 只在 vamp-beat 下使用拍点网格（_effective_beat），legacy/manual-measures 下传 None，degradation_reasons 把“未请求的拍点网格”算成回退。
+- 修法：degradation_reasons 增加 beat_requested（默认 True，旧调用不变）；engine 传 sync_mode == "vamp-beat"。音高/起音判定不变。
+- 验证：test_degraded_beat.py（先失败后通过）、全量 unittest、Suzuki bpm80 violin 经 server.run 回放 degraded=false。
+- 补充：beat_requested 取 analyze 入口时的请求模式（_beat_req），不取引擎内部 vamp-beat→legacy 回退后（engine.py 回退点）或补救重算（manual-measures）的模式；补救重算经私有参数 _beat_requested 继承。否则“请求了拍点跟踪但网格不可用”这一真实降级会被藏掉。新增 RequestedBeatFallbackTests 覆盖。两条旧测试（test_golden_scoring / test_vamp_degraded，均为 legacy 请求）断言改为不报 beat:legacy，vamp 缺失仍报 pitch/onset 降级。
