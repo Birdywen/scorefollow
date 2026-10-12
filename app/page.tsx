@@ -1951,6 +1951,29 @@ export default function ScoreFollowPage() {
   }, [analysis]);
 
   // 光标定位到小节(原版点击阴影/x2time 语义): 画蓝 shade + 可选 seek
+  // 跟谱滚屏：把指定谱面纵坐标的小节滚进视口（与 placeCursor 同策略）。
+  // 只在小节切换时调用，不要每帧调用，避免与用户手动滚动打架。
+  const scrollMeasureIntoView = useCallback((y: number) => {
+    const notn = notationRef.current;
+    const stack = stackRef.current;
+    if (notn && stack && analysis) {
+      const scale = stack.clientWidth / Math.max(1, analysis.pageW);
+      const yCss = y * scale;
+      const target = Math.round(yCss - notn.clientHeight * 0.3);
+      const mx = notn.scrollHeight - notn.clientHeight;
+      notn.scrollTop = Math.max(0, Math.min(mx, target));
+    }
+  }, [analysis]);
+
+  // 音频跟谱统一入口：写阴影 + 小节切换时滚屏。节拍器走 placeCursor，
+  // 音频时钟（rAF/原生 timeupdate）走这里，两边共享同一个 demaat 阴影。
+  const applyFollowCursor = useCallback((c: { x: number; y: number; w: number; h: number; measure: number }) => {
+    const prevMix = curMixRef.current;
+    curMixRef.current = c.measure;
+    setCursor({ x: c.x, y: c.y, w: c.w, h: c.h });
+    if (c.measure !== prevMix) scrollMeasureIntoView(c.y);
+  }, [scrollMeasureIntoView]);
+
   const placeCursor = useCallback((mix: number, seekT?: number) => {
     const ms = wijzerRef.current.measures;
     if (!ms.length) return;
@@ -1958,15 +1981,7 @@ export default function ScoreFollowPage() {
     const m = ms[idx];
     curMixRef.current = idx;
     setCursor({ x: m.x, y: m.y, w: m.w, h: m.h });
-    const notn = notationRef.current;
-    const stack = stackRef.current;
-    if (notn && stack && analysis) {
-      const scale = stack.clientWidth / Math.max(1, analysis.pageW);
-      const yCss = m.y * scale;
-      const target = Math.round(yCss - notn.clientHeight * 0.3);
-      const mx = notn.scrollHeight - notn.clientHeight;
-      notn.scrollTop = Math.max(0, Math.min(mx, target));
-    }
+    scrollMeasureIntoView(m.y);
     if (seekT != null && Number.isFinite(seekT)) {
       const md = mediaRef.current as any;
       if (md && mediaURL) md.currentTime = seekT;
@@ -2403,8 +2418,7 @@ export default function ScoreFollowPage() {
     }
     const c = w.time2x(t, opt.lncsr === 1);
     if (c) {
-      curMixRef.current = c.measure;
-      setCursor({ x: c.x, y: c.y, w: c.w, h: c.h });
+      applyFollowCursor(c);
       setCursorInfo(`m${c.measure + 1} t=${t.toFixed(2)}s`);
     }
     rafRef.current = requestAnimationFrame(tick);
@@ -4202,10 +4216,10 @@ export default function ScoreFollowPage() {
 
       <div className={styles.mainarea}>
       {mediaURL && mediaKind === "video" && (
-        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
+        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
       )}
       {mediaURL && mediaKind === "audio" && (
-        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
+        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
       )}
 
         <div
