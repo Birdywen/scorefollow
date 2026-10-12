@@ -1,0 +1,22 @@
+// node scripts/analysis-failure-regression.mjs <compiled analysis-failure.mjs>
+import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
+const m = await import(pathToFileURL(resolve(process.argv[2])).href);
+assert.equal(m.failureKind({ errorClass: "AudioValidationError" }), "fix_input");
+assert.equal(m.failureKind({ errorClass: "ScoreValidationError" }), "fix_input");
+assert.equal(m.failureKind({ errorClass: "ValueError" }), "fix_input");
+assert.equal(m.failureKind({ errorClass: "ZeroDivisionError" }), "retry");
+assert.equal(m.failureKind({ errorClass: "ServiceRestart", interrupted: true }), "retry");
+assert.equal(m.failureKind({ errorClass: "QueueFull" }), "retry");
+assert.equal(m.failureKind({ httpStatus: 400 }), "fix_input");
+assert.equal(m.failureKind({ httpStatus: 429 }), "retry");
+assert.equal(m.failureKind({ httpStatus: 503 }), "retry");
+assert.equal(m.failureKind(undefined), "retry");
+assert.match(m.describeFailure("无法检测到演奏", { errorClass: "AudioValidationError" }, true), /无法检测到演奏.*请修改/);
+const internal = m.describeFailure("分析失败，请检查音频和谱面", { errorClass: "RuntimeError" }, true);
+assert.match(internal, /与输入无关/);
+assert.doesNotMatch(internal, /检查音频/);
+assert.match(m.describeFailure("x", { errorClass: "ServiceRestart", interrupted: true }, true), /中断/);
+assert.match(m.describeFailure("分析任务超时 / job timed out", { httpStatus: null }, true), /可直接重新分析/);
+console.log("FAILURE_REGRESSION_PASS");

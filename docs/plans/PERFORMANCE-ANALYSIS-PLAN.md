@@ -139,3 +139,11 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 判据（quality.py）：scored≥12 且命中率<0.4 且时间线未核实（syncAdvice / pitchScore 空 / low_coverage）且未补救成功 → outcome score_audio_mismatch，issue 同名，followReady=false，overallScore=null；新增 quality.pitchMatchRate。已核实时间线上的大量错音仍按演奏评分。
 - 前端：状态“输入可能不匹配”+命中率与排查提示；音准/跟拍/综合显示“不匹配”，不显示 0；guard 枚举加入新值（先发前端再重启后端）。
 - 未做：failed（分析失败可重试）——无 result，需在任务状态层处理（useAnalysisJob.ts）。
+
+
+## 2026-10-12 阶段一：分析失败可解释（failed：可直接重试 / 需改输入）
+
+- 现象：失败任务只显示一行报错；引擎内部异常统一提示“分析失败，请检查音频和谱面”，误导用户改输入；钩子丢弃 errorClass / interrupted。
+- 依据：引擎输入错误均为 ValueError 子类（AnalysisError / AudioValidationError / ScoreValidationError / AlignmentError），server 失败载荷回传 errorClass=异常类名；重启中断、存储、队列失败另有 interrupted / StorageError / QueueUnavailable / QueueFull（来自未提交 server.py，前端按可选处理）。
+- 修法（仅前端）：lib/analysis-failure.ts 分类——输入类或无 errorClass 的 4xx（除 408/429）为“需改输入”，保留原因并提示修改；其余（中断、内部异常、5xx、网络、超时）为“与输入无关，可直接重新分析”。钩子透传 errorClass / interrupted；handleAnalysisError 写入解释后的文案。
+- 不变：后端与分析输出不变，不升引擎版本、不重启服务。回归：scripts/analysis-failure-regression.mjs。

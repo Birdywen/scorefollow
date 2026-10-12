@@ -1,5 +1,6 @@
 "use client";
 
+import { describeFailure, type FailureInfo } from "@/lib/analysis-failure";
 import { useEffect, useRef, useState } from "react";
 import styles from "./performance.module.css";
 import {
@@ -277,7 +278,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     // 与重构前一致：240 次 × 1500ms ≈ 360s；hook 默认 120s，仅面板显式覆盖。
     timeout: 360000,
     onSuccess: (hookResult) => { handleAnalysisSuccess(hookResult as unknown as Result); },
-    onError: (hookError) => { handleAnalysisError(hookError.message, hookError.phase, hookError.jobId); },
+    onError: (hookError) => { handleAnalysisError(hookError.message, hookError.phase, hookError.jobId, hookError); },
   });
   function handleAnalysisSuccess(hookResult: Result) {
     const ctx = jobTakeRef.current;
@@ -289,7 +290,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     updateTake(ctx.takeId, { result: hookResult, jobStatus: "completed", error: undefined });
     setBusyTakeId(null);
   }
-  function handleAnalysisError(message: string, phase: string, jobId: string | null) {
+  function handleAnalysisError(message: string, phase: string, jobId: string | null, info?: FailureInfo) {
     const ctx = jobTakeRef.current;
     if (!alive.current) return;
     if (!ctx) { setError(message); setBusyTakeId(null); return; }
@@ -297,7 +298,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     const timedOut = phase === "polling" && /超时|timed out|timeout/i.test(message);
     // 超时/取消走最终态，不与失败混淆；提交阶段失败记 failed。
     const terminalStatus = timedOut ? "timed_out" : message === "__CANCELLED__" ? "cancelled" : "failed";
-    updateTake(ctx.takeId, { jobId: jobId ?? undefined, jobStatus: terminalStatus, error: terminalStatus === "cancelled" ? undefined : message });
+    updateTake(ctx.takeId, { jobId: jobId ?? undefined, jobStatus: terminalStatus, error: terminalStatus === "cancelled" ? undefined : describeFailure(message, info, zh) });
     if (terminalStatus !== "cancelled") setError(message);
     jobTakeRef.current = null;
     setBusyTakeId(null);

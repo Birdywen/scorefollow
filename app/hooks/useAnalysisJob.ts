@@ -29,7 +29,8 @@ export type UseAnalysisJobConfig = {
   fetchImpl?: typeof fetch;
 };
 
-type JobEnvelope = { id: string; status: string; progress?: number; error?: string; result?: unknown };
+type JobEnvelope = { id: string; status: string; progress?: number; error?: string; result?: unknown;
+  errorClass?: string; stage?: string; interrupted?: boolean };
 
 function normalizeBase(endpoint: string): string {
   return endpoint.replace(/\/+$/, "");
@@ -351,7 +352,8 @@ export function useAnalysisJob(config: UseAnalysisJobConfig) {
         if (job.status === "failed") {
           dispatch({ type: "FAIL", message: job.error || "分析任务失败 / job failed", jobId, phase: "polling" });
           try {
-            onErrorRef.current?.({ message: job.error || "分析任务失败 / job failed", httpStatus: null, phase: "polling", jobId });
+            onErrorRef.current?.({ message: job.error || "分析任务失败 / job failed", httpStatus: null, phase: "polling", jobId,
+              errorClass: typeof job.errorClass === "string" ? job.errorClass : undefined, interrupted: job.interrupted === true });
           } catch {
             /* noop */
           }

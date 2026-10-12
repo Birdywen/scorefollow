@@ -31,6 +31,8 @@ export type AnalysisRequest = {
 } & Record<string, unknown>;
 
 export type AnalysisJobError = {
+  /** Server exception class and restart flag; optional (absent on older servers). */
+  errorClass?: string; interrupted?: boolean;
   message: string;
   httpStatus: number | null;
   phase: AnalysisJobPhase;
