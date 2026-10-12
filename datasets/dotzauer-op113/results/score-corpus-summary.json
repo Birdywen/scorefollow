@@ -1,8 +1,8 @@
 {
   "counts": {
-    "scored": 20,
-    "failed": 13,
-    "incompatible": 30,
+    "scored": 32,
+    "failed": 24,
+    "incompatible": 7,
     "skipped": 1
   },
   "clips": 64,
@@ -14,7 +14,8 @@
       "etude": 3,
       "audio_sha256": "7342a388561df00ab463e1cb67c8dc8ff8fcf06830ea06063dfaf0a501762dec",
       "ground_truth_verified": false,
-      "xml_sha256": "b504c8b5771e6eb89507c2f22b08929e644b2e1fda8a371acbb1b53e2cb57f6a",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No03.musicxml",
+      "xml_sha256": "dcccf6c1365037ca9af9690eba404f71f5128d5bb3a167953150eadfcaccbfdd",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -31,7 +32,8 @@
       "etude": 3,
       "audio_sha256": "9ea371853ecd7301f3fd4dbff10da28f6d78c5a9972f0c4aec4657b38369a9d2",
       "ground_truth_verified": false,
-      "xml_sha256": "b504c8b5771e6eb89507c2f22b08929e644b2e1fda8a371acbb1b53e2cb57f6a",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No03.musicxml",
+      "xml_sha256": "dcccf6c1365037ca9af9690eba404f71f5128d5bb3a167953150eadfcaccbfdd",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -48,7 +50,8 @@
       "etude": 9,
       "audio_sha256": "b20dba10c41564d47915e480cf7640b32dd1e84fa5d1f5ad5e38c8d65d7e184e",
       "ground_truth_verified": false,
-      "xml_sha256": "f6b399b0efc8a14faab56b10d4da62dde54e202f93a497b85a922b3d98eab435",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No09.musicxml",
+      "xml_sha256": "89c90fd43469be330ea6832ed5555ba40808b53988ba7f79a293806f89b6ba49",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -65,7 +68,8 @@
       "etude": 17,
       "audio_sha256": "594de3e7fd9e969e601d83fb3106daac110c377f5db6624d5df6285c3476b604",
       "ground_truth_verified": false,
-      "xml_sha256": "f501cd8d2efa9a9cd89a90d6234291578c2e66cdda0553b095c68bbf3b98625d",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No17.musicxml",
+      "xml_sha256": "60676b4fa98c3349c22bf2e6e8a18aea1ba58bf0a5d637f713fc45834fc0d2b7",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -84,7 +88,8 @@
       "etude": 2,
       "audio_sha256": "69a4438b053f484b031ccd5bc842e0548bc8cac3107f2dcfeacbe2f660c737d0",
       "ground_truth_verified": false,
-      "xml_sha256": "ec6677556f02f0f4d5cd30cb6f091aea03673c50e570e17fe4dfbca2cd2178ba",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No02.musicxml",
+      "xml_sha256": "c268cd8dea0e1eedeae9e7d39fa5e5baacbccae4e0275224462b857672f1688e",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -101,7 +106,8 @@
       "etude": 3,
       "audio_sha256": "3ccdd0059702cb19a782192a145c3e65fb5c35b08c2e476a15a2a80f9c09f486",
       "ground_truth_verified": false,
-      "xml_sha256": "b504c8b5771e6eb89507c2f22b08929e644b2e1fda8a371acbb1b53e2cb57f6a",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No03.musicxml",
+      "xml_sha256": "dcccf6c1365037ca9af9690eba404f71f5128d5bb3a167953150eadfcaccbfdd",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -120,7 +126,8 @@
       "etude": 17,
       "audio_sha256": "8aa98972a8bdcd791f7b39fc929966a60bb9e45dde9efa218b9a081c32715a98",
       "ground_truth_verified": false,
-      "xml_sha256": "f501cd8d2efa9a9cd89a90d6234291578c2e66cdda0553b095c68bbf3b98625d",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No17.musicxml",
+      "xml_sha256": "60676b4fa98c3349c22bf2e6e8a18aea1ba58bf0a5d637f713fc45834fc0d2b7",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -137,7 +144,8 @@
       "etude": 17,
       "audio_sha256": "8fd5cd47420be3ac3fae3f2ef3472f139e99b3c48295cbd3ace354fa48856116",
       "ground_truth_verified": false,
-      "xml_sha256": "f501cd8d2efa9a9cd89a90d6234291578c2e66cdda0553b095c68bbf3b98625d",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No17.musicxml",
+      "xml_sha256": "60676b4fa98c3349c22bf2e6e8a18aea1ba58bf0a5d637f713fc45834fc0d2b7",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -154,7 +162,8 @@
       "etude": 34,
       "audio_sha256": "fe8615e8f2714c188d2413c1a76283efcbc820d2c57371240a7f7b182de017f2",
       "ground_truth_verified": false,
-      "xml_sha256": "102fbc128083f1db1bfd9a1300d164d2a49062a99d673d41bda5aa245267738c",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No34.musicxml",
+      "xml_sha256": "29d2acb52f6e8e577d8e828000d0430eb0a64901479c110cccc79d958c3cbc7d",
       "status": "incompatible",
       "reason": "反复/跳房子须先展开为顺序谱"
     },
@@ -163,7 +172,8 @@
       "etude": 34,
       "audio_sha256": "c4db1f2dce7e84397c8b9a1f840bc10a1e79ef2ba87380d6502f5f419bde3f44",
       "ground_truth_verified": false,
-      "xml_sha256": "102fbc128083f1db1bfd9a1300d164d2a49062a99d673d41bda5aa245267738c",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No34.musicxml",
+      "xml_sha256": "29d2acb52f6e8e577d8e828000d0430eb0a64901479c110cccc79d958c3cbc7d",
       "status": "incompatible",
       "reason": "反复/跳房子须先展开为顺序谱"
     },
@@ -172,7 +182,8 @@
       "etude": 5,
       "audio_sha256": "d66e3341b343b52de77edda9175df6655739affd692e809a6cb944f7697eeb0c",
       "ground_truth_verified": false,
-      "xml_sha256": "9757217bb071216ee59d6be2ea47c00f19fca47e49665282d4cd239876bfd137",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No05.musicxml",
+      "xml_sha256": "d3cb740a5c57ae111d93621e4ab54d14d33a05d7aec2d4de9b4626a61ae3b2de",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -189,34 +200,64 @@
       "etude": 1,
       "audio_sha256": "d6c875b9c9201de40f8d787c7ecf6772994864d2ce2d6b6fbc38d5c6bfd6792b",
       "ground_truth_verified": false,
-      "xml_sha256": "c000cf1d35576f700e1de18199720da2db4681597205fed571cb9c22bf6f854a",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No01.musicxml",
+      "xml_sha256": "0f0bacb1745187e9c8239b89bd6b7a8ea61683e4bf92785f1d4727dbdd735be0",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no01__09_s0_fast",
       "etude": 1,
       "audio_sha256": "09119fab7951b954fd15cbf414ed282f1b32e2f45e53af3156dba453b4a3f095",
       "ground_truth_verified": false,
-      "xml_sha256": "c000cf1d35576f700e1de18199720da2db4681597205fed571cb9c22bf6f854a",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No01.musicxml",
+      "xml_sha256": "0f0bacb1745187e9c8239b89bd6b7a8ea61683e4bf92785f1d4727dbdd735be0",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no01__09_s1_slow",
       "etude": 1,
       "audio_sha256": "0a480005d86e80e23dd3a9fa148e946d73a19a0dc0d96313fb803c85be3898c4",
       "ground_truth_verified": false,
-      "xml_sha256": "c000cf1d35576f700e1de18199720da2db4681597205fed571cb9c22bf6f854a",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No01.musicxml",
+      "xml_sha256": "0f0bacb1745187e9c8239b89bd6b7a8ea61683e4bf92785f1d4727dbdd735be0",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no11__10_s0_fast",
       "etude": 11,
       "audio_sha256": "3e35f0e8943ba3b9e7163594a0dd7f1fcde1631fa454869cf16a6d0f74f855e1",
       "ground_truth_verified": false,
-      "xml_sha256": "f2457925039d95e8d6f3a3cf4fb521612c21e0b1600c47ff0b9d9c29547265e9",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No11.musicxml",
+      "xml_sha256": "a4e4947637f61b45e281c54873f6b3c5dd88cdfa5906ee2ef47f21d083c614e6",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -235,7 +276,8 @@
       "etude": 11,
       "audio_sha256": "30ce4f8d732964bb9ba5154aa729e2b17023f4c73586c4c644e28adc5069b878",
       "ground_truth_verified": false,
-      "xml_sha256": "f2457925039d95e8d6f3a3cf4fb521612c21e0b1600c47ff0b9d9c29547265e9",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No11.musicxml",
+      "xml_sha256": "a4e4947637f61b45e281c54873f6b3c5dd88cdfa5906ee2ef47f21d083c614e6",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -252,7 +294,8 @@
       "etude": 11,
       "audio_sha256": "6162f9d059e36fb81d7eb85d29ca55f24bebe0c50ef3012f5bbd52cb5da2bcb7",
       "ground_truth_verified": false,
-      "xml_sha256": "f2457925039d95e8d6f3a3cf4fb521612c21e0b1600c47ff0b9d9c29547265e9",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No11.musicxml",
+      "xml_sha256": "a4e4947637f61b45e281c54873f6b3c5dd88cdfa5906ee2ef47f21d083c614e6",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -271,7 +314,8 @@
       "etude": 15,
       "audio_sha256": "a00c20a3e40ef944d2f69e3efecef95bc29e7f96ae9899947173cfa45d06c125",
       "ground_truth_verified": false,
-      "xml_sha256": "e13444c463335e5badc58c14952dd4b7144559a603902f1b0147e246f61df484",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No15.musicxml",
+      "xml_sha256": "14c3c299901eeeaa1ba990f02f89e68b0b42560e4b4b5ad899e54665a5e13da5",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -290,7 +334,8 @@
       "etude": 15,
       "audio_sha256": "d546d0fad73acb4c1f07848f24fb1c374263dcf411b4daa713165f08a6411553",
       "ground_truth_verified": false,
-      "xml_sha256": "e13444c463335e5badc58c14952dd4b7144559a603902f1b0147e246f61df484",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No15.musicxml",
+      "xml_sha256": "14c3c299901eeeaa1ba990f02f89e68b0b42560e4b4b5ad899e54665a5e13da5",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -307,7 +352,8 @@
       "etude": 20,
       "audio_sha256": "117c8acc8e4cf9374cb870484d7a614fabce98018a6bcb3e4097556437293e8c",
       "ground_truth_verified": false,
-      "xml_sha256": "8a8eb4e64cc3d2a738ca264cd67c7d66b441af5d44b3f73a3d5c7a63c5686798",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No20.musicxml",
+      "xml_sha256": "48cfbe598c9f2012608bed6f4f442f7dc51949b50fa0436b997a1ada2567d2e1",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -326,34 +372,48 @@
       "etude": 22,
       "audio_sha256": "89dccc2cb833faa7495a14ed3305678ecdf8eb5adee6e8195b8fbc9e835cec11",
       "ground_truth_verified": false,
-      "xml_sha256": "74dc8ad309519e9c509d86e1703500a039b5d8c03d09b49614fb2dbe880ec723",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No22.musicxml",
+      "xml_sha256": "621dad6c5ca92e65a399ec329725c6571458ace9e4206a36395231068f506350",
       "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "reason": "中途变拍暂不支持，请按拍号分段分析"
     },
     {
       "id": "dotzauer_b1_no22__13_s1_slow",
       "etude": 22,
       "audio_sha256": "8e5e0903286105cdcac3a06feddd454b6e87e2233340c49db56e9314bc9fd426",
       "ground_truth_verified": false,
-      "xml_sha256": "74dc8ad309519e9c509d86e1703500a039b5d8c03d09b49614fb2dbe880ec723",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No22.musicxml",
+      "xml_sha256": "621dad6c5ca92e65a399ec329725c6571458ace9e4206a36395231068f506350",
       "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "reason": "中途变拍暂不支持，请按拍号分段分析"
     },
     {
       "id": "dotzauer_b1_no26__14_slow",
       "etude": 26,
       "audio_sha256": "5b45ce90c6376658ad43c8a8af75e2ccb0b3ad5ddb6d66f28baea304bcf7d1a5",
       "ground_truth_verified": false,
-      "xml_sha256": "7afb1c63be5b71f203c78d479c6d5e877cc84d34683a41a297c1ebf0c3505dae",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No26.musicxml",
+      "xml_sha256": "109cd5fa965b1263e4f77f2c67567e3cbce851020ce9db6d3714e52771ae5a4a",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no12__15_s0_slow",
       "etude": 12,
       "audio_sha256": "6ad54591f49510c6718d8737a11bf2e188d2a42fc12c28953ec0540fd194c6dc",
       "ground_truth_verified": false,
-      "xml_sha256": "f09a70c3242a346fb57a3af86a466f350406223a5955dd825f3e2d673771609d",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No12.musicxml",
+      "xml_sha256": "f592755aa308251871791f2c2402b3a8871d2e3e51e74cc4b21b4ff56bf3705f",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -370,7 +430,8 @@
       "etude": 12,
       "audio_sha256": "46a21bb4d08861a60daf4098e427e126c61b9ab2fcb697c787e999a82b444899",
       "ground_truth_verified": false,
-      "xml_sha256": "f09a70c3242a346fb57a3af86a466f350406223a5955dd825f3e2d673771609d",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No12.musicxml",
+      "xml_sha256": "f592755aa308251871791f2c2402b3a8871d2e3e51e74cc4b21b4ff56bf3705f",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -387,7 +448,8 @@
       "etude": 12,
       "audio_sha256": "3f403f774764b2dc41e049a81a7746d1d4ae9287a4636362ae44fd17b54d002d",
       "ground_truth_verified": false,
-      "xml_sha256": "f09a70c3242a346fb57a3af86a466f350406223a5955dd825f3e2d673771609d",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No12.musicxml",
+      "xml_sha256": "f592755aa308251871791f2c2402b3a8871d2e3e51e74cc4b21b4ff56bf3705f",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -404,16 +466,26 @@
       "etude": 13,
       "audio_sha256": "8a3d0822faffca19544065043d0f5892bac2dea1d38bb81769dc4e05e6eb7d71",
       "ground_truth_verified": false,
-      "xml_sha256": "6ebc98b13ec418fd44ed85bf88d7bbc9de75fd8cdb17fbdd97d82a20f0206207",
-      "status": "incompatible",
-      "reason": "多声部/交错时间轴暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No13.musicxml",
+      "xml_sha256": "cbaf57bef7282eb202345498a2c8e2d31aea2e2baf6238dec6b55c2f419951c7",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no16__17_s0_fast",
       "etude": 16,
       "audio_sha256": "720bbe54cc217bef5c3fc79b50b243d623fb9c18bfd7f4a86a45589dfa9d8d57",
       "ground_truth_verified": false,
-      "xml_sha256": "57cfc246b06327108cdce651e08579857cd1fcb3244611f7caccc29d55b19987",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No16.musicxml",
+      "xml_sha256": "2f6737a80f5f04db5564033263cbf9d8638ac896936b2135b9bc0e2dd3830c4b",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -430,7 +502,8 @@
       "etude": 16,
       "audio_sha256": "df9c93af5fef17d76b44d8799a1c0d5985471060e163f80e7c4e91516d71a49c",
       "ground_truth_verified": false,
-      "xml_sha256": "57cfc246b06327108cdce651e08579857cd1fcb3244611f7caccc29d55b19987",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No16.musicxml",
+      "xml_sha256": "2f6737a80f5f04db5564033263cbf9d8638ac896936b2135b9bc0e2dd3830c4b",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -447,25 +520,28 @@
       "etude": 22,
       "audio_sha256": "9c3ff403435abee1825c24c5ba0549d05409c02115a604d15a889abb529d787f",
       "ground_truth_verified": false,
-      "xml_sha256": "74dc8ad309519e9c509d86e1703500a039b5d8c03d09b49614fb2dbe880ec723",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No22.musicxml",
+      "xml_sha256": "621dad6c5ca92e65a399ec329725c6571458ace9e4206a36395231068f506350",
       "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "reason": "中途变拍暂不支持，请按拍号分段分析"
     },
     {
       "id": "dotzauer_b1_no22__18_s1_slow",
       "etude": 22,
       "audio_sha256": "b5c9ed64ae4b782d5fb235d293bb6a2b37eac4e5e04733c130a3cf71e58fb93d",
       "ground_truth_verified": false,
-      "xml_sha256": "74dc8ad309519e9c509d86e1703500a039b5d8c03d09b49614fb2dbe880ec723",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No22.musicxml",
+      "xml_sha256": "621dad6c5ca92e65a399ec329725c6571458ace9e4206a36395231068f506350",
       "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "reason": "中途变拍暂不支持，请按拍号分段分析"
     },
     {
       "id": "dotzauer_b1_no31__19_s0_fast",
       "etude": 31,
       "audio_sha256": "def726cd6ac540aca468aaaf7bc274ca0e7aed666b6c340a4c783704e24148cb",
       "ground_truth_verified": false,
-      "xml_sha256": "b63aa5ff063cf8ed8a34434e1a0caba04e69a00fae6fbbe7a007a5d9580c2cf6",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No31.musicxml",
+      "xml_sha256": "0f049c7ef393401450b75b6ae5fa9d833bfd39ab08de59d0231c017f9d1d3063",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -484,7 +560,8 @@
       "etude": 31,
       "audio_sha256": "b758750295428a40d31b40e1553c97de59558cb605d7cc4fdadacc393844d7a1",
       "ground_truth_verified": false,
-      "xml_sha256": "b63aa5ff063cf8ed8a34434e1a0caba04e69a00fae6fbbe7a007a5d9580c2cf6",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No31.musicxml",
+      "xml_sha256": "0f049c7ef393401450b75b6ae5fa9d833bfd39ab08de59d0231c017f9d1d3063",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -501,43 +578,88 @@
       "etude": 33,
       "audio_sha256": "394025fb672b720899a178d889d5befbfcc50f718eeb1ff9dd4e014fa37dcde3",
       "ground_truth_verified": false,
-      "xml_sha256": "08eeccc2f21529085b36b8bd036a81b45be7c9f2c7a5c37a060462fe44e7a96b",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No33.musicxml",
+      "xml_sha256": "ecc0cf0670a4ee0bf187c3670adc91e4d76790240f2868e0335d9f97678dc28c",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no33__20_s1_slow",
       "etude": 33,
       "audio_sha256": "c5c389aa71b65c02b220cc2c72a9729087e4e787d1a32e77b80f1accff469cef",
       "ground_truth_verified": false,
-      "xml_sha256": "08eeccc2f21529085b36b8bd036a81b45be7c9f2c7a5c37a060462fe44e7a96b",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No33.musicxml",
+      "xml_sha256": "ecc0cf0670a4ee0bf187c3670adc91e4d76790240f2868e0335d9f97678dc28c",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no33__20_s2_full",
       "etude": 33,
       "audio_sha256": "3e18718d89e162a12e4f2859e9b13e5753e68982b64e3cdf9da0ae9982195716",
       "ground_truth_verified": false,
-      "xml_sha256": "08eeccc2f21529085b36b8bd036a81b45be7c9f2c7a5c37a060462fe44e7a96b",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No33.musicxml",
+      "xml_sha256": "ecc0cf0670a4ee0bf187c3670adc91e4d76790240f2868e0335d9f97678dc28c",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no33__20_s3_full",
       "etude": 33,
       "audio_sha256": "4ef02874ef55503879261eda238b9c024b38c9a490f3ada91d6d9986472f43b4",
       "ground_truth_verified": false,
-      "xml_sha256": "08eeccc2f21529085b36b8bd036a81b45be7c9f2c7a5c37a060462fe44e7a96b",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No33.musicxml",
+      "xml_sha256": "ecc0cf0670a4ee0bf187c3670adc91e4d76790240f2868e0335d9f97678dc28c",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no06__21_fast",
       "etude": 6,
       "audio_sha256": "fbb8d84dd2097e691fca46cec6c97859a4dce478d0c47a0caa34502e496ffbfa",
       "ground_truth_verified": false,
-      "xml_sha256": "5e7c289ad99e65d0fbfb4b68467c301a16322542f9877cec588a13c31efa68be",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No06.musicxml",
+      "xml_sha256": "48e334adadeadaaaa0fb6f518dd1eedf82027fb4d11bb64cebb850906663c935",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -554,45 +676,94 @@
       "etude": 7,
       "audio_sha256": "8d16ab0ab8c7a9ad2c0a1ccc144950bf91f3157f9ccbb8bc71acee320d5cc477",
       "ground_truth_verified": false,
-      "xml_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f",
-      "status": "incompatible",
-      "reason": "多声部/交错时间轴暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No07.musicxml",
+      "xml_sha256": "86d419a614171960d3b1d7c1126eeff6008fd55a0643924495adfafdc7605b7b",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no07__22_s1_full",
       "etude": 7,
       "audio_sha256": "38c9142c7cf1e9f132c2ea485a6bcecd36d1efc9c7728cb5b11cbd536434d13d",
       "ground_truth_verified": false,
-      "xml_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f",
-      "status": "incompatible",
-      "reason": "多声部/交错时间轴暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No07.musicxml",
+      "xml_sha256": "86d419a614171960d3b1d7c1126eeff6008fd55a0643924495adfafdc7605b7b",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no07__22_s2_fast",
       "etude": 7,
       "audio_sha256": "ba4c56e1084d4708a5aa89edb104a7d451fd9a9f88a1543316151f5164e59a3b",
       "ground_truth_verified": false,
-      "xml_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f",
-      "status": "incompatible",
-      "reason": "多声部/交错时间轴暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No07.musicxml",
+      "xml_sha256": "86d419a614171960d3b1d7c1126eeff6008fd55a0643924495adfafdc7605b7b",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no10__23_slow",
       "etude": 10,
       "audio_sha256": "5eced5c8a889e238d90898f8eb99cbd844d545e39b981a3802c4d953a8826eb3",
       "ground_truth_verified": false,
-      "xml_sha256": "8f4d48e8a3ae7cc1570fabbbd4a2b3a4459ced1b7949e8968a969423d87df86a",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No10.musicxml",
+      "xml_sha256": "7144308526c7fc118178af57336239651153e53cebe2d7e8a7a8c67d56505fe5",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no14__24_slow",
       "etude": 14,
       "audio_sha256": "46089f4094f11415cf0da8c9cdba92bc1e172d638dd8b862e97bbedb16604606",
       "ground_truth_verified": false,
-      "xml_sha256": "4eb7c4debb6433c01b96af0c83cbcdfe66e6d2131e8b8d6e6a8567a82fc8170d",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No14.musicxml",
+      "xml_sha256": "c0c0ab86d574558b6794fee1ddb4fd3057ae0960d5e88c1b3086029659282b01",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_noop120_7__25_fast",
@@ -607,7 +778,8 @@
       "etude": 25,
       "audio_sha256": "7875592092ef4e2611d747ab29ad270edd68dd7964bdcb0a55ecea0cb56e3901",
       "ground_truth_verified": false,
-      "xml_sha256": "bae0102c344c2904ea30700c2e067f2f3461894d856425c817437a93703b68e6",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No25.musicxml",
+      "xml_sha256": "863c82874d2330f13be8e9e58eee535aa2aeab7a1f97fdc109824d68754e48d8",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -626,7 +798,8 @@
       "etude": 25,
       "audio_sha256": "c2f57b9308b77d1360a3727a48f46fe17cdaf98b3d30b8e8ffa17ac11fe2b403",
       "ground_truth_verified": false,
-      "xml_sha256": "bae0102c344c2904ea30700c2e067f2f3461894d856425c817437a93703b68e6",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No25.musicxml",
+      "xml_sha256": "863c82874d2330f13be8e9e58eee535aa2aeab7a1f97fdc109824d68754e48d8",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -645,25 +818,46 @@
       "etude": 32,
       "audio_sha256": "bc263c0fd87fb33346be9558317f0d73b04d69b9d0bca26e7d57fd346d007ff3",
       "ground_truth_verified": false,
-      "xml_sha256": "7a380554e8115500d0676433900f5c20453e929eec66a12a1438a3d83e91d2c9",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No32.musicxml",
+      "xml_sha256": "dd9760642886b5c2066901691d4c607668c7f35382ae7004ca276152b09cdab0",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no32__27_s1_slow",
       "etude": 32,
       "audio_sha256": "c83e893b5c8cfe28fa6fa66a4eaa2f2bff8ca6e20a466771241474cfb1bf53a7",
       "ground_truth_verified": false,
-      "xml_sha256": "7a380554e8115500d0676433900f5c20453e929eec66a12a1438a3d83e91d2c9",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No32.musicxml",
+      "xml_sha256": "dd9760642886b5c2066901691d4c607668c7f35382ae7004ca276152b09cdab0",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no12__28_fast",
       "etude": 12,
       "audio_sha256": "0aa58e1dc0556aa69e7a9536bb55c55be08b3f1e08c7e01df65b308be5d6c7f2",
       "ground_truth_verified": false,
-      "xml_sha256": "f09a70c3242a346fb57a3af86a466f350406223a5955dd825f3e2d673771609d",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No12.musicxml",
+      "xml_sha256": "f592755aa308251871791f2c2402b3a8871d2e3e51e74cc4b21b4ff56bf3705f",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -680,7 +874,8 @@
       "etude": 16,
       "audio_sha256": "46a1010dfa0d9857a74afb65cf34e61e398f9f404cf79535db54fcde8daf5659",
       "ground_truth_verified": false,
-      "xml_sha256": "57cfc246b06327108cdce651e08579857cd1fcb3244611f7caccc29d55b19987",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No16.musicxml",
+      "xml_sha256": "2f6737a80f5f04db5564033263cbf9d8638ac896936b2135b9bc0e2dd3830c4b",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -697,7 +892,8 @@
       "etude": 19,
       "audio_sha256": "00f17f35aeb9c2936729c19fb48629dcdde3c58d22d80757735af342add9186a",
       "ground_truth_verified": false,
-      "xml_sha256": "84ca5d641f7f601c1726ebacd32428b4b107e1fac395b15e415558638332ef72",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No19.musicxml",
+      "xml_sha256": "505d44b13907203714f3e3e6e0d34871f70767f219659e76edc20bd0cd6d6fa2",
       "status": "incompatible",
       "reason": "反复/跳房子须先展开为顺序谱"
     },
@@ -706,7 +902,8 @@
       "etude": 21,
       "audio_sha256": "42588d8ea4fbf3d685a7787222318e6f6d59f76356467401a78f30511fcd867d",
       "ground_truth_verified": false,
-      "xml_sha256": "6ba59ceac3c9968349cbb96a18810606e71077e69eae9b13b9414e6529f8fe5b",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No21.musicxml",
+      "xml_sha256": "73efa6a387d28732bf843b9cc2acd8a2a2de5e328f8096e3313b55fcc3a4d526",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -723,7 +920,8 @@
       "etude": 21,
       "audio_sha256": "25642b1411755d3bb12aa547b26a2170094216271fb077bb1a1863e549a385bf",
       "ground_truth_verified": false,
-      "xml_sha256": "6ba59ceac3c9968349cbb96a18810606e71077e69eae9b13b9414e6529f8fe5b",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No21.musicxml",
+      "xml_sha256": "73efa6a387d28732bf843b9cc2acd8a2a2de5e328f8096e3313b55fcc3a4d526",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -740,7 +938,8 @@
       "etude": 27,
       "audio_sha256": "3aefa39937e27e3156d19c5dc9bf47277071fe6f06a07111d965a6abf6334fab",
       "ground_truth_verified": false,
-      "xml_sha256": "120f6ea44557724f2b028f0d55d9d59bd318f8d3e8386be5dc0f6f8972a2e5e9",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No27.musicxml",
+      "xml_sha256": "39df2e6db3e02520c6c20ecc386c422c4b87da2bda34b5aa69af9148eb99873c",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -759,7 +958,8 @@
       "etude": 27,
       "audio_sha256": "db73c6c0c13dfd1fa6daead21b9798c11402656830935bebbc1e025411e26782",
       "ground_truth_verified": false,
-      "xml_sha256": "120f6ea44557724f2b028f0d55d9d59bd318f8d3e8386be5dc0f6f8972a2e5e9",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No27.musicxml",
+      "xml_sha256": "39df2e6db3e02520c6c20ecc386c422c4b87da2bda34b5aa69af9148eb99873c",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -778,70 +978,138 @@
       "etude": 28,
       "audio_sha256": "3a6248235fab3e6eb81f8f61c9c39c29b9f0a9304538251572a2a7c2a17230cd",
       "ground_truth_verified": false,
-      "xml_sha256": "321630f469c36df0f6faabeda3efe5626e5ab2cd448c04a1e56eac6477eef954",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No28.musicxml",
+      "xml_sha256": "bf4fcd4ecbe52ad5afeae835d04e03d2a6f487de15d5fd115af64d222674dd4f",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "ValueError",
+      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
     },
     {
       "id": "dotzauer_b1_no28__33_s1_slow",
       "etude": 28,
       "audio_sha256": "51341a9089e0ffa9b9b1f65081b17a439707a46b0356acfaf321e2c4c749f041",
       "ground_truth_verified": false,
-      "xml_sha256": "321630f469c36df0f6faabeda3efe5626e5ab2cd448c04a1e56eac6477eef954",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No28.musicxml",
+      "xml_sha256": "bf4fcd4ecbe52ad5afeae835d04e03d2a6f487de15d5fd115af64d222674dd4f",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no29__34_s0_fast",
       "etude": 29,
       "audio_sha256": "2da1e2fb10af7fdaf84b649cc5f202c020dd5755f9712579a3fe5ce089ae0f6d",
       "ground_truth_verified": false,
-      "xml_sha256": "f7f176be1092fe28af9251fe50ceded1cb5eb6a23c5e12203a7e52f6784c2f63",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No29.musicxml",
+      "xml_sha256": "d6ad6bedcef5517ba805d299d576e5e6fa28b7545ef2df23cf9def05fbb58e55",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no29__34_s1_slow",
       "etude": 29,
       "audio_sha256": "0a47a6e7c527745b21e32c74d2441a7477d9dff05a01d58d2bb29d9f81195cd9",
       "ground_truth_verified": false,
-      "xml_sha256": "f7f176be1092fe28af9251fe50ceded1cb5eb6a23c5e12203a7e52f6784c2f63",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No29.musicxml",
+      "xml_sha256": "d6ad6bedcef5517ba805d299d576e5e6fa28b7545ef2df23cf9def05fbb58e55",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no08__35_slow",
       "etude": 8,
       "audio_sha256": "8c8196f2940ff36ffaaac6a3df7bbb28301250955682c59cf5533e571b677dc8",
       "ground_truth_verified": false,
-      "xml_sha256": "a5e170faa4398b1d05bfd5ca9c1d3829b576546d1d641bb76af97a91d762e61e",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No08.musicxml",
+      "xml_sha256": "d743aa77f3a0d2a839eb9a1dc1e43b8604c71384367deef704b692e45dfddac9",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "failed",
+      "error_type": "AssertionError",
+      "reason": "Incomplete fixed excerpt"
     },
     {
       "id": "dotzauer_b1_no04__36_s0_fast",
       "etude": 4,
       "audio_sha256": "d97ad0e6818019130bd7479566731b241acb8d40afab7b9c0dda4b0179ca8c9b",
       "ground_truth_verified": false,
-      "xml_sha256": "7dd3185b6d532049eabc651b8b484a4cceb66e0fe500214351ad79a47b06cdd8",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No04.musicxml",
+      "xml_sha256": "8f29bb8b72fa36530b3f2cc8dbdb4cfb3d9a5cb83ef67c7068103d0b364a3a74",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no04__36_s1_slow",
       "etude": 4,
       "audio_sha256": "66bd923ca58bac3e4248d0e1cc4db314e25c5eee82f5b1647b5e846e6e2f0ac0",
       "ground_truth_verified": false,
-      "xml_sha256": "7dd3185b6d532049eabc651b8b484a4cceb66e0fe500214351ad79a47b06cdd8",
-      "status": "incompatible",
-      "reason": "双音/和弦暂不支持"
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No04.musicxml",
+      "xml_sha256": "8f29bb8b72fa36530b3f2cc8dbdb4cfb3d9a5cb83ef67c7068103d0b364a3a74",
+      "params": {
+        "start_sec": 42,
+        "duration_sec": 18,
+        "bpm": 112,
+        "bpm_source": "declared_fallback",
+        "instrument": "cello",
+        "start_measure": 0,
+        "sync_mode": "vamp-beat"
+      },
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no23__37_s0_fast",
       "etude": 23,
       "audio_sha256": "4d0d0cce1a1be2a78483889fd373d3c6f5dad9578bb67044f072cfe217d18cac",
       "ground_truth_verified": false,
-      "xml_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No23.musicxml",
+      "xml_sha256": "5e1af6523cd8e5dca220c2f2b655f7c26f981f5ff55f613de2b2279c6b25ad67",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -860,7 +1128,8 @@
       "etude": 23,
       "audio_sha256": "1987993febde2a85aa5aed51bd98a9dee6daf8cbc80672503a1f2a03f4ee9592",
       "ground_truth_verified": false,
-      "xml_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75",
+      "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No23.musicxml",
+      "xml_sha256": "5e1af6523cd8e5dca220c2f2b655f7c26f981f5ff55f613de2b2279c6b25ad67",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,

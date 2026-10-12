@@ -3,7 +3,18 @@
   "etude": 10,
   "audio_sha256": "5eced5c8a889e238d90898f8eb99cbd844d545e39b981a3802c4d953a8826eb3",
   "ground_truth_verified": false,
-  "xml_sha256": "8f4d48e8a3ae7cc1570fabbbd4a2b3a4459ced1b7949e8968a969423d87df86a",
-  "status": "incompatible",
-  "reason": "双音/和弦暂不支持"
+  "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No10.musicxml",
+  "xml_sha256": "7144308526c7fc118178af57336239651153e53cebe2d7e8a7a8c67d56505fe5",
+  "params": {
+    "start_sec": 42,
+    "duration_sec": 18,
+    "bpm": 112,
+    "bpm_source": "declared_fallback",
+    "instrument": "cello",
+    "start_measure": 0,
+    "sync_mode": "vamp-beat"
+  },
+  "status": "failed",
+  "error_type": "ValueError",
+  "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
 }

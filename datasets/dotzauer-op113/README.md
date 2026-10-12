@@ -8,6 +8,9 @@ Prepared audio and score fixtures for cello sensor/alignment research.
 - `source/op.113.pdf`: the original 41-page score book.
 - `musicxml/`: supplied No.05 score plus raw Halbestunde OCR outputs obtained
   through the existing analysis service. OCR output is not reviewed ground truth.
+- `musicxml-monophonic/`: generated single-line scoring projections. Original
+  OCR files stay intact; every removed note is audited in
+  `results/monophonic-normalization.json`.
 - `manifest.json`: relative paths, hashes, audio properties, and score pairing.
 - `score-regions.json`: source-page geometry, including the ink-free shaped
   boundary between Nos.09/10; `pdf-visual-verification.json` records Qwen checks.
@@ -35,6 +38,7 @@ python3 -B scripts/dotzauer-corpus.py inventory
 python3 -B scripts/dotzauer-corpus.py sensors --chunk-seconds 240
 python3 -B scripts/dotzauer-corpus.py score-no05
 python3 -B scripts/dotzauer-ocr.py
+python3 -B scripts/dotzauer-normalize.py
 python3 -B scripts/dotzauer-corpus.py score-corpus
 ```
 
@@ -53,6 +57,15 @@ ground truth. An onset interval is not assumed to be the score's beat period.
 
 The No.05 run uses the explicit 112 BPM, 42-second/18-second real-excerpt contract.
 The corpus score probes use the same fixed excerpt window for each matched clip,
+and automatically regenerate monophonic XML before any score parsing. The
+projection selects the part and voice/staff with most non-chord pitched attacks
+(document order breaks ties), drops added chord tones while retaining the base
+note, removes auxiliary parts/voices, and reconstructs a forward-only timeline
+with explicit rests for gaps. Orphan tie stops left by discarded notes are
+removed; valid retained ties stay intact. This deterministic selection is not
+a claim that OCR always placed the correct melody first. Repeats and meter
+changes are retained rather than erased to bypass validation.
+The probes run
 with MusicXML sound tempo when valid, otherwise a declared 112 BPM fallback.
 They record scored, failed, incompatible, and skipped cases separately. Completion
 of the report is not a claim that all clips scored or OCR pitches are accurate.
@@ -87,3 +100,18 @@ sensor fixture and is not paired with Op.113 No.07.
 Next investigation: distinguish genuine notation from OCR errors in rejected
 scores, then inspect the 13 uncertain auto-locations with verified measure
 anchors. Do not remove notes or lower scoring gates merely to increase coverage.
+
+## Monophonic projection update
+
+At the user's direction, treat this corpus as single-line cello and project OCR
+polyphony away before scoring. All 34 projections contain one part and no chord,
+backup/forward or auxiliary voice/staff elements. Thirty scores now parse; only
+Nos.19/30/34 (repeats) and No.22 (meter change) remain incompatible. Original
+files are byte-identical to the baseline, and all 17 previously accepted scores
+retain exactly the same parsed pitches, durations and onsets.
+
+The same 42s/18s probes now yield **32 scored, 24 analysis failures, 7 incompatible
+clips, 1 unmatched skip**. Thus the number of scored clips increased from 20 to
+32; polyphony-related input rejection is eliminated. This is still partial
+scoring coverage, not a note-accuracy benchmark. The earlier counts above record
+the raw-OCR baseline and remain available in commit `6f3fadd`.

@@ -3,7 +3,8 @@
   "etude": 22,
   "audio_sha256": "8e5e0903286105cdcac3a06feddd454b6e87e2233340c49db56e9314bc9fd426",
   "ground_truth_verified": false,
-  "xml_sha256": "74dc8ad309519e9c509d86e1703500a039b5d8c03d09b49614fb2dbe880ec723",
+  "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No22.musicxml",
+  "xml_sha256": "621dad6c5ca92e65a399ec329725c6571458ace9e4206a36395231068f506350",
   "status": "incompatible",
-  "reason": "双音/和弦暂不支持"
+  "reason": "中途变拍暂不支持，请按拍号分段分析"
 }

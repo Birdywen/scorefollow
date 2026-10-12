@@ -274,6 +274,9 @@ def score_corpus(args):
     """Fixed 42s/18s pipeline probes, not manually annotated accuracy tests."""
     from analysis_service.engine import analyze, parse_score
     from analysis_service.vamp_features import extract_all
+    # Always regenerate from original XML before parsing; never reuse a stale
+    # projection after the OCR input or normalization policy changes.
+    subprocess.run([sys.executable, '-B', str(REPO / 'scripts/dotzauer-normalize.py')], check=True)
     data = manifest()
     coverage = json.loads((DATA / 'coverage.json').read_text())
     available = sorted(int(p.stem[-2:]) for p in (DATA / 'musicxml').glob('*.musicxml'))
@@ -291,7 +294,10 @@ def score_corpus(args):
         if not clip['musicxml']:
             record.update(status='skipped', reason='No matching MusicXML')
         else:
-            xml = (DATA / clip['musicxml']).read_text()
+            normalized = DATA / 'musicxml-monophonic' / Path(clip['musicxml']).name
+            score_path = normalized if normalized.exists() else DATA / clip['musicxml']
+            xml = score_path.read_text()
+            record['score_path'] = str(score_path.relative_to(DATA))
             record['xml_sha256'] = hashlib.sha256(xml.encode()).hexdigest()
             try:
                 parse_score(xml)

@@ -3,7 +3,8 @@
   "etude": 17,
   "audio_sha256": "8fd5cd47420be3ac3fae3f2ef3472f139e99b3c48295cbd3ace354fa48856116",
   "ground_truth_verified": false,
-  "xml_sha256": "f501cd8d2efa9a9cd89a90d6234291578c2e66cdda0553b095c68bbf3b98625d",
+  "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No17.musicxml",
+  "xml_sha256": "60676b4fa98c3349c22bf2e6e8a18aea1ba58bf0a5d637f713fc45834fc0d2b7",
   "params": {
     "start_sec": 42,
     "duration_sec": 18,

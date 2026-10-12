@@ -1,0 +1,2082 @@
+{
+  "records": [
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 1,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 1,
+      "source_sha256": "c000cf1d35576f700e1de18199720da2db4681597205fed571cb9c22bf6f854a",
+      "output_sha256": "0f0bacb1745187e9c8239b89bd6b7a8ea61683e4bf92785f1d4727dbdd735be0",
+      "compatible": true,
+      "note_count": 276
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 2,
+      "source_sha256": "ec6677556f02f0f4d5cd30cb6f091aea03673c50e570e17fe4dfbca2cd2178ba",
+      "output_sha256": "c268cd8dea0e1eedeae9e7d39fa5e5baacbccae4e0275224462b857672f1688e",
+      "compatible": true,
+      "note_count": 652
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 3,
+      "source_sha256": "b504c8b5771e6eb89507c2f22b08929e644b2e1fda8a371acbb1b53e2cb57f6a",
+      "output_sha256": "dcccf6c1365037ca9af9690eba404f71f5128d5bb3a167953150eadfcaccbfdd",
+      "compatible": true,
+      "note_count": 406
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 12,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 4,
+      "source_sha256": "7dd3185b6d532049eabc651b8b484a4cceb66e0fe500214351ad79a47b06cdd8",
+      "output_sha256": "8f29bb8b72fa36530b3f2cc8dbdb4cfb3d9a5cb83ef67c7068103d0b364a3a74",
+      "compatible": true,
+      "note_count": 392
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 5,
+      "source_sha256": "9757217bb071216ee59d6be2ea47c00f19fca47e49665282d4cd239876bfd137",
+      "output_sha256": "d3cb740a5c57ae111d93621e4ab54d14d33a05d7aec2d4de9b4626a61ae3b2de",
+      "compatible": true,
+      "note_count": 469
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 6,
+      "source_sha256": "5e7c289ad99e65d0fbfb4b68467c301a16322542f9877cec588a13c31efa68be",
+      "output_sha256": "48e334adadeadaaaa0fb6f518dd1eedf82027fb4d11bb64cebb850906663c935",
+      "compatible": true,
+      "note_count": 505
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 1,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 1,
+      "removed_orphan_tie_stops": [],
+      "etude": 7,
+      "source_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f",
+      "output_sha256": "86d419a614171960d3b1d7c1126eeff6008fd55a0643924495adfafdc7605b7b",
+      "compatible": true,
+      "note_count": 129
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 33,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 8,
+      "source_sha256": "a5e170faa4398b1d05bfd5ca9c1d3829b576546d1d641bb76af97a91d762e61e",
+      "output_sha256": "d743aa77f3a0d2a839eb9a1dc1e43b8604c71384367deef704b692e45dfddac9",
+      "compatible": true,
+      "note_count": 257
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 9,
+      "source_sha256": "f6b399b0efc8a14faab56b10d4da62dde54e202f93a497b85a922b3d98eab435",
+      "output_sha256": "89c90fd43469be330ea6832ed5555ba40808b53988ba7f79a293806f89b6ba49",
+      "compatible": true,
+      "note_count": 304
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 3,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 4,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 7,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 7,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 8,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 15,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 16,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 19,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 20,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 29,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 53,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 54,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 54,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 55,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 1,
+      "removed_orphan_tie_stops": [],
+      "etude": 10,
+      "source_sha256": "8f4d48e8a3ae7cc1570fabbbd4a2b3a4459ced1b7949e8968a969423d87df86a",
+      "output_sha256": "7144308526c7fc118178af57336239651153e53cebe2d7e8a7a8c67d56505fe5",
+      "compatible": true,
+      "note_count": 95
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 11,
+      "source_sha256": "f2457925039d95e8d6f3a3cf4fb521612c21e0b1600c47ff0b9d9c29547265e9",
+      "output_sha256": "a4e4947637f61b45e281c54873f6b3c5dd88cdfa5906ee2ef47f21d083c614e6",
+      "compatible": true,
+      "note_count": 97
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 12,
+      "source_sha256": "f09a70c3242a346fb57a3af86a466f350406223a5955dd825f3e2d673771609d",
+      "output_sha256": "f592755aa308251871791f2c2402b3a8871d2e3e51e74cc4b21b4ff56bf3705f",
+      "compatible": true,
+      "note_count": 223
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 70,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 70,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 70,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 70,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 71,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 71,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 71,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>C</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 71,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 72,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 72,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 72,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 72,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 73,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 73,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 73,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 73,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 74,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 74,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 74,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 74,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 75,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 75,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 75,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 75,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 76,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 76,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 76,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 76,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>2</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 77,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 77,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 77,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 77,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 8,
+      "removed_orphan_tie_stops": [],
+      "etude": 13,
+      "source_sha256": "6ebc98b13ec418fd44ed85bf88d7bbc9de75fd8cdb17fbdd97d82a20f0206207",
+      "output_sha256": "cbaf57bef7282eb202345498a2c8e2d31aea2e2baf6238dec6b55c2f419951c7",
+      "compatible": true,
+      "note_count": 421
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 3,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 4,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 7,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 8,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 19,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 20,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 27,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 29,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 30,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 30,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 31,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 31,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 32,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 32,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 33,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>D</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 34,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>D</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 35,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 36,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 37,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 38,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 39,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 40,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 43,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 44,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 47,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 48,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 65,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 66,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 66,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 67,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 68,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 68,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 69,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 70,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 71,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 13,
+      "removed_orphan_tie_stops": [
+        {
+          "measure": 34,
+          "pitch": [
+            "A",
+            "0",
+            "3"
+          ]
+        },
+        {
+          "measure": 40,
+          "pitch": [
+            "E",
+            "0",
+            "3"
+          ]
+        }
+      ],
+      "etude": 14,
+      "source_sha256": "4eb7c4debb6433c01b96af0c83cbcdfe66e6d2131e8b8d6e6a8567a82fc8170d",
+      "output_sha256": "c0c0ab86d574558b6794fee1ddb4fd3057ae0960d5e88c1b3086029659282b01",
+      "compatible": true,
+      "note_count": 157
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 15,
+      "source_sha256": "e13444c463335e5badc58c14952dd4b7144559a603902f1b0147e246f61df484",
+      "output_sha256": "14c3c299901eeeaa1ba990f02f89e68b0b42560e4b4b5ad899e54665a5e13da5",
+      "compatible": true,
+      "note_count": 757
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 16,
+      "source_sha256": "57cfc246b06327108cdce651e08579857cd1fcb3244611f7caccc29d55b19987",
+      "output_sha256": "2f6737a80f5f04db5564033263cbf9d8638ac896936b2135b9bc0e2dd3830c4b",
+      "compatible": true,
+      "note_count": 362
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 17,
+      "source_sha256": "f501cd8d2efa9a9cd89a90d6234291578c2e66cdda0553b095c68bbf3b98625d",
+      "output_sha256": "60676b4fa98c3349c22bf2e6e8a18aea1ba58bf0a5d637f713fc45834fc0d2b7",
+      "compatible": true,
+      "note_count": 245
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 18,
+      "source_sha256": "a3dd83c0c78bdbeb3e9898b2f0c5e4a989c6f1ff90ebd58478e353a5724c4a60",
+      "output_sha256": "9ca1c38f6ff22f80634833553d76122db51d79317e139d85c614fb7bb54e4772",
+      "compatible": true,
+      "note_count": 639
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 19,
+      "source_sha256": "84ca5d641f7f601c1726ebacd32428b4b107e1fac395b15e415558638332ef72",
+      "output_sha256": "505d44b13907203714f3e3e6e0d34871f70767f219659e76edc20bd0cd6d6fa2",
+      "compatible": false,
+      "reason": "反复/跳房子须先展开为顺序谱"
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 20,
+      "source_sha256": "8a8eb4e64cc3d2a738ca264cd67c7d66b441af5d44b3f73a3d5c7a63c5686798",
+      "output_sha256": "48cfbe598c9f2012608bed6f4f442f7dc51949b50fa0436b997a1ada2567d2e1",
+      "compatible": true,
+      "note_count": 566
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 21,
+      "source_sha256": "6ba59ceac3c9968349cbb96a18810606e71077e69eae9b13b9414e6529f8fe5b",
+      "output_sha256": "73efa6a387d28732bf843b9cc2acd8a2a2de5e328f8096e3313b55fcc3a4d526",
+      "compatible": true,
+      "note_count": 289
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 12,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 22,
+      "source_sha256": "74dc8ad309519e9c509d86e1703500a039b5d8c03d09b49614fb2dbe880ec723",
+      "output_sha256": "621dad6c5ca92e65a399ec329725c6571458ace9e4206a36395231068f506350",
+      "compatible": false,
+      "reason": "中途变拍暂不支持，请按拍号分段分析"
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 23,
+      "source_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75",
+      "output_sha256": "5e1af6523cd8e5dca220c2f2b655f7c26f981f5ff55f613de2b2279c6b25ad67",
+      "compatible": true,
+      "note_count": 373
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 1,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 24,
+      "source_sha256": "65a063dcd1506dd6308e2bff7f6b604024090bfdea4193df1fbe3ec9d13b4199",
+      "output_sha256": "ea362ba2e33d4e72ef4f9736756edf9056ad5fa13cbae68cf73bc3b073724709",
+      "compatible": true,
+      "note_count": 325
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 25,
+      "source_sha256": "bae0102c344c2904ea30700c2e067f2f3461894d856425c817437a93703b68e6",
+      "output_sha256": "863c82874d2330f13be8e9e58eee535aa2aeab7a1f97fdc109824d68754e48d8",
+      "compatible": true,
+      "note_count": 893
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 1,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 1,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 1,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 1,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 2,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 2,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 2,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 2,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 3,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 3,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 3,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 3,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 4,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 4,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 4,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 4,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 5,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 5,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 5,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 5,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 6,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 6,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 6,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 6,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 7,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 7,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 7,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 7,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 8,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 8,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 8,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 8,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 9,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 9,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 9,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 9,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 10,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 10,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 10,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 10,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 11,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 11,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 11,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 11,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 12,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 12,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 12,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 12,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 13,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 13,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 13,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 13,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 14,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 14,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 14,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 14,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 15,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 15,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 15,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 15,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 16,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 16,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 16,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 16,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 17,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 17,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 17,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 17,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 18,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 18,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 18,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 18,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 19,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 19,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 19,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 19,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 20,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 20,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 20,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 20,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 21,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 21,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 21,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 21,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 22,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 22,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 22,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 22,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 27,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 27,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 27,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 27,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 28,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 28,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 28,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 28,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 29,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 29,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 29,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 29,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 30,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>2.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 30,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 30,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 30,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 31,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 31,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 31,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 31,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 32,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 32,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 32,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 32,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 33,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 33,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 33,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 33,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 34,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 34,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 34,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 34,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 35,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 35,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 35,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 35,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 36,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 36,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 36,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <alter>1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 36,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 37,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 37,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 37,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 37,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 38,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 38,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 38,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 38,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <alter>-1.0</alter>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 39,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 39,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 39,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 39,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 40,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 40,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 41,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 42,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 42,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 43,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 44,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 44,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 45,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 46,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 47,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 47,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 48,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 49,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 26,
+      "source_sha256": "7afb1c63be5b71f203c78d479c6d5e877cc84d34683a41a297c1ebf0c3505dae",
+      "output_sha256": "109cd5fa965b1263e4f77f2c67567e3cbce851020ce9db6d3714e52771ae5a4a",
+      "compatible": true,
+      "note_count": 179
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 27,
+      "source_sha256": "120f6ea44557724f2b028f0d55d9d59bd318f8d3e8386be5dc0f6f8972a2e5e9",
+      "output_sha256": "39df2e6db3e02520c6c20ecc386c422c4b87da2bda34b5aa69af9148eb99873c",
+      "compatible": true,
+      "note_count": 665
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 43,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 43,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 43,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 28,
+      "source_sha256": "321630f469c36df0f6faabeda3efe5626e5ab2cd448c04a1e56eac6477eef954",
+      "output_sha256": "bf4fcd4ecbe52ad5afeae835d04e03d2a6f487de15d5fd115af64d222674dd4f",
+      "compatible": true,
+      "note_count": 673
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 29,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>2</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 29,
+      "source_sha256": "f7f176be1092fe28af9251fe50ceded1cb5eb6a23c5e12203a7e52f6784c2f63",
+      "output_sha256": "d6ad6bedcef5517ba805d299d576e5e6fa28b7545ef2df23cf9def05fbb58e55",
+      "compatible": true,
+      "note_count": 979
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 30,
+      "source_sha256": "a07fc0eab93dcc9f77ce7133857c1deaf1c2ade43168b817265f8f2e7d9975f3",
+      "output_sha256": "0b85ab12f7db88013b8305d85bbd3fda4597d1b61fb0f7065f3db1affa44a2ad",
+      "compatible": false,
+      "reason": "反复/跳房子须先展开为顺序谱"
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 31,
+      "source_sha256": "b63aa5ff063cf8ed8a34434e1a0caba04e69a00fae6fbbe7a007a5d9580c2cf6",
+      "output_sha256": "0f049c7ef393401450b75b6ae5fa9d833bfd39ab08de59d0231c017f9d1d3063",
+      "compatible": true,
+      "note_count": 637
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 22,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 23,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 24,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 25,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>E</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 26,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>B</step>\n          <alter>-1.0</alter>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 27,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>A</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 32,
+      "source_sha256": "7a380554e8115500d0676433900f5c20453e929eec66a12a1438a3d83e91d2c9",
+      "output_sha256": "dd9760642886b5c2066901691d4c607668c7f35382ae7004ca276152b09cdab0",
+      "compatible": true,
+      "note_count": 451
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [
+        {
+          "measure": 22,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 71,
+          "reason": "auxiliary-voice",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        }
+      ],
+      "inserted_rests": [],
+      "timeline_elements_removed": 1,
+      "removed_orphan_tie_stops": [],
+      "etude": 33,
+      "source_sha256": "08eeccc2f21529085b36b8bd036a81b45be7c9f2c7a5c37a060462fe44e7a96b",
+      "output_sha256": "ecc0cf0670a4ee0bf187c3670adc91e4d76790240f2868e0335d9f97678dc28c",
+      "compatible": true,
+      "note_count": 641
+    },
+    {
+      "policy": "dominant-part-voice-base-chord-v1",
+      "part": "P1",
+      "voice_staff": [
+        "1",
+        "1"
+      ],
+      "removed_parts": 0,
+      "removed_notes": [],
+      "inserted_rests": [],
+      "timeline_elements_removed": 0,
+      "removed_orphan_tie_stops": [],
+      "etude": 34,
+      "source_sha256": "102fbc128083f1db1bfd9a1300d164d2a49062a99d673d41bda5aa245267738c",
+      "output_sha256": "29d2acb52f6e8e577d8e828000d0430eb0a64901479c110cccc79d958c3cbc7d",
+      "compatible": false,
+      "reason": "反复/跳房子须先展开为顺序谱"
+    }
+  ],
+  "compatible": 30
+}

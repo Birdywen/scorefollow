@@ -3,7 +3,8 @@
   "etude": 19,
   "audio_sha256": "00f17f35aeb9c2936729c19fb48629dcdde3c58d22d80757735af342add9186a",
   "ground_truth_verified": false,
-  "xml_sha256": "84ca5d641f7f601c1726ebacd32428b4b107e1fac395b15e415558638332ef72",
+  "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No19.musicxml",
+  "xml_sha256": "505d44b13907203714f3e3e6e0d34871f70767f219659e76edc20bd0cd6d6fa2",
   "status": "incompatible",
   "reason": "反复/跳房子须先展开为顺序谱"
 }
