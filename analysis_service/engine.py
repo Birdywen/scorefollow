@@ -724,6 +724,15 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
     if "range" in reasons:
         plan["limitations"].append(
             f"只对第 {lo_m}–{hi_m} 小节定位到的乐段打分（{lo_sec:.1f}–{hi_sec:.1f}s），之外的内容未计入。")
+    # 录音比谱面长（如只识别了一页谱的完整演奏）：对齐已在锚点可靠处截尾，
+    # 明确告诉用户尾部不是“没拉好”，而是谱面里没有这段。
+    trimmed = excerpt.get("tailTrimmedAfterSec")
+    if trimmed is not None:
+        extra = max(0.0, float(events[-1][1]) - float(trimmed))
+        plan["take_beyond_score_after"] = trimmed
+        plan["limitations"].append(
+            f"录音在 {trimmed:.1f}s 之后还有约 {extra:.0f}s 内容与谱面对不上（第 {hi_m} 小节之后未评分）；"
+            "谱面可能缺页或不完整，请检查谱面。")
     return plan
 
 
@@ -1410,6 +1419,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             _summary["octaveShift"] = _plan["shift"] or None
             _summary["rescueReasons"] = _plan["reasons"]
             _summary["detectedBpm"] = _plan["detected_bpm"]
+            _summary["takeBeyondScoreAfterSec"] = _plan.get("take_beyond_score_after")
             if "tempo" in _plan["reasons"]:
                 _summary["tempoMismatch"] = True
             _rescued["limitations"] = list(_rescued.get("limitations") or []) + _plan["limitations"]

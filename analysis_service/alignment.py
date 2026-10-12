@@ -335,6 +335,23 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
     # to local outliers). One global line drifts 0.5-3 s under rubato while the
     # residual gate still passes; the line now only supplies tempo/extrapolation.
     anchors = _time_anchors(qs, ts, slope)
+    # Tail beyond the notation (score shorter than the take, e.g. a one-page
+    # excerpt of a complete performance): keep the anchored prefix instead of
+    # discarding the whole alignment. Only trailing pairs off the anchor line
+    # are dropped; the boundary gate below still runs on the new edges.
+    tail_trimmed_after = None
+    if anchors and slope is not None and len(matched) >= 16:
+        def _on_line(pair):
+            s_, e_ = pair
+            return abs(anchor_time(anchors, score_notes[s_]["onsetBeat"], slope) - segments[e_][0]) <= .60
+        k = len(matched)
+        while k > 0 and not _on_line(matched[k - 1]):
+            k -= 1
+        if 0 < k < len(matched) and k >= max(8, int(.5 * len(matched))) and _on_line(matched[0]):
+            matched = matched[:k]
+            end_index = max(s_ for s_, _ in matched)
+            events_map = {s_: segments[e_] for s_, e_ in matched}
+            tail_trimmed_after = round(float(segments[matched[-1][1]][0]), 3)
     by_measure: dict[int, float] = {}
     for s in range(index, end_index + 1):
         m = score_notes[s]["measure"]
@@ -366,6 +383,7 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
             "residualMs": None if med_resid == float("inf") else int(round(med_resid * 1000)),
             "confident": confident, "anchors": anchors,
             "boundarySupported": boundary_supported,
+            "tailTrimmedAfterSec": tail_trimmed_after,
             "matchedStartSec": segments[matched[0][1]][0],
             "matchedEndSec": segments[matched[-1][1]][1]}
 

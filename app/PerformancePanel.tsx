@@ -50,7 +50,7 @@ type Result = {
     voicedNotes: number; timedNotes: number; confidence: string;
     syncMode?: string; tempoMismatch?: boolean; detectedBpm?: number | null; recordedFirstBeatSec?: number | null; estimatedLatencyMs?: number | null; coveredSec?: number;
     autoLocated?: boolean; locationCost?: number | null;
-    autoMeasureSync?: boolean; octaveShift?: number | null; rescueReasons?: string[]; syncAdvice?: string | null; clipped?: boolean };
+    autoMeasureSync?: boolean; octaveShift?: number | null; takeBeyondScoreAfterSec?: number | null; rescueReasons?: string[]; syncAdvice?: string | null; clipped?: boolean };
 };
 type Take = {
   measureSync?: MeasureMarker[]; syncScoreXml?: string;
@@ -985,6 +985,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       {result.summary.autoMeasureSync && <p role="status" className={styles.warn}>{zh
         ? `已按录音自动对齐小节${result.summary.octaveShift ? `（谱面移调 ${result.summary.octaveShift} 个半音）` : ""}${result.summary.detectedBpm ? `（实测约 ${result.summary.detectedBpm} BPM）` : ""}；小节内节奏照常评分，详见局限与说明`
         : `Auto measure-synced to the recording${result.summary.octaveShift ? ` (score transposed ${result.summary.octaveShift} semitones)` : ""}${result.summary.detectedBpm ? ` (measured ≈ ${result.summary.detectedBpm} BPM)` : ""}; within-measure timing still graded, see limitations`}</p>}
+      {result.summary.takeBeyondScoreAfterSec != null && <p role="status" className={styles.warn}>{zh ? `录音比谱面长：${result.summary.takeBeyondScoreAfterSec.toFixed(1)}s 之后未评分，请检查谱面是否缺页` : `Recording is longer than the score: audio after ${result.summary.takeBeyondScoreAfterSec.toFixed(1)}s was not graded; check for missing pages`}</p>}
       {result.summary.syncAdvice && <p role="status" className={styles.warn}>{zh ? `自动对齐失败：${result.summary.syncAdvice}` : `Auto alignment failed: ${result.summary.syncAdvice}`}</p>}
       {result.summary.tempoMismatch && <p role="status" className={styles.warn}>{zh
         ? `检测速度约 ${result.summary.detectedBpm ?? "—"} BPM，与设定速度差别较大；${result.summary.autoMeasureSync ? "已按自动小节边界评分" : "请核对速度与拍点口径"}`

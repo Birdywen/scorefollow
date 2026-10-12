@@ -78,7 +78,7 @@ export function isValidAnalysisResult(r: unknown): boolean {
   for (const key of ["scoredPitchNotes", "timingCandidateNotes"]) {
     if (ss[key] !== undefined && !countValue(ss[key])) return false;
   }
-  for (const key of ["coveredSec", "detectedBpm"]) {
+  for (const key of ["coveredSec", "detectedBpm", "takeBeyondScoreAfterSec"]) {
     if (ss[key] !== undefined && !numOrNull(ss[key])) return false;
   }
   return true;

@@ -64,18 +64,33 @@ class ExcerptAlignmentTests(unittest.TestCase):
         self.assertTrue(result["confident"])
         self.assertLess(result["cost"], 0.7)
 
-    def test_rejected_tail_cannot_have_a_confident_projected_boundary(self):
+    def test_tail_off_the_anchor_line_is_trimmed_not_projected(self):
+        # The take runs past the notation: the last pair contradicts the local
+        # anchors. Keep the anchored prefix; never project a boundary over it.
         pitches = melody(40)
         events = segments_for(pitches)
         a, b, midi = events[-1]
         events[-1] = (a + 30, b + 30, midi)
         result = align_excerpt(parse_score(xml_for(pitches)), events)
-        # Nearly all matches are perfect: the median residual alone passes.
         self.assertLess(result["residualMs"], 60)
+        self.assertTrue(result["boundarySupported"])
+        self.assertEqual(result["end"], 38)
+        self.assertEqual(result["tailTrimmedAfterSec"], round(events[-2][0], 3))
+        self.assertEqual(result["matchedEndSec"], events[-2][1])
+        self.assertLess(result["endAudioSec"], events[-2][1] + 1.0)
+        from .engine import _usable_excerpt
+        self.assertTrue(_usable_excerpt(result))
+
+    def test_short_take_with_contradictory_tail_is_still_rejected(self):
+        # Too few matches to trust a trimmed prefix: fail closed exactly as before.
+        pitches = melody(12)
+        events = segments_for(pitches)
+        a, b, midi = events[-1]
+        events[-1] = (a + 30, b + 30, midi)
+        result = align_excerpt(parse_score(xml_for(pitches)), events)
         self.assertFalse(result["boundarySupported"])
-        self.assertFalse(result["confident"])
         self.assertIsNone(result["endAudioSec"])
-        self.assertEqual(result["matchedEndSec"], events[-1][1])
+        self.assertIsNone(result["tailTrimmedAfterSec"])
         from .engine import _usable_excerpt
         self.assertFalse(_usable_excerpt(result))
 

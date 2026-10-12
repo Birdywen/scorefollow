@@ -43,3 +43,20 @@ class QualityTests(unittest.TestCase):
                                        autoMeasureSync=True, rescueReasons=["range"]))
         self.assertEqual(q["outcome"], "partial")
         self.assertTrue(q["followReady"])
+
+
+class TakeBeyondScoreQualityTests(unittest.TestCase):
+    def test_trimmed_tail_is_reported_and_stays_partial(self):
+        from .quality import assess_quality
+        summary = {"noteCount": 10, "scoredPitchNotes": 9, "timedNotes": 9, "timingCandidateNotes": 9,
+                   "pitchScore": 95, "rhythmScore": 85, "confidence": "medium",
+                   "autoMeasureSync": True, "rescueReasons": ["range"],
+                   "takeBeyondScoreAfterSec": 71.9}
+        quality = assess_quality({"summary": summary, "measureIntervals": []})
+        self.assertIn("take_beyond_score", quality["issues"])
+        self.assertEqual(quality["outcome"], "partial")
+
+    def test_absent_field_adds_no_issue(self):
+        from .quality import assess_quality
+        summary = {"noteCount": 10, "scoredPitchNotes": 9, "pitchScore": 95, "rhythmScore": 85}
+        self.assertNotIn("take_beyond_score", assess_quality({"summary": summary})["issues"])

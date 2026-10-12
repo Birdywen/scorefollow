@@ -19,6 +19,8 @@ def assess_quality(result: dict) -> dict:
         issues.append("low_coverage")
     if summary.get("tempoMismatch"):
         issues.append("tempo_mismatch")
+    if summary.get("takeBeyondScoreAfterSec") is not None:
+        issues.append("take_beyond_score")
     if not scores:
         outcome = "insufficient_evidence"
     elif scores < 2 or "alignment_unverified" in issues or "low_coverage" in issues or \

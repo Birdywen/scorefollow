@@ -10,7 +10,7 @@ type Summary = {
   timedNotes: number; scoredPitchNotes?: number; timingCandidateNotes?: number; confidence: string;
   startMeasure?: number; endMeasure?: number; coveredSec?: number; syncAdvice?: string | null;
   autoMeasureSync?: boolean; rescueReasons?: string[]; degraded?: boolean; clipped?: boolean;
-  detectedBpm?: number | null;
+  detectedBpm?: number | null; takeBeyondScoreAfterSec?: number | null;
 };
 
 export default function AnalysisQuality({ summary: s, quality, diagnostics, version, zh }: {
@@ -39,6 +39,7 @@ export default function AnalysisQuality({ summary: s, quality, diagnostics, vers
     <p>{zh ? "音高可判比例" : "Scorable pitch coverage"} {percent(pitchRatio)} · {zh ? "起音可判比例" : "Timing coverage"} {percent(timingRatio)}</p>
     <p>{zh ? "录音时长" : "Recording duration"} {s.coveredSec == null ? "—" : `${s.coveredSec}s`} · {zh ? "分析小节" : "Analyzed measures"} {s.startMeasure ?? "—"}–{s.endMeasure ?? "—"}</p>
     {!!s.rescueReasons?.length && <p>{zh ? "补救" : "Corrections"}：{s.rescueReasons.map((code) => reasons[code]?.[zh ? 0 : 1] ?? code).join(" · ")}</p>}
+    {s.takeBeyondScoreAfterSec != null && <p>{zh ? `录音超出谱面：${s.takeBeyondScoreAfterSec.toFixed(1)}s 之后的内容未评分（第 ${s.endMeasure ?? "—"} 小节之后），谱面可能缺页。` : `Take runs past the score: audio after ${s.takeBeyondScoreAfterSec.toFixed(1)}s was not graded (after m.${s.endMeasure ?? "—"}); the score may be missing pages.`}</p>}
     {s.detectedBpm != null && <p>{zh ? "实测速度" : "Detected tempo"} ≈ {s.detectedBpm} BPM</p>}
     {s.clipped && <p>{zh ? "录音存在削波，请降低输入音量。" : "Clipping detected; reduce the recording input level."}</p>}
     <p>{status === "partial" || status === "insufficient_evidence"

@@ -70,3 +70,28 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 未决：
 
 - 音符时长在 vamp-beat+指定小节时仍按面板 BPM（±25% 内无可复现失败，随方案 B 处理）。
+
+
+## 2026-10-12 录音比谱面长：保留锚定前缀，不再整段放弃
+
+**现象**：Suzuki Vol. III（Lully Gavotte）一页谱（40 小节）+ 116 s 完整演奏，线上显示音准未计分/0、节奏 53。
+
+**根因**：
+- OMR 把低音谱号识别为 `clef-octave-change=1`，谱面整体高八度；补救的 -12 候选本已正确对上（cost 0.589，190/213 匹配）。
+- 谱面只覆盖演奏前约 70 s；尾部匹配被 DTW 拉到 102–105 s，与局部锚点线偏离约 29 s，`boundarySupported=false`（4e798a9 的门禁，拒绝本身正确）。
+- 拒绝后整段放弃，退回高八度 + 面板 80 BPM 刚性网格，得到无意义的 null/53。
+
+**修法**（fix/take-beyond-score）：
+- `align_excerpt`：匹配 ≥16 时，从尾部剔除偏离锚点线 >0.60 s 的配对，剩余须 ≥ max(8, 50%) 且首配对在线上；首尾门禁照常在新端点上运行，不放宽阈值，不做全局外推。输出 `tailTrimmedAfterSec`。
+- 引擎：summary 新增 `takeBeyondScoreAfterSec`，limitations 写明“录音在 Xs 之后还有约 Ys 内容与谱面对不上……谱面可能缺页”。
+- `quality.issues` 新增 `take_beyond_score`，outcome 保持 `partial`（不宣称全段已评）。
+- 前端：质量卡片与报告警告显示截尾时间；analysis-guard 接受该字段（数值或 null）。
+
+**验证**：全量 187 tests OK（skipped=3）；Suzuki 真实回放（内置检测 + vamp-beat）pitch 96 / rhythm 88，shift -12，m.1–37，tail_after 73.6 s；线上口径（vamp + legacy，bpm 80）pitch 95 / rhythm 82，实测 129.2 BPM。小提琴/大提琴、面板 80/126 BPM 结果一致。
+
+**测试调整**：`test_rejected_tail_cannot_have_a_confident_projected_boundary` 改为“尾部偏离被截掉、不外推”；新增短片段（12 音）守门测试，保持整体拒绝。`test_suzuki_real` 由“失败并提示检查谱面”改为“前缀高分 + take_beyond_score”。
+
+**已知缺口（未修）**：
+- 刚性网格得到“还行但明显不对”的分数（如 79/56）时 `_needs_rescue_check` 不触发，而补救可得 95/82；门槛需重新校准。
+- 前端乐器默认 `violin`，大提琴谱不会自动切换；应按谱号/音域推断或提示。
+- 补救失败时 shift 0/+12 的真实 ValueError 被 `boundary_failure` 文案覆盖，诊断信息不完整。
