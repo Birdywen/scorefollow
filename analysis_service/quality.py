@@ -11,8 +11,13 @@ def assess_quality(result: dict) -> dict:
     issues = []
     if summary.get("syncAdvice"):
         issues.append("alignment_unverified")
-    if summary.get("degraded"):
+    reasons = summary.get("degradedReasons")
+    grid_rejected = isinstance(reasons, list) and "beat:rejected" in reasons
+    # A rejected beat grid is a score/take mismatch, not a missing detector.
+    if summary.get("degraded") and not (grid_rejected and all(r == "beat:rejected" for r in reasons)):
         issues.append("builtin_detectors")
+    if grid_rejected:
+        issues.append("beat_grid_rejected")
     if summary.get("clipped"):
         issues.append("clipped_audio")
     if summary.get("confidence") == "low" or pitch_coverage < .6:

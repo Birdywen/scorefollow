@@ -42,5 +42,40 @@ class RequestedBeatFallbackTests(unittest.TestCase):
         self.assertNotIn("beat:legacy", result["summary"]["degradedReasons"])
 
 
+class GridRejectedTests(unittest.TestCase):
+    """The tracker ran but its grid lost the pitch vote: name it apart from
+    a missing detector so the UI does not claim the plugins are unavailable."""
+    PITCH = [{"start": 0.0, "end": 0.5, "midi": 50.0}]
+    ONSETS = [0.1, 0.6]
+
+    def summary(self, **patch):
+        s = {"noteCount": 10, "scoredPitchNotes": 9, "timedNotes": 9, "timingCandidateNotes": 9,
+             "pitchScore": 95, "rhythmScore": 85, "confidence": "medium", "degraded": True}
+        s.update(patch)
+        return s
+
+    def test_rejected_grid_is_named_separately(self):
+        self.assertEqual(vamp_features.degradation_reasons(self.PITCH, self.ONSETS, None, beat_requested=True,
+                                                           beat_rejected=True), ["beat:rejected"])
+
+    def test_rejected_only_is_not_builtin_detectors(self):
+        from .quality import assess_quality
+        issues = assess_quality({"summary": self.summary(degradedReasons=["beat:rejected"]),
+                                 "measureIntervals": []})["issues"]
+        self.assertNotIn("builtin_detectors", issues)
+        self.assertIn("beat_grid_rejected", issues)
+
+    def test_missing_detector_still_builtin(self):
+        from .quality import assess_quality
+        issues = assess_quality({"summary": self.summary(degradedReasons=["pitch:builtin", "beat:rejected"]),
+                                 "measureIntervals": []})["issues"]
+        self.assertIn("builtin_detectors", issues)
+
+    def test_old_report_without_reasons_keeps_builtin(self):
+        from .quality import assess_quality
+        issues = assess_quality({"summary": self.summary(), "measureIntervals": []})["issues"]
+        self.assertIn("builtin_detectors", issues)
+
+
 if __name__ == "__main__":
     unittest.main()

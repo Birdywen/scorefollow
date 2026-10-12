@@ -85,7 +85,7 @@ def extract_all(wav: bytes) -> tuple:
 
 
 def degradation_reasons(pitch_notes=None, onset_hint=None, beat_map=None,
-                        beat_requested: bool = True) -> list:
+                        beat_requested: bool = True, beat_rejected: bool = False) -> list:
     """Explicit optional-plugin degradation, derived from live detector outputs.
 
     Each sensor is independent: None/empty means that detector is unavailable
@@ -103,7 +103,9 @@ def degradation_reasons(pitch_notes=None, onset_hint=None, beat_map=None,
     # following (vamp-beat). Legacy and manual timelines never consume it,
     # so its absence there is not a fallback and must not warn the user.
     if beat_requested and not beat_map:
-        reasons.append("beat:legacy")
+        # beat:rejected = tracker ran but its grid lost the pitch-evidence vote;
+        # beat:legacy = no usable grid at all.
+        reasons.append("beat:rejected" if beat_rejected else "beat:legacy")
     return reasons
 
 

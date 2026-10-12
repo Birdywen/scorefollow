@@ -153,10 +153,14 @@ function hashSignature(text: string): string {
 
 // degradedReasons(后端原文: pitch:builtin / onset:builtin / beat:legacy)译为短标签；
 // 未知原因原样保留，保证未来新增原因也不丢信息、不抛错。
+function onlyGridRejected(reasons: string[] | undefined): boolean {
+  return Array.isArray(reasons) && reasons.length > 0 && reasons.every((r) => r === "beat:rejected");
+}
+
 function degradedLabels(reasons: string[] | undefined, zh: boolean): string {
   const map: Record<string, string> = zh
-    ? { "pitch:builtin": "音高", "onset:builtin": "起音", "beat:legacy": "节拍" }
-    : { "pitch:builtin": "pitch", "onset:builtin": "onset", "beat:legacy": "beat" };
+    ? { "pitch:builtin": "音高", "onset:builtin": "起音", "beat:legacy": "节拍", "beat:rejected": "节拍网格未采用" }
+    : { "pitch:builtin": "pitch", "onset:builtin": "onset", "beat:legacy": "beat", "beat:rejected": "beat grid not used" };
   const list = (reasons ?? []).filter((r) => typeof r === "string" && r);
   if (!list.length) return zh ? "内置算法" : "builtin detectors";
   return list.map((r) => map[r] ?? r).join(zh ? "、" : "/");
@@ -952,7 +956,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       <div className={styles.scores}><div><b data-unscored={result.summary.pitchScore == null}>{result.summary.pitchScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "综合音高" : "Pitch"}</div>
         <div><b data-unscored={result.summary.rhythmScore == null}>{result.summary.rhythmScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "跟拍" : "Timing"}</div></div>
       {/* 引擎状态: 后端已回传 degraded/degradedReasons(旧报告缺失则不渲染, 不抛错) */}
-      {result.summary.degraded === true && <p role="status" className={styles.warn} title={zh ? "完整 vamp 插件（pYIN + QM）不可用，已退回内置算法；分数仍可参考，但起音与节拍精度低于完整算法" : "Full vamp plugins (pYIN + QM) unavailable; fell back to builtin detectors. Scores still apply but onset/beat precision is lower"}>
+      {result.summary.degraded === true && <p role="status" className={styles.warn} title={onlyGridRejected(result.summary.degradedReasons) ? (zh ? "节拍跟踪器正常运行，但拍点网格与谱面音高不吻合，未采用；已改用音高证据对齐。常见原因：谱面八度或速度与录音不符" : "The beat tracker ran, but its grid disagreed with the score pitches and was not used; alignment fell back to pitch evidence. Usually the score octave or tempo differs from the take") : zh ? "完整 vamp 插件（pYIN + QM）不可用，已退回内置算法；分数仍可参考，但起音与节拍精度低于完整算法" : "Full vamp plugins (pYIN + QM) unavailable; fell back to builtin detectors. Scores still apply but onset/beat precision is lower"}>
         {zh ? `降级算法：${degradedLabels(result.summary.degradedReasons, true)}` : `Degraded engine: ${degradedLabels(result.summary.degradedReasons, false)}`}
       </p>}
       {result.summary.degraded === false && <p className={styles.hint}>{zh ? "完整算法 ✓" : "full analysis ✓"}</p>}

@@ -104,3 +104,11 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 修法：degradation_reasons 增加 beat_requested（默认 True，旧调用不变）；engine 传 sync_mode == "vamp-beat"。音高/起音判定不变。
 - 验证：test_degraded_beat.py（先失败后通过）、全量 unittest、Suzuki bpm80 violin 经 server.run 回放 degraded=false。
 - 补充：beat_requested 取 analyze 入口时的请求模式（_beat_req），不取引擎内部 vamp-beat→legacy 回退后（engine.py 回退点）或补救重算（manual-measures）的模式；补救重算经私有参数 _beat_requested 继承。否则“请求了拍点跟踪但网格不可用”这一真实降级会被藏掉。新增 RequestedBeatFallbackTests 覆盖。两条旧测试（test_golden_scoring / test_vamp_degraded，均为 legacy 请求）断言改为不报 beat:legacy，vamp 缺失仍报 pitch/onset 降级。
+
+
+## 2026-10-12 拍点网格被否决 ≠ 插件不可用（beat:rejected）
+
+- 现象：06ae511 后 Suzuki 经 HTTP（服务端默认 syncMode=vamp-beat）仍报 beat:legacy，页面提示“完整 vamp 插件不可用”；实际 QM 给出 253 拍（129.2 BPM）。
+- 根因：_select_grid_scale 用音高证据投票（±1.5 半音命中率 ≥0.6），谱面整体高八度时命中为 0，网格被否决、回退 legacy；判定正确，但被当成插件缺失。
+- 修法：否决时记 _beat_rejected（经私有参数 _beat_rejected_in 传入补救重算），degradation_reasons 输出 beat:rejected；quality 仅此一项时报 beat_grid_rejected 而非 builtin_detectors；前端标签“节拍网格未采用”并改悬停说明。旧报告（无 degradedReasons）行为不变。
+- 验证：GridRejectedTests（先失败后通过）、全量 unittest、tsc、analysis-guard、Suzuki bpm80 violin vamp-beat/legacy 回放。
