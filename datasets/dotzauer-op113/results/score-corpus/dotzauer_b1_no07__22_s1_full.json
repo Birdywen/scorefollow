@@ -1,0 +1,9 @@
+{
+  "id": "dotzauer_b1_no07__22_s1_full",
+  "etude": 7,
+  "audio_sha256": "38c9142c7cf1e9f132c2ea485a6bcecd36d1efc9c7728cb5b11cbd536434d13d",
+  "ground_truth_verified": false,
+  "xml_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f",
+  "status": "incompatible",
+  "reason": "多声部/交错时间轴暂不支持"
+}

@@ -1,0 +1,19 @@
+{
+  "id": "dotzauer_b1_no23__37_s1_slow",
+  "etude": 23,
+  "audio_sha256": "1987993febde2a85aa5aed51bd98a9dee6daf8cbc80672503a1f2a03f4ee9592",
+  "ground_truth_verified": false,
+  "xml_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75",
+  "params": {
+    "start_sec": 42,
+    "duration_sec": 18,
+    "bpm": 112,
+    "bpm_source": "declared_fallback",
+    "instrument": "cello",
+    "start_measure": 0,
+    "sync_mode": "vamp-beat"
+  },
+  "status": "failed",
+  "error_type": "ValueError",
+  "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+}

@@ -1,0 +1,194 @@
+{
+  "id": "dotzauer_b1_no16__17_s1_slow",
+  "etude": 16,
+  "version": "slow",
+  "status": "passed",
+  "cache_key": {
+    "audio_sha256": "df9c93af5fef17d76b44d8799a1c0d5985471060e163f80e7c4e91516d71a49c",
+    "config": {
+      "sample_rate": 22050,
+      "channels": 1,
+      "chunk_seconds": 240.0,
+      "chunk_policy": "consecutive nonoverlapping windows covering all decoded samples",
+      "configs": {
+        "barbeat_b4": {
+          "plugin": "qm-vamp-plugins:qm-barbeattracker",
+          "output": "beats",
+          "parameters": {
+            "bpb": 4.0
+          }
+        },
+        "barbeat_b3": {
+          "plugin": "qm-vamp-plugins:qm-barbeattracker",
+          "output": "beats",
+          "parameters": {
+            "bpb": 3.0
+          }
+        },
+        "onset_energy_s70": {
+          "plugin": "qm-vamp-plugins:qm-onsetdetector",
+          "output": "onsets",
+          "parameters": {
+            "dftype": 3.0,
+            "sensitivity": 70.0
+          }
+        }
+      },
+      "references": [
+        "pyin",
+        "builtin"
+      ],
+      "metric_semantics": "detector agreement, not annotated onset/scoring accuracy",
+      "offset_fit": "existing vamp_offset_lab objective and search; nearest-event searchsorted optimization"
+    }
+  },
+  "decodedDurationSec": 337.9677551020408,
+  "chunks": [
+    {
+      "durationSec": 240.0,
+      "peak": 0.86365,
+      "clippedSampleFraction": 0.0,
+      "pyinNotes": 252,
+      "builtinOnsets": 312,
+      "metrics": [
+        {
+          "grid": "barbeat_b4",
+          "reference": "pyin",
+          "events": 252,
+          "gridEvents": 480,
+          "medianIntervalSec": 0.5689,
+          "offsetSec": 0.0356,
+          "meanAbsDistanceMs": 100.9,
+          "within50ms": 0.528
+        },
+        {
+          "grid": "barbeat_b4",
+          "reference": "builtin",
+          "events": 312,
+          "gridEvents": 480,
+          "medianIntervalSec": 0.5689,
+          "offsetSec": 0.0267,
+          "meanAbsDistanceMs": 106.8,
+          "within50ms": 0.452
+        },
+        {
+          "grid": "barbeat_b3",
+          "reference": "pyin",
+          "events": 252,
+          "gridEvents": 480,
+          "medianIntervalSec": 0.5689,
+          "offsetSec": 0.0356,
+          "meanAbsDistanceMs": 100.9,
+          "within50ms": 0.528
+        },
+        {
+          "grid": "barbeat_b3",
+          "reference": "builtin",
+          "events": 312,
+          "gridEvents": 480,
+          "medianIntervalSec": 0.5689,
+          "offsetSec": 0.0267,
+          "meanAbsDistanceMs": 106.8,
+          "within50ms": 0.452
+        },
+        {
+          "grid": "onset_energy_s70",
+          "reference": "pyin",
+          "events": 252,
+          "gridEvents": 1002,
+          "medianIntervalSec": 0.267,
+          "offsetSec": 0.025,
+          "meanAbsDistanceMs": 18.6,
+          "within50ms": 0.948
+        },
+        {
+          "grid": "onset_energy_s70",
+          "reference": "builtin",
+          "events": 312,
+          "gridEvents": 1002,
+          "medianIntervalSec": 0.267,
+          "offsetSec": 0.0167,
+          "meanAbsDistanceMs": 31.8,
+          "within50ms": 0.859
+        }
+      ],
+      "status": "passed",
+      "index": 0,
+      "startSec": 0.0,
+      "pcm_sha256": "ca340d1884db3615ea1cd6367bae9b6d9c1615631fbbc210c8c4b19b9aa5cf90"
+    },
+    {
+      "durationSec": 97.96775510204081,
+      "peak": 0.92062,
+      "clippedSampleFraction": 0.0,
+      "pyinNotes": 105,
+      "builtinOnsets": 132,
+      "metrics": [
+        {
+          "grid": "barbeat_b4",
+          "reference": "pyin",
+          "events": 105,
+          "gridEvents": 169,
+          "medianIntervalSec": 0.6153,
+          "offsetSec": 0.0481,
+          "meanAbsDistanceMs": 142.1,
+          "within50ms": 0.448
+        },
+        {
+          "grid": "barbeat_b4",
+          "reference": "builtin",
+          "events": 132,
+          "gridEvents": 169,
+          "medianIntervalSec": 0.6153,
+          "offsetSec": 0.2307,
+          "meanAbsDistanceMs": 151.7,
+          "within50ms": 0.129
+        },
+        {
+          "grid": "barbeat_b3",
+          "reference": "pyin",
+          "events": 105,
+          "gridEvents": 169,
+          "medianIntervalSec": 0.6153,
+          "offsetSec": 0.0481,
+          "meanAbsDistanceMs": 142.1,
+          "within50ms": 0.448
+        },
+        {
+          "grid": "barbeat_b3",
+          "reference": "builtin",
+          "events": 132,
+          "gridEvents": 169,
+          "medianIntervalSec": 0.6153,
+          "offsetSec": 0.2307,
+          "meanAbsDistanceMs": 151.7,
+          "within50ms": 0.129
+        },
+        {
+          "grid": "onset_energy_s70",
+          "reference": "pyin",
+          "events": 105,
+          "gridEvents": 404,
+          "medianIntervalSec": 0.2786,
+          "offsetSec": 0.0348,
+          "meanAbsDistanceMs": 30.1,
+          "within50ms": 0.914
+        },
+        {
+          "grid": "onset_energy_s70",
+          "reference": "builtin",
+          "events": 132,
+          "gridEvents": 404,
+          "medianIntervalSec": 0.2786,
+          "offsetSec": 0.0131,
+          "meanAbsDistanceMs": 49.8,
+          "within50ms": 0.75
+        }
+      ],
+      "status": "passed",
+      "index": 1,
+      "startSec": 240.0,
+      "pcm_sha256": "5f45a65b5f2c9ab10c8097ffe024826a0fb8c8282cc48e13c19f769251375736"
+    }
+  ]
+}

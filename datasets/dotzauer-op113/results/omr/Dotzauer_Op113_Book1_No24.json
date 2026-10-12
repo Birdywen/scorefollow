@@ -1,0 +1,14 @@
+{
+  "etude": 24,
+  "pdf_sha256": "b49c3c02bb874763b8d5f836524190f48c7ee6a419950f3cd1067110bded0319",
+  "source": "analysis-service /omr/jobs",
+  "reviewed_ground_truth": false,
+  "job_id": "28a64dcf3e554dc197a3d166868d65ec",
+  "status": "completed",
+  "compatible": false,
+  "reason": "第一版只支持单个乐器声部",
+  "note_count": 0,
+  "measure_count": 55,
+  "musicxml": "musicxml/Dotzauer_Op113_Book1_No24.musicxml",
+  "xml_sha256": "65a063dcd1506dd6308e2bff7f6b604024090bfdea4193df1fbe3ec9d13b4199"
+}

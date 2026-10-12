@@ -1,0 +1,8 @@
+{
+  "id": "dotzauer_b1_noop120_7__25_fast",
+  "etude": null,
+  "audio_sha256": "fde0bac09c2050dfb28a4b376b0172cf17674bfb051b6674a332f2e5f17f5bc3",
+  "ground_truth_verified": false,
+  "status": "skipped",
+  "reason": "No matching MusicXML"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "dotzauer_b1_no04__36_s0_fast",
+  "etude": 4,
+  "audio_sha256": "d97ad0e6818019130bd7479566731b241acb8d40afab7b9c0dda4b0179ca8c9b",
+  "ground_truth_verified": false,
+  "xml_sha256": "7dd3185b6d532049eabc651b8b484a4cceb66e0fe500214351ad79a47b06cdd8",
+  "status": "incompatible",
+  "reason": "双音/和弦暂不支持"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "dotzauer_b1_no33__20_s2_full",
+  "etude": 33,
+  "audio_sha256": "3e18718d89e162a12e4f2859e9b13e5753e68982b64e3cdf9da0ae9982195716",
+  "ground_truth_verified": false,
+  "xml_sha256": "08eeccc2f21529085b36b8bd036a81b45be7c9f2c7a5c37a060462fe44e7a96b",
+  "status": "incompatible",
+  "reason": "双音/和弦暂不支持"
+}

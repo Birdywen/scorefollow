@@ -1,0 +1,14 @@
+{
+  "etude": 30,
+  "pdf_sha256": "6b84571d939c3255b653db6df2bd278356f7e1390cbcda2031d593e68b97b70c",
+  "source": "analysis-service /omr/jobs",
+  "reviewed_ground_truth": false,
+  "job_id": "20cda0f9a95842c59e784af7e1d59477",
+  "status": "completed",
+  "compatible": false,
+  "reason": "反复/跳房子须先展开为顺序谱",
+  "note_count": 0,
+  "measure_count": 55,
+  "musicxml": "musicxml/Dotzauer_Op113_Book1_No30.musicxml",
+  "xml_sha256": "a07fc0eab93dcc9f77ce7133857c1deaf1c2ade43168b817265f8f2e7d9975f3"
+}

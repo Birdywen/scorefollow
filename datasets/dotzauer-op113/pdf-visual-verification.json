@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "model": "qwen3.8:27b",
+  "etudes": 34,
+  "pdf_pages": 50,
+  "visually_checked_output_pages": 38,
+  "unaltered_continuation_pages_with_source_vision": 12,
+  "new_vision_calls": 38
+}

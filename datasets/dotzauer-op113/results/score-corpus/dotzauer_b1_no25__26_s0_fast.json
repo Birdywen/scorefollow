@@ -1,0 +1,19 @@
+{
+  "id": "dotzauer_b1_no25__26_s0_fast",
+  "etude": 25,
+  "audio_sha256": "7875592092ef4e2611d747ab29ad270edd68dd7964bdcb0a55ecea0cb56e3901",
+  "ground_truth_verified": false,
+  "xml_sha256": "bae0102c344c2904ea30700c2e067f2f3461894d856425c817437a93703b68e6",
+  "params": {
+    "start_sec": 42,
+    "duration_sec": 18,
+    "bpm": 112,
+    "bpm_source": "declared_fallback",
+    "instrument": "cello",
+    "start_measure": 0,
+    "sync_mode": "vamp-beat"
+  },
+  "status": "failed",
+  "error_type": "ValueError",
+  "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+}

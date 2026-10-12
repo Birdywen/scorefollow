@@ -1,0 +1,14 @@
+{
+  "etude": 26,
+  "pdf_sha256": "f8c3942c9d7139fccfb7764148f16fcfb6db0b1de09d4bb3cc71d36bc4d1d24e",
+  "source": "analysis-service /omr/jobs",
+  "reviewed_ground_truth": false,
+  "job_id": "5b7f8aabc86240eaa154e2587fe898b6",
+  "status": "completed",
+  "compatible": false,
+  "reason": "双音/和弦暂不支持",
+  "note_count": 0,
+  "measure_count": 49,
+  "musicxml": "musicxml/Dotzauer_Op113_Book1_No26.musicxml",
+  "xml_sha256": "7afb1c63be5b71f203c78d479c6d5e877cc84d34683a41a297c1ebf0c3505dae"
+}

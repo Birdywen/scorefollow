@@ -1,0 +1,14 @@
+{
+  "etude": 2,
+  "pdf_sha256": "f2f0908ccadb64250ea7515f208a3aebffb45de6237b850c519bbf50b44d1812",
+  "source": "analysis-service /omr/jobs",
+  "reviewed_ground_truth": false,
+  "job_id": "c088e3bf85c24dc39ae080e2cda2eea1",
+  "status": "completed",
+  "compatible": true,
+  "reason": null,
+  "note_count": 652,
+  "measure_count": 110,
+  "musicxml": "musicxml/Dotzauer_Op113_Book1_No02.musicxml",
+  "xml_sha256": "ec6677556f02f0f4d5cd30cb6f091aea03673c50e570e17fe4dfbca2cd2178ba"
+}

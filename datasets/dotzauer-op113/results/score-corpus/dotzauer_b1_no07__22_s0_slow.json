@@ -1,0 +1,9 @@
+{
+  "id": "dotzauer_b1_no07__22_s0_slow",
+  "etude": 7,
+  "audio_sha256": "8d16ab0ab8c7a9ad2c0a1ccc144950bf91f3157f9ccbb8bc71acee320d5cc477",
+  "ground_truth_verified": false,
+  "xml_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f",
+  "status": "incompatible",
+  "reason": "多声部/交错时间轴暂不支持"
+}

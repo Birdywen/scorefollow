@@ -1,0 +1,9 @@
+{
+  "id": "dotzauer_b1_no13__16_fast",
+  "etude": 13,
+  "audio_sha256": "8a3d0822faffca19544065043d0f5892bac2dea1d38bb81769dc4e05e6eb7d71",
+  "ground_truth_verified": false,
+  "xml_sha256": "6ebc98b13ec418fd44ed85bf88d7bbc9de75fd8cdb17fbdd97d82a20f0206207",
+  "status": "incompatible",
+  "reason": "多声部/交错时间轴暂不支持"
+}

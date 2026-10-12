@@ -1,0 +1,14 @@
+{
+  "etude": 7,
+  "pdf_sha256": "bf220be1b6ba6db7825e4a90b764023df11e70387491eaa5fc5c69dbd8509149",
+  "source": "analysis-service /omr/jobs",
+  "reviewed_ground_truth": false,
+  "job_id": "1d5521f3be934407bb36184284bd70b6",
+  "status": "completed",
+  "compatible": false,
+  "reason": "多声部/交错时间轴暂不支持",
+  "note_count": 0,
+  "measure_count": 33,
+  "musicxml": "musicxml/Dotzauer_Op113_Book1_No07.musicxml",
+  "xml_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f"
+}

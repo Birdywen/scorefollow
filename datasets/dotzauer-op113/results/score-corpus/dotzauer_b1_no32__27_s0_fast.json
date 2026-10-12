@@ -1,0 +1,9 @@
+{
+  "id": "dotzauer_b1_no32__27_s0_fast",
+  "etude": 32,
+  "audio_sha256": "bc263c0fd87fb33346be9558317f0d73b04d69b9d0bca26e7d57fd346d007ff3",
+  "ground_truth_verified": false,
+  "xml_sha256": "7a380554e8115500d0676433900f5c20453e929eec66a12a1438a3d83e91d2c9",
+  "status": "incompatible",
+  "reason": "双音/和弦暂不支持"
+}

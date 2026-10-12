@@ -1,0 +1,9 @@
+{
+  "id": "dotzauer_b1_no29__34_s1_slow",
+  "etude": 29,
+  "audio_sha256": "0a47a6e7c527745b21e32c74d2441a7477d9dff05a01d58d2bb29d9f81195cd9",
+  "ground_truth_verified": false,
+  "xml_sha256": "f7f176be1092fe28af9251fe50ceded1cb5eb6a23c5e12203a7e52f6784c2f63",
+  "status": "incompatible",
+  "reason": "双音/和弦暂不支持"
+}
