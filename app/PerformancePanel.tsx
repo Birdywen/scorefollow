@@ -955,8 +955,13 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       {selected?.blob && (result.measureIntervals?.length ?? 0) > 1 && onFollowTake && <div>
         <button className={styles.omrButton} onClick={() => {
           const err = onFollowTake({ name: selected.name, url: selected.url, starts: (result.measureIntervals ?? []).map((m) => ({ measure: m.measure, startSec: m.startSec })) });
-          if (err) { setError(err); setSyncMsg(""); }
-          else { setError(""); setSyncMsg(zh ? "已载入谱面播放器：回到谱面按 ▶ 播放，蓝色小节阴影会跟着录音走" : "Loaded into the score player: back to the score and press ▶; the blue measure shade follows the recording"); }
+          if (err) { setError(err); setSyncMsg(""); return; }
+          setError("");
+          const measureCount = result.summary.measureCount ?? 0;
+          const mismatch = pdfMeasures > 0 && measureCount > 0 && pdfMeasures !== measureCount;
+          setSyncMsg(mismatch
+            ? (zh ? `已载入谱面播放器，但谱面 ${pdfMeasures} 小节、报告 ${measureCount} 小节，阴影可能错位，请先核对再跟谱` : `Loaded, but the score has ${pdfMeasures} measures vs ${measureCount} in the report; the shade may misalign. Verify first.`)
+            : (zh ? "已载入谱面播放器：回到谱面按 ▶ 播放（音频条自带播放键也行），蓝色小节阴影会跟着录音走" : "Loaded into the score player: back to the score and press ▶ (or the strip's own play button); the blue measure shade follows the recording"));
         }}>{zh ? "用这一遍走谱" : "Follow with this take"}</button>
       </div>}
       {syncMsg && <p role="status" className={styles.hint}>{syncMsg}</p>}

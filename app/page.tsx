@@ -2441,6 +2441,16 @@ export default function ScoreFollowPage() {
     cancelAnimationFrame(rafRef.current);
   }, [mediaURL, now, exitAutoFs]);
 
+  // 谱面播放器原生控件（或外部调用 el.play()）启动/暂停音频时，同样点亮
+  // 跟谱状态：与 doPlay/doPause 对齐，但绝不触发自动全屏。
+  const syncMediaPlaying = useCallback(() => {
+    const m = mediaRef.current as unknown as { playbackRate?: number } | null;
+    if (m && mediaURL && typeof m.playbackRate === "number") m.playbackRate = speed;
+    setPlaying(true);
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [mediaURL, speed, tick]);
+
   const doCountIn = useCallback(() => {
     if (countInTimerRef.current) clearInterval(countInTimerRef.current);
     const beats = parseInt(String(opt.bpmsr).split("-")[0], 10) || 4;
@@ -4189,10 +4199,10 @@ export default function ScoreFollowPage() {
 
       <div className={styles.mainarea}>
       {mediaURL && mediaKind === "video" && (
-        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
+        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
       )}
       {mediaURL && mediaKind === "audio" && (
-        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
+        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) { curMixRef.current = c.measure; setCursor({ x: c.x, y: c.y, w: c.w, h: c.h }); } } }} />
       )}
 
         <div
