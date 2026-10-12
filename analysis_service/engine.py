@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 import numpy as np
 
-from .alignment import align_excerpt, locate_excerpt, usable_events
+from .alignment import align_excerpt, anchor_time, locate_excerpt, usable_events
 from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
@@ -1021,10 +1021,13 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     alignment_intervals = None
     if alignment is not None and alignment.get("t0") is not None:
         _slope, _t0 = alignment["quarterPeriod"], alignment["t0"]
+        _anchors = alignment.get("anchors") or []
+        def _align_t(beat):
+            return anchor_time(_anchors, beat, _slope) if _anchors else _t0 + _slope * beat
         alignment_intervals = []
         for measure in range(notes[0]["measure"], notes[-1]["measure"] + 1):
-            lo = max(0.0, round(_t0 + _slope * boundaries[measure], 3))
-            hi = min(duration_sec, round(_t0 + _slope * boundaries[measure + 1], 3))
+            lo = max(0.0, round(_align_t(boundaries[measure]), 3))
+            hi = min(duration_sec, round(_align_t(boundaries[measure + 1]), 3))
             if hi > lo:
                 alignment_intervals.append({"measure": measure, "startSec": lo, "endSec": hi})
         if not alignment_intervals:

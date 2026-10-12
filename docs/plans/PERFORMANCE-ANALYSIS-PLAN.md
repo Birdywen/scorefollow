@@ -51,6 +51,7 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 
 已完成：
 
+- 已修 自动同步小节时间随 rubato 漂移（`Follow tempo drift in the excerpt measure map`）：align_excerpt 原用单条全局直线算 measureTimes，速度起伏 3% 时小节误差可达 0.5–3 s 而残差门限（0.60 s）仍放行 confident，跟随光标一路跑偏；residualMs 无法区分对错（判对 max 119 ms，判错 p10 62 ms），故改拟合而非调门限。现改为按匹配音符的单调锚点分段插值（同拍取中位、局部 ±3 邻点直线剔除 >max(0.12 s,4×中位) 离群），首尾外推用全局斜率；engine 自动同步区间同用锚点；结果新增 `anchors` 字段，旧字段不变。证据（真实 Dotzauer 5 谱合成压力，每场景 30 次）：rubato_.03 误判 3→0、小节最大误差 p90 0.606→0.028 s；rubato_.08 误判 10→0、小节最大误差 p90 1.111→0.028 s；realistic 误判 5→0、小节最大误差 p90 0.532→0.079 s；hard 误判 10→3、小节最大误差 p90 0.592→0.296 s；clean 中位误差 0.001→0.007 s（锚点含 10 ms 抖动，可接受）；unrelated 30/30 拒绝不变。回归：`test_alignment_rubato.py`（修复前最大小节误差 0.475 s）。
 - 已修 #9（`Use a capped mean for timing accuracy`）：timingAccuracyScore 由中位数改为截断均值（单音 ≤250 ms）。证据：准确度（稳定/单音+400 ms/抖动）97/95/51 → 96/70/51。回归：`test_one_badly_timed_note_lowers_accuracy`。XML 重复解析（parse_score/measure_start_beats/seconds_per_quarter/measureCount）在 300 s 上限下耗时可忽略，不改。
 - 结论 #10（不改）：`notes[].measure` 用小节序号而非 `number` 属性是有意的——前端 `onJump(note.measure)` 按 PDF 小节序号跳转，`canJump` 要求 `pdfMeasures === measureCount`；弱起谱改用 `number`（=0）会让 PDF 跳转差一。若要显示印刷小节号，应另加 `measureLabel` 字段。
 - 已做 #8（`Batch track() FFTs in chunks`）：track() 分块批量 rfft/irfft（`TRACK_CHUNK_FRAMES=128`），峰值挑选逻辑不变。证据：track 耗时 60s/22k 1.12s→0.56s；60s/48k 2.02s→1.07s；300s/22k 5.60s→2.78s；300s/48k 10.19s→5.41s；与逐帧版 7 类信号对比 times/energy 逐位一致、NaN 模式与门限零翻转、音高最大差 0.0036 音分（浮点舍入）。locate_excerpt DTW（400 音符×64 事件 0.48 s）不改。

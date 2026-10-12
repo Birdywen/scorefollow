@@ -331,14 +331,21 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
     if confident and not _beat_ratio_ok(beat_map, slope):
         confident = False
     events_map = {s: segments[e] for s, e in matched}
-    # Per-measure boundaries from the fitted line (first in-range note onset).
+    # Per-measure boundaries from matched note anchors (piecewise linear, robust
+    # to local outliers). One global line drifts 0.5-3 s under rubato while the
+    # residual gate still passes; the line now only supplies tempo/extrapolation.
+    anchors = _time_anchors(qs, ts, slope)
     by_measure: dict[int, float] = {}
     for s in range(index, end_index + 1):
         m = score_notes[s]["measure"]
         if m not in by_measure:
             by_measure[m] = score_notes[s]["onsetBeat"]
-    measure_times = [{"measure": m, "audioSec": round(intercept + slope * ob, 3)}
-                     for m, ob in sorted(by_measure.items())] if slope is not None else []
+    if anchors:
+        measure_times = [{"measure": m, "audioSec": round(anchor_time(anchors, ob, slope), 3)}
+                         for m, ob in sorted(by_measure.items())]
+    else:
+        measure_times = [{"measure": m, "audioSec": round(intercept + slope * ob, 3)}
+                         for m, ob in sorted(by_measure.items())] if slope is not None else []
     last = score_notes[end_index]
     end_audio = (round(intercept + slope * (last["onsetBeat"] + last["durationBeat"]), 3)
                  if slope is not None else None)
@@ -349,4 +356,57 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
             "events": events_map, "matched": len(matched),
             "coverage": round(len(matched_audio) / n, 3),
             "residualMs": None if med_resid == float("inf") else int(round(med_resid * 1000)),
-            "confident": confident}
+            "confident": confident, "anchors": anchors}
+
+
+def _time_anchors(qs: np.ndarray, ts: np.ndarray, slope) -> list:
+    """Monotone [scoreBeat, audioSec] anchors from matched pairs.
+
+    Same-beat pairs collapse to their median time; points deviating from a
+    local line through their +-3 neighbours (> max(0.12 s, 4x median)) are
+    dropped; non-increasing times are skipped. Empty when < 2 anchors remain.
+    """
+    if slope is None or len(qs) == 0:
+        return []
+    q_all = np.asarray(qs, dtype=float)
+    t_all = np.asarray(ts, dtype=float)
+    q = np.unique(q_all)
+    t = np.array([float(np.median(t_all[q_all == b])) for b in q])
+    keep = np.ones(len(q), dtype=bool)
+    for _ in range(2):
+        idx = np.flatnonzero(keep)
+        if len(idx) < 5:
+            break
+        qq, tt = q[idx], t[idx]
+        dev = np.zeros(len(idx))
+        for k in range(len(idx)):
+            nb = [j for j in range(max(0, k - 3), min(len(idx), k + 4)) if j != k]
+            a, b = np.polyfit(qq[nb], tt[nb], 1)
+            dev[k] = tt[k] - (a * qq[k] + b)
+        bad = np.abs(dev) > max(0.12, 4 * float(np.median(np.abs(dev))))
+        if not bad.any():
+            break
+        keep[idx[bad]] = False
+    out_q: list = []
+    out_t: list = []
+    for a, b in zip(q[keep], t[keep]):
+        if out_t and b <= out_t[-1] + 1e-3:
+            continue
+        out_q.append(float(a))
+        out_t.append(float(b))
+    if len(out_q) < 2:
+        return []
+    return [[round(a, 4), round(b, 4)] for a, b in zip(out_q, out_t)]
+
+
+def anchor_time(anchors: list, beat: float, slope: float):
+    """Audio time of a score beat: interpolate anchors, extrapolate with slope."""
+    if not anchors:
+        return None
+    q = [a for a, _ in anchors]
+    t = [b for _, b in anchors]
+    if beat <= q[0]:
+        return t[0] + (beat - q[0]) * slope
+    if beat >= q[-1]:
+        return t[-1] + (beat - q[-1]) * slope
+    return float(np.interp(beat, q, t))
