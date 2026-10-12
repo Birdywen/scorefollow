@@ -846,7 +846,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         ds = np.array([d for _, d in drift_obs[-8:]])
         if len(xs) < 3 or float(np.ptp(xs)) <= 0:
             return float(np.median(ds))
-        slope = max(-0.25, min(0.25, float(np.polyfit(xs, ds, 1)[0])))
+        slope = max(-0.12, min(0.12, float(np.polyfit(xs, ds, 1)[0])))
         return float(np.mean(ds) + slope * (at - np.mean(xs)))
 
     for note_index, note in enumerate(notes):
@@ -894,8 +894,6 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         if onset is not None:
             last_onset = onset
             # 宽窗命中是离群点, 喂给趋势会让线性外推冲过头、抓到下一音的起音。
-            if beat_time is None and not wide_hit:
-                drift_obs.append((expected, onset - expected))
         skip = duration * 0.35 if shifted else min(0.12, duration * 0.28)
         # 音高窗不越过下一个实测起音: 本音拖、下音抢时两音被挤压, 固定 78% 时长
         # 会采到下一音 (#5)。只在本音起音已测到时截断; 起音漏检时下一个
@@ -963,6 +961,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             cents = None
             quality = 0.0
         pitch_status = classify_pitch(cents, detected, pitch_tolerance_cents)
+        # 只挡有滑格证据的起音 (判错音/邻音归因) 进速度趋势; uncertain 照常喂, 抢快时趋势才追得上。
+        if onset is not None and beat_time is None and not wide_hit and not displaced and pitch_status not in ("sharp", "flat"):
+            drift_obs.append((expected, onset - expected))
         timing_eligible = (bool(manual_boundaries) or note_index > 0) and not (manual_boundaries and abs(note["onsetBeat"] - manual_boundaries[note["measure"]]) < 1e-6)
         timing_candidates += int(timing_eligible)
         if delta is not None and timing_eligible:
