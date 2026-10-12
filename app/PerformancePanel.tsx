@@ -156,6 +156,24 @@ function degradedLabels(reasons: string[] | undefined, zh: boolean): string {
   return list.map((r) => map[r] ?? r).join(zh ? "、" : "/");
 }
 
+// take 状态徽标：已知状态给中英短标签；未知远端状态（后端透传如 queued/processing）原样显示，不丢信息。
+function jobChip(status: string, zh: boolean): { label: string; tone: "busy" | "ok" | "fail" | "mute" } {
+  const map: Record<string, [string, string, "busy" | "ok" | "fail" | "mute"]> = {
+    preparing: ["准备中", "Preparing", "busy"],
+    submitting: ["提交中", "Submitting", "busy"],
+    polling: ["分析中", "Analyzing", "busy"],
+    queued: ["排队中", "Queued", "busy"],
+    processing: ["分析中", "Analyzing", "busy"],
+    completed: ["已完成", "Done", "ok"],
+    failed: ["失败", "Failed", "fail"],
+    timed_out: ["超时", "Timed out", "fail"],
+    cancelled: ["已取消", "Cancelled", "mute"],
+  };
+  const hit = map[status];
+  if (hit) return { label: zh ? hit[0] : hit[1], tone: hit[2] };
+  return { label: status, tone: "busy" };
+}
+
 function analysisSignature(input: {
   xml: string; audioId: string; instrument: string; bpm: number;
   startMeasure: number; syncMode: string; syncData: string;
@@ -706,51 +724,62 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
 
   return <aside className={styles.panel} aria-label={zh ? "演奏分析" : "Performance analysis"}>
     <div className={styles.head}><strong>{zh ? "演奏分析" : "Performance analysis"}</strong><button onClick={onClose} aria-label={zh ? "关闭" : "Close"}>×</button></div>
-    <p className={styles.hint}>{zh ? "节拍器同步录音 · 最多 3 遍 · 只录麦克风" : "Metronome-synced takes · max 3 · mic only"}</p>
-    <label className={styles.field}>{zh ? "分析服务地址" : "Analysis API URL"}
-      <input type="url" placeholder="https://analysis.example.com" value={api} disabled={omrActive || recording || busyTakeId != null} onChange={(e) => setApi(e.target.value)} /></label>
-    {!api.trim() && <p className={styles.hint}>{zh ? `请输入分析服务地址；本站可使用同源 ${BASE}/analysis。` : `Enter the analysis API URL; this site uses ${BASE}/analysis.`}</p>}
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    <p className={styles.hint}>{zh ? "直接上传录音即可分析（可自动定位片段）· 最多 3 遍" : "Upload a take to analyze (excerpts auto-located) · max 3 takes"}</p>
+    <ol className={styles.stepNav} aria-label={zh ? "分析步骤" : "Analysis steps"}>
+      <li className={scoreLoaded ? styles.isDone : undefined} aria-current={!scoreLoaded ? "step" : undefined}><span className={styles.stepNum} aria-hidden="true">1</span>{zh ? "备谱" : "Score"}</li>
+      <li aria-current={scoreLoaded && takes.length === 0 ? "step" : undefined}><span className={styles.stepNum} aria-hidden="true">2</span>{zh ? "设置" : "Setup"}</li>
+      <li className={takes.length > 0 ? styles.isDone : undefined} aria-current={scoreLoaded && takes.length > 0 && !result ? "step" : undefined}><span className={styles.stepNum} aria-hidden="true">3</span>{zh ? "录音" : "Takes"}</li>
+      <li aria-current={result ? "step" : undefined}><span className={styles.stepNum} aria-hidden="true">4</span>{zh ? "报告" : "Report"}</li>
+    </ol>
     <section className={styles.omr} aria-label={zh ? "从 PDF 生成 MusicXML" : "PDF to MusicXML"}>
-      <h2>{zh ? "从 PDF 生成 MusicXML" : "PDF to MusicXML"}</h2>
-      <p className={styles.hint}>{pdfName ? (zh ? `当前谱面：${pdfName}` : `Loaded score: ${pdfName}`) : (zh ? "可先载入 PDF 谱，或在下面另选 PDF" : "Load a score PDF or choose one below")}</p>
-      <label className={styles.field}>{zh ? "另选用于识别的 PDF（可选）" : "PDF for recognition (optional)"}
-        <input type="file" accept=".pdf,application/pdf" onChange={(e) => { setOmrPdf(e.target.files?.[0] ?? null); setOmrJob(null); setXmlFile(null); }} /></label>
-      <label className={styles.check}><input type="checkbox" checked={removedFirstRest} onChange={(e) => { setRemovedFirstRest(e.target.checked); setOmrJob(null); setXmlFile(null); }} />
-        {zh ? "另选 PDF 已手工删除开头的整休止小节；识别后补回" : "Separate PDF has its opening all-rest measure removed; restore it in MusicXML"}</label>
-      {removedFirstRest && <label className={styles.field}>{zh ? "删除的小节长度（四分音符拍）" : "Removed measure length (quarter-note beats)"}
-        <input type="number" min={1} max={16} step={1} value={removedBeats} onChange={(e) => { setRemovedBeats(Number(e.target.value)); setOmrJob(null); setXmlFile(null); }} /></label>}
-      <button className={styles.omrButton} disabled={omrActive || recording || busyTakeId != null || (!omrPdf && !pdfName)} onClick={() => void recognizePdf()}>
-        {omrBusy ? (zh ? "准备 PDF…" : "Preparing PDF…") : (zh ? "识别 PDF" : "Recognize PDF")}</button>
-      {omrJob && <p role="status" className={styles.hint}>OMR {omrJob.status}{omrJob.progress != null ? ` · ${omrJob.progress}%` : ""}</p>}
-      {omrJob?.error && <p className={styles.error} role="alert">{omrJob.error}</p>}
-      {omrJob?.result && <div className={styles.omrResult}>
-        <p className={styles.hint}>{zh ? `已得到 ${omrJob.result.noteCount} 个可分析音符 · ${omrJob.result.measureCount} 小节` : `${omrJob.result.noteCount} analyzable notes · ${omrJob.result.measureCount} measures`}</p>
-        {omrJob.result.compatible && <p className={styles.hint}>{zh ? "已自动作为演奏分析的目标谱；选择起始小节并录音即可。" : "Automatically selected as the target score. Choose a starting measure and record."}</p>}
-        {!omrJob.result.compatible && <p className={styles.error}>{zh ? "识别已完成，但当前单声部分析器暂不支持此 MusicXML：" : "Recognition completed, but this MusicXML is not supported by the monophonic analyzer: "}{omrJob.result.reason}</p>}
-        <button className={styles.omrButton} onClick={downloadMusicXml}>{zh ? "下载 MusicXML（可选）" : "Download MusicXML (optional)"}</button>
-      </div>}
+      <h2><span className={styles.stepNum} aria-hidden="true">1</span> {zh ? "备谱" : "Score"}</h2>
+      <p className={styles.hint}>{pdfName ? (zh ? `当前谱面：${pdfName}` : `Loaded score: ${pdfName}`) : (zh ? "先导入 MusicXML，或在下面从 PDF 识别" : "Import MusicXML first, or recognize it from a PDF below")}</p>
+      <label className={styles.field}>{zh ? "导入 MusicXML (.xml/.musicxml)" : "Import MusicXML (.xml/.musicxml)"}
+        <input type="file" accept=".xml,.musicxml" onChange={(e) => { setXmlFile(e.target.files?.[0] ?? null); setOmrJob(null); }} /></label>
+      {xmlFile && <span className={styles.hint}>{xmlFile.name}</span>}
+      <details className={styles.fold}>
+        <summary>{zh ? "从 PDF 识别（OMR，可选）" : "Recognize from PDF (OMR, optional)"}</summary>
+        <label className={styles.field}>{zh ? "另选用于识别的 PDF（可选）" : "PDF for recognition (optional)"}
+          <input type="file" accept=".pdf,application/pdf" onChange={(e) => { setOmrPdf(e.target.files?.[0] ?? null); setOmrJob(null); setXmlFile(null); }} /></label>
+        <label className={styles.check}><input type="checkbox" checked={removedFirstRest} onChange={(e) => { setRemovedFirstRest(e.target.checked); setOmrJob(null); setXmlFile(null); }} />
+          {zh ? "另选 PDF 已手工删除开头的整休止小节；识别后补回" : "Separate PDF has its opening all-rest measure removed; restore it in MusicXML"}</label>
+        {removedFirstRest && <label className={styles.field}>{zh ? "删除的小节长度（四分音符拍）" : "Removed measure length (quarter-note beats)"}
+          <input type="number" min={1} max={16} step={1} value={removedBeats} onChange={(e) => { setRemovedBeats(Number(e.target.value)); setOmrJob(null); setXmlFile(null); }} /></label>}
+        <button className={styles.omrButton} disabled={omrActive || recording || busyTakeId != null || (!omrPdf && !pdfName)} onClick={() => void recognizePdf()}>
+          {omrBusy ? (zh ? "准备 PDF…" : "Preparing PDF…") : (zh ? "识别 PDF" : "Recognize PDF")}</button>
+        {omrJob && <p role="status" className={styles.hint}>OMR {omrJob.status}{omrJob.progress != null ? ` · ${omrJob.progress}%` : ""}</p>}
+        {omrJob?.error && <p className={styles.error} role="alert">{omrJob.error}</p>}
+        {omrJob?.result && <div className={styles.omrResult}>
+          <p className={styles.hint}>{zh ? `已得到 ${omrJob.result.noteCount} 个可分析音符 · ${omrJob.result.measureCount} 小节` : `${omrJob.result.noteCount} analyzable notes · ${omrJob.result.measureCount} measures`}</p>
+          {omrJob.result.compatible && <p className={styles.hint}>{zh ? "已自动作为演奏分析的目标谱；选择起始小节并录音即可。" : "Automatically selected as the target score. Choose a starting measure and record."}</p>}
+          {!omrJob.result.compatible && <p className={styles.error}>{zh ? "识别已完成，但当前单声部分析器暂不支持此 MusicXML：" : "Recognition completed, but this MusicXML is not supported by the monophonic analyzer: "}{omrJob.result.reason}</p>}
+          <button className={styles.omrButton} onClick={downloadMusicXml}>{zh ? "下载 MusicXML（可选）" : "Download MusicXML (optional)"}</button>
+        </div>}
+      </details>
     </section>
-    <label className={styles.field}>{zh ? "乐器" : "Instrument"}
-      <select value={instrument} onChange={(e) => setInstrument(e.target.value)}>
-        <option value="violin">{zh ? "小提琴" : "Violin"}</option><option value="viola">{zh ? "中提琴" : "Viola"}</option>
-        <option value="cello">{zh ? "大提琴" : "Cello"}</option><option value="piano">{zh ? "钢琴" : "Piano"}</option>
-      </select></label>
-    <label className={styles.field}>BPM <input type="number" min={30} max={200} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} /></label>
-    <label className={styles.field}>{zh ? "录音从第几小节开始" : "Start measure"}
-      <input type="number" min={1} max={omrJob?.result?.measureCount || pdfMeasures || undefined} step={1} value={startMeasure}
-        onChange={(e) => setStartMeasure(Number(e.target.value))} /></label>
-    <label className={styles.field}>{zh ? "每小节拍数（节拍器/同步用）" : "Beats per measure"}
-      <select value={beatsPerMeasure} onChange={(e) => { setBeatsPerMeasure(Number(e.target.value)); setCountInBeats(Number(e.target.value)); }}>
-        <option value={2}>2</option><option value={3}>3</option><option value={4}>4</option><option value={6}>6</option>
-      </select></label>
-    <label className={styles.field}>{zh ? "预备拍（节拍器，不录入分析起点）" : "Count-in beats"}
-      <input type="number" min={0} max={8} step={1} value={countInBeats} onChange={(e) => setCountInBeats(Number(e.target.value))} /></label>
-    <label className={styles.field}>{zh ? "或手动导入 MusicXML (.xml/.musicxml)" : "Or import MusicXML (.xml/.musicxml)"}
-      <input type="file" accept=".xml,.musicxml" onChange={(e) => { setXmlFile(e.target.files?.[0] ?? null); setOmrJob(null); }} /></label>
-    {xmlFile && <span className={styles.hint}>{xmlFile.name}</span>}
+    <p className={styles.stepTag}><span className={styles.stepNum} aria-hidden="true">2</span> {zh ? "设置" : "Setup"}</p>
+    <div className={styles.grid2}>
+      <label className={styles.field}>{zh ? "乐器" : "Instrument"}
+        <select value={instrument} onChange={(e) => setInstrument(e.target.value)}>
+          <option value="violin">{zh ? "小提琴" : "Violin"}</option><option value="viola">{zh ? "中提琴" : "Viola"}</option>
+          <option value="cello">{zh ? "大提琴" : "Cello"}</option><option value="piano">{zh ? "钢琴" : "Piano"}</option>
+        </select></label>
+      <label className={styles.field}>BPM <input type="number" min={30} max={200} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} /></label>
+      <label className={styles.field}>{zh ? "录音从第几小节开始" : "Start measure"}
+        <input type="number" min={1} max={omrJob?.result?.measureCount || pdfMeasures || undefined} step={1} value={startMeasure}
+          onChange={(e) => setStartMeasure(Number(e.target.value))} /></label>
+      <label className={styles.field}>{zh ? "每小节拍数（节拍器/同步用）" : "Beats per measure"}
+        <select value={beatsPerMeasure} onChange={(e) => { setBeatsPerMeasure(Number(e.target.value)); setCountInBeats(Number(e.target.value)); }}>
+          <option value={2}>2</option><option value={3}>3</option><option value={4}>4</option><option value={6}>6</option>
+        </select></label>
+      <label className={styles.field}>{zh ? "预备拍（节拍器，不录入分析起点）" : "Count-in beats"}
+        <input type="number" min={0} max={8} step={1} value={countInBeats} onChange={(e) => setCountInBeats(Number(e.target.value))} /></label>
+    </div>
+    <p className={styles.hint}>{zh ? "“自动定位片段”会忽略起始小节、自动找录音位置；指定小节请用“分析这一遍”。" : "“Find excerpt” ignores the start measure and locates the take automatically; use “Analyze” for a fixed start measure."}</p>
 
     <section className={styles.omr} aria-label={zh ? "同步录音" : "Synced recording"}>
-      <h2>{zh ? "同步录音（节拍器 + 麦克风干声）" : "Synced recording (click + dry mic)"}</h2>
+      <h2><span className={styles.stepNum} aria-hidden="true">3</span> {zh ? "录音" : "Takes"}</h2>
       <p className={styles.hint}>{zh ? "节拍器只从本机播放、不混入录音文件；录音只采集麦克风。建议戴耳机，预备拍不会计入分析。" : "Clicks play locally and are never mixed into the file; only the mic is recorded. Use headphones; count-in is excluded."}</p>
       {!scoreLoaded && <p role="status" className={styles.hint}>{zh ? "尚未载入谱面：请先在上方载入 PDF 或导入 MusicXML，然后再录音或分析。" : "No score loaded: load a PDF or import MusicXML first, then record and analyze."}</p>}
       <label className={styles.field}>{zh ? "录音设备" : "Microphone"}
@@ -780,7 +809,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
               {take.firstBeatAudioSec != null ? ` · sync ${take.firstBeatAudioSec.toFixed(2)}s` : ` · ${zh ? "未同步" : "unsynced"}`}
             </label>
             <div className={styles.takeRow}>
-              <button className={styles.omrButton} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take)}>
+              <button className={`${styles.omrButton} ${styles.analyzeBtn}`} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take)}>
                 {busyTakeId === take.id ? (zh ? "分析中…" : "Analyzing…") : (zh ? "分析这一遍" : "Analyze")}</button>
               {busyTakeId === take.id && <button className={styles.omrButton} onClick={() => cancelAnalysis(take.id)}>{zh ? "取消分析" : "Cancel"}</button>}
               <button className={styles.omrButton}
@@ -794,7 +823,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
                 void deleteTakeBlob(take.id).catch(() => undefined);
                 if (selectedId === take.id) setSelectedId(null);
               }}>{zh ? "删除" : "Delete"}</button>
-              {take.jobStatus && <span className={styles.hint}>{take.jobStatus}{busyTakeId === take.id && analysisJob.pollCount > 0 ? ` · poll ${analysisJob.pollCount}` : ""}{busyTakeId === take.id && analysisJob.progress != null ? ` · ${analysisJob.progress}%` : ""}</span>}
+              {take.jobStatus && (() => { const chip = jobChip(take.jobStatus, zh);
+                const tone = chip.tone === "ok" ? styles.chipOk : chip.tone === "fail" ? styles.chipFail : chip.tone === "mute" ? styles.chipMute : styles.chipBusy;
+                return <span role="status" className={`${styles.chip} ${tone}`}>{chip.label}{busyTakeId === take.id && analysisJob.pollCount > 0 ? ` · poll ${analysisJob.pollCount}` : ""}{busyTakeId === take.id && analysisJob.progress != null ? ` · ${analysisJob.progress}%` : ""}</span>; })()}
               {take.result && <span className={styles.hint}>
                 {take.result.summary.autoLocated && (zh ? `定位第 ${take.result.summary.startMeasure}–${take.result.summary.endMeasure} 小节 · ` : `Located m${take.result.summary.startMeasure}–${take.result.summary.endMeasure} · `)}
                 {zh ? "综合音高" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</span>}
@@ -816,7 +847,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           }
         }}
       />}
-      {getSyncedAudio && <button disabled={busyTakeId != null || recording} onClick={async () => {
+      {getSyncedAudio && <button className={`${styles.omrButton} ${styles.wrapBtn}`} disabled={busyTakeId != null || recording} onClick={async () => {
         try {
           const source = getSyncedAudio();
           if (!source || !source.markers.length) throw new Error("Load audio and create B-sync markers in the score player first / 请先在谱面播放器加载音频并用 B 同步");
@@ -857,7 +888,6 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         }} />}
     </section>
 
-    {(error) && <p role="alert" className={styles.error}>{error}</p>}
     {!result && <section className={styles.omr} aria-label={zh ? "效果预览" : "Preview"}>
       <h2>{zh ? "先看看效果（模拟数据）" : "Preview with sample data"}</h2>
       <p className={styles.hint}>{zh ? "还没录音也能看：下面是假装拉完一遍的样子，点一点试试。" : "No recording needed: sample charts below. Click around to try."}</p>
@@ -869,8 +899,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       </div>}
     </section>}
     {result && <section className={styles.report} aria-label={zh ? "分析报告" : "Analysis report"}>
-      <h2>{zh ? "演奏报告" : "Performance report"}</h2>
-      {result.instrument !== "piano" && result.summary.pitchToleranceCents !== 15 && <p role="status" className={styles.hint}>{zh ? "这是旧评分规则的报告。图表已按 ±15 音分显示；请更新分析服务并重新分析，刷新分数与错音数量。" : "This report uses the old scoring rules. Charts now use ±15 cents; update the analysis service and reanalyze to refresh the score and wrong-note totals."}</p>}
+      <h2><span className={styles.stepNum} aria-hidden="true">4</span> {zh ? "演奏报告" : "Performance report"}</h2>
+      {result.instrument !== "piano" && result.summary.pitchToleranceCents == null && <p role="status" className={styles.hint}>{zh ? "这是旧评分规则的报告。图表已按 ±15 音分显示；请更新分析服务并重新分析，刷新分数与错音数量。" : "This report uses the old scoring rules. Charts now use ±15 cents; update the analysis service and reanalyze to refresh the score and wrong-note totals."}</p>}
       <div className={styles.scores}><div><b>{result.summary.pitchScore ?? "—"}</b>{zh ? "综合音高" : "Pitch"}</div>
         <div><b>{result.summary.rhythmScore ?? "—"}</b>{zh ? "跟拍" : "Timing"}</div></div>
       {/* 引擎状态: 后端已回传 degraded/degradedReasons(旧报告缺失则不渲染, 不抛错) */}
@@ -905,7 +935,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         {zh ? `节拍器同步 · 第一拍 ${result.summary.recordedFirstBeatSec}s · 延迟微调 ${result.summary.estimatedLatencyMs} ms` : `Metronome sync · first beat ${result.summary.recordedFirstBeatSec}s · latency ${result.summary.estimatedLatencyMs} ms`}</p>}
       {result.summary.syncMode === "manual-measures" && <p className={styles.hint}>{zh ? "按已确认的小节标记对齐；节奏仅评估小节内音符，手动标记的首拍不评分。" : "Aligned to confirmed measure markers. Timing evaluates within-measure notes; manually marked downbeats are not graded."}</p>}
       {/* 拍点网格与设定速度差 >25% 时后端弃用网格、按固定速度评分 (engine.py tempoMismatch) */}
-      {result.summary.tempoMismatch && <p className={styles.hint}>{zh
+      {result.summary.tempoMismatch && <p role="status" className={styles.warn}>{zh
         ? `检测速度约 ${result.summary.detectedBpm ?? "—"} BPM，与设定速度差别较大，已按固定速度评分`
         : `Detected tempo ≈ ${result.summary.detectedBpm ?? "—"} BPM differs strongly from the set tempo; scored at fixed tempo`}</p>}
       {result.summary.startMeasure && <p className={styles.hint}>{zh ? `本次分析：第 ${result.summary.startMeasure}–${result.summary.endMeasure} 小节` : `Analyzed measures ${result.summary.startMeasure}–${result.summary.endMeasure}`}{result.instrument !== "piano" || result.summary.pitchScoreMethod === "note-f1" ? (zh ? "（录音结束后的谱面音符不计分）" : "; score notes beyond the recording end were excluded.") : (zh ? "（旧版钢琴未裁去录音结束后的谱面音符）" : "; this older piano report includes score notes beyond the recording end.")}</p>}
@@ -930,7 +960,16 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           {note.timingErrorMs != null && ` · ${note.timingErrorMs > 0 ? "+" : ""}${note.timingErrorMs} ms`}
           {note.timingStatus === "uncertain" && ` · ${zh ? "起音不确定" : "Onset uncertain"}`}
         </button></li>)}</ol>
-      {result.limitations.map((text) => <p className={styles.hint} key={text}>{text}</p>)}
+      <details className={styles.fold}>
+        <summary>{zh ? "局限与说明" : "Limitations"}</summary>
+        {result.limitations.map((text) => <p className={styles.hint} key={text}>{text}</p>)}
+      </details>
     </section>}
+    <details className={styles.fold}>
+      <summary>{zh ? "服务设置" : "Service"}</summary>
+      <label className={styles.field}>{zh ? "分析服务地址" : "Analysis API URL"}
+        <input type="url" placeholder="https://analysis.example.com" value={api} disabled={omrActive || recording || busyTakeId != null} onChange={(e) => setApi(e.target.value)} /></label>
+      {!api.trim() && <p className={styles.hint}>{zh ? `请输入分析服务地址；本站可使用同源 ${BASE}/analysis。` : `Enter the analysis API URL; this site uses ${BASE}/analysis.`}</p>}
+    </details>
   </aside>;
 }
