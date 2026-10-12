@@ -187,7 +187,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   onJump: (measure: number) => void; onClose: () => void;
   getSyncedAudio?: () => SyncedAudio | null;
   onApplyMeasureSync?: (markers: { measure: number; audioSec: number }[]) => string | null;
-  onFollowTake?: (take: { name: string; url: string; starts: { measure: number; startSec: number }[] }) => string | null;
+  onFollowTake?: (take: { name: string; url: string; starts: { measure: number; startSec: number }[] }) => string | { warning: string } | null;
 }) {
   const [api, setApi] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -219,6 +219,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const [startingRecording, setStartingRecording] = useState(false);
   const [error, setError] = useState("");
   const [syncMsg, setSyncMsg] = useState("");
+  const [syncWarn, setSyncWarn] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
   const [mockNotes] = useState(makeMockNotes);
   const [mockTakes] = useState<CompareTake[]>(makeMockTakes);
@@ -947,24 +948,27 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       {(result.suggestedMeasureSync?.length ?? 0) > 0 && canJump && onApplyMeasureSync && <div>
         <button className={styles.omrButton} onClick={() => {
           const err = onApplyMeasureSync(result.suggestedMeasureSync ?? []);
-          if (err) { setError(err); setSyncMsg(""); }
-          else { setError(""); setSyncMsg(zh ? `已写入光标同步（${result.suggestedMeasureSync?.length ?? 0} 个小节起点，随 preload 导出）` : `Cursor sync applied (${result.suggestedMeasureSync?.length ?? 0} measure starts, exported with preload)`); }
+          if (err) { setError(err); setSyncMsg(""); setSyncWarn(false); }
+          else { setError(""); setSyncWarn(false); setSyncMsg(zh ? `已写入光标同步（${result.suggestedMeasureSync?.length ?? 0} 个小节起点，随 preload 导出）` : `Cursor sync applied (${result.suggestedMeasureSync?.length ?? 0} measure starts, exported with preload)`); }
         }}>{zh ? "将自动小节同步写入光标" : "Apply auto measure sync to cursor"}</button>
         {result.syncSuggestion && <span className={styles.hint}>{zh ? `全局偏移 ${result.syncSuggestion.appliedOffsetSec}s · 候选 ${result.syncSuggestion.candidates.map((c) => c.offsetSec).join("/")}` : `offset ${result.syncSuggestion.appliedOffsetSec}s · candidates ${result.syncSuggestion.candidates.map((c) => c.offsetSec).join("/")}`}</span>}
       </div>}
       {selected?.blob && (result.measureIntervals?.length ?? 0) > 1 && onFollowTake && <div>
         <button className={styles.omrButton} onClick={() => {
-          const err = onFollowTake({ name: selected.name, url: selected.url, starts: (result.measureIntervals ?? []).map((m) => ({ measure: m.measure, startSec: m.startSec })) });
-          if (err) { setError(err); setSyncMsg(""); return; }
+          const res = onFollowTake({ name: selected.name, url: selected.url, starts: (result.measureIntervals ?? []).map((m) => ({ measure: m.measure, startSec: m.startSec })) });
+          if (typeof res === "string") { setError(res); setSyncMsg(""); setSyncWarn(false); return; }
           setError("");
           const measureCount = result.summary.measureCount ?? 0;
-          const mismatch = pdfMeasures > 0 && measureCount > 0 && pdfMeasures !== measureCount;
-          setSyncMsg(mismatch
-            ? (zh ? `已载入谱面播放器，但谱面 ${pdfMeasures} 小节、报告 ${measureCount} 小节，阴影可能错位，请先核对再跟谱` : `Loaded, but the score has ${pdfMeasures} measures vs ${measureCount} in the report; the shade may misalign. Verify first.`)
-            : (zh ? "已载入谱面播放器：回到谱面按 ▶ 播放（音频条自带播放键也行），蓝色小节阴影会跟着录音走" : "Loaded into the score player: back to the score and press ▶ (or the strip's own play button); the blue measure shade follows the recording"));
+          const notes: string[] = [];
+          if (pdfMeasures > 0 && measureCount > 0 && pdfMeasures !== measureCount)
+            notes.push(zh ? `谱面 ${pdfMeasures} 小节、报告 ${measureCount} 小节，阴影可能错位，请先核对` : `The score has ${pdfMeasures} measures vs ${measureCount} in the report; the shade may misalign. Verify first.`);
+          if (res && typeof res === "object") notes.push(res.warning);
+          setSyncWarn(notes.length > 0);
+          setSyncMsg(((zh ? "已载入谱面播放器：回到谱面按 ▶ 播放（音频条自带播放键也行），蓝色小节阴影会跟着录音走" : "Loaded into the score player: back to the score and press ▶ (or the strip's own play button); the blue measure shade follows the recording"))
+            + (notes.length ? (zh ? `；注意：${notes.join("；")}` : ` Note: ${notes.join("; ")}`) : ""));
         }}>{zh ? "用这一遍走谱" : "Follow with this take"}</button>
       </div>}
-      {syncMsg && <p role="status" className={styles.hint}>{syncMsg}</p>}
+      {syncMsg && <p role="status" className={syncWarn ? styles.warn : styles.hint}>{syncMsg}</p>}
       <h3>{zh ? "复习片段" : "Review moments"} ({issues.length})</h3>
       {issues.length === 0 && <p className={styles.hint}>{zh ? "没有明确的问题；请检查可判比例。" : "No definite issues; check coverage above."}</p>}
       <ol className={styles.issues}>{issues.slice(0, 40).map((note) => <li key={note.id}>

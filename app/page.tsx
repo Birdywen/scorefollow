@@ -4075,6 +4075,9 @@ export default function ScoreFollowPage() {
             setMediaKind("audio");
             w.loadTimes(entries);
             setTapCount(entries.length);
+            if (!showCursor) return { warning: lang === "zh"
+              ? "光标覆盖层已关闭，播放时看不到蓝色阴影：请在“面板”工作台打开“光标”，或关闭“干净视图”"
+              : "The cursor overlay is off, so no shade will show during playback. Enable “Cursor” in the Panel workspace or turn off Clean view." };
             return null;
           }}
          onJump={(measure) => placeCursor(measure - 1)} onClose={() => setPerformanceOpen(false)} />}
