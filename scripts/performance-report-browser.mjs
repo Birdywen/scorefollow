@@ -4,16 +4,22 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve, extname } from "node:path";
 import { chromium } from "playwright-core";
+import ts from "typescript";
 
-const root = resolve("out");
+const preflightJs = ts.transpileModule(await readFile(new URL("../lib/analysis-preflight.ts", import.meta.url), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+
+const root = resolve(process.env.SF_BROWSER_OUT ?? "out");
+const base = process.env.SF_BROWSER_BASE ?? "/scorefollow";
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
-    let path = resolve(root, "." + url.pathname.replace(/^\/scorefollow/, ""));
+    let path = resolve(root, "." + (base && url.pathname.startsWith(base + "/") ? url.pathname.slice(base.length) : url.pathname));
     if (!path.startsWith(root + "/") && path !== root) throw new Error("Invalid path");
     if (url.pathname.endsWith("/")) path += "/index.html";
     const bytes = await readFile(path);
-    res.setHeader("Content-Type", ({ ".js": "text/javascript", ".css": "text/css", ".html": "text/html" })[extname(path)] ?? "application/octet-stream");
+    res.setHeader("Content-Type", ({ ".js": "text/javascript", ".mjs": "text/javascript", ".wasm": "application/wasm", ".css": "text/css", ".html": "text/html" })[extname(path)] ?? "application/octet-stream");
     res.end(bytes);
   } catch { res.statusCode = 404; res.end(); }
 });
@@ -38,17 +44,30 @@ try {
     const status = route.request().method() === "POST" ? { id: "fixture", status: "queued" } : { id: "fixture", status: "completed", result };
     await route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" }, body: JSON.stringify(status) });
   });
-  await page.goto(`http://127.0.0.1:${server.address().port}/scorefollow/`);
+  await page.goto(`http://127.0.0.1:${server.address().port}${base}/`);
+  const checks = await page.evaluate(async (source) => {
+    const { inspectScoreXml } = await import(`data:text/javascript;base64,${source}`);
+    const score = '<score-partwise xmlns="http://www.musicxml.org/ns/musicxml"><part id="P1"><measure><attributes><key><fifths>-1</fifths></key><time><beats>6</beats><beat-type>8</beat-type></time></attributes><note><pitch><step>B</step><octave>3</octave></pitch><duration>1</duration></note></measure></part></score-partwise>';
+    return { namespaced: inspectScoreXml(score), repeat: inspectScoreXml(score.replace('</measure>', '<barline><repeat direction="backward"/></barline></measure>')),
+      chord: inspectScoreXml(score.replace('<note>', '<note><chord/>')), entity: inspectScoreXml('<!ENTITY secret "x">' + score) };
+  }, Buffer.from(preflightJs).toString("base64"));
+  assert.deepEqual(checks.namespaced.errors, []);
+  assert.equal(checks.namespaced.minMidi, 58, "Key signature must affect preflight pitch range (Bb3)");
+  assert.ok(checks.namespaced.warnings.includes("compound_meter"));
+  assert.ok(checks.repeat.errors.includes("repeats"));
+  assert.ok(checks.chord.errors.includes("polyphonic"));
+  assert.ok(checks.entity.errors.includes("entities"));
   await page.getByRole("button", { name: /^(Analyze|演奏分析)$/ }).click();
   const panel = page.getByRole("complementary", { name: /Performance analysis|演奏分析/ });
   const xml = '<score-partwise><part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration></note></measure><measure number="2"><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration></note></measure></part></score-partwise>';
   await panel.locator('input[accept=".xml,.musicxml"]').setInputFiles({ name: "score.musicxml", mimeType: "application/xml", buffer: Buffer.from(xml) });
+  await panel.getByRole("region", { name: /Score preflight|谱面预检/ }).getByText(/Structure check passed|结构预检通过/).waitFor();
   const rate = 22050, samples = rate * 4, wav = Buffer.alloc(44 + samples * 2);
   wav.write("RIFF"); wav.writeUInt32LE(wav.length - 8, 4); wav.write("WAVEfmt ", 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(rate, 24); wav.writeUInt32LE(rate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(samples * 2, 40);
   for (let i = 0; i < samples; i++) wav.writeInt16LE(Math.round(4000 * Math.sin(i * 2 * Math.PI * 440 / rate)), 44 + i * 2);
   await panel.locator('input[accept^="audio/"]').setInputFiles({ name: "take.wav", mimeType: "audio/wav", buffer: wav });
   await panel.getByRole("button", { name: /^(Analyze|分析这一遍)$/ }).click();
-  const report = page.getByRole("region", { name: /Performance report|分析报告/ });
+  const report = page.getByRole("region", { name: /Analysis report|分析报告/ });
   await report.getByRole("heading", { name: /Frequently wrong pitches|常错音/ }).waitFor();
   const firstDot = report.locator("svg").first().locator("g circle").nth(1);
   assert.equal(await firstDot.getAttribute("fill"), "transparent", "Outlier must not render red");
@@ -108,6 +127,55 @@ try {
   assert.equal(imported.syncScoreXml, undefined, "Imported timing must be reviewed before confirmation");
   assert.equal(await panel.locator("audio").evaluate(async (audio) => (await (await fetch(audio.src)).arrayBuffer()).byteLength), wav.length);
   assert.deepEqual(pageErrors, []);
+  // New reports and legacy payloads both distinguish actual zero from missing scores.
+  const qualityCases = [
+    { name: "zero", summary: { ...result.summary, pitchScore: 0, rhythmScore: 0 }, label: /Results available|结果可用/, scoreText: "0" },
+    { name: "insufficient", summary: { ...result.summary, pitchScore: null, rhythmScore: null, syncAdvice: "Review alignment" }, label: /Insufficient evidence|证据不足/, scoreText: /Not scored|未计分/ },
+    { name: "rescue", summary: { ...result.summary, pitchScore: 95, rhythmScore: 87, autoMeasureSync: true, octaveShift: -12, rescueReasons: ["octave", "tempo", "pause", "range"], detectedBpm: 132 }, label: /Auto-corrected|已自动补救/, scoreText: "95" },
+  ];
+  for (const fixture of qualityCases) {
+    const testPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await testPage.addInitScript((language) => localStorage.setItem("sf-lang", language), fixture.name === "insufficient" ? "en" : "zh");
+    testPage.on("pageerror", (error) => pageErrors.push(error.message));
+    let posts = 0;
+    const payload = { ...result, summary: fixture.summary,
+      diagnostics: { analysisId: fixture.name, algorithmVersion: result.version, inputHash: "a".repeat(64), elapsedMs: 1250 } };
+    if (fixture.name !== "zero") payload.quality = { version: "evidence-1", outcome: fixture.name === "insufficient" ? "insufficient_evidence" : "complete_with_rescue",
+      issues: fixture.name === "insufficient" ? ["alignment_unverified"] : [], pitchCoverage: .5, timingCoverage: 0, followReady: fixture.name !== "insufficient" };
+    await testPage.route("**/jobs**", async (route) => {
+      const post = route.request().method() === "POST";
+      if (post) posts++;
+      await route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(post ? { id: fixture.name, status: "queued" } : { id: fixture.name, status: "completed", result: payload }) });
+    });
+    await testPage.goto(`http://127.0.0.1:${server.address().port}${base}/`);
+    await testPage.getByRole("button", { name: /^(Analyze|演奏分析)$/ }).click();
+    const testPanel = testPage.getByRole("complementary", { name: /Performance analysis|演奏分析/ });
+    const xmlInput = testPanel.locator('input[accept=".xml,.musicxml"]');
+    await xmlInput.setInputFiles({ name: "invalid.xml", mimeType: "application/xml", buffer: Buffer.from("<broken>") });
+    await testPanel.getByRole("region", { name: /Score preflight|谱面预检/ }).getByText(/not valid|不是有效/).waitFor();
+    await testPanel.locator('input[accept^="audio/"]').setInputFiles({ name: "quality.wav", mimeType: "audio/wav", buffer: wav });
+    await testPanel.getByRole("region", { name: /Audio preflight|音频预检/ }).waitFor();
+    await testPanel.getByRole("button", { name: /^(Analyze|分析这一遍)$/ }).click();
+    await testPanel.getByRole("alert").filter({ hasText: /not valid|不是有效/ }).waitFor();
+    assert.equal(posts, 0, "Invalid score must not submit a job");
+    await xmlInput.setInputFiles({ name: "valid.xml", mimeType: "application/xml", buffer: Buffer.from(xml) });
+    await testPanel.getByRole("region", { name: /Score preflight|谱面预检/ }).getByText(/Structure check passed|结构预检通过/).waitFor();
+    await testPanel.getByRole("button", { name: /^(Analyze|分析这一遍)$/ }).click();
+    const testReport = testPage.getByRole("region", { name: /Analysis report|分析报告/ });
+    const qualityCard = testReport.getByRole("region", { name: /Analysis quality|分析质量/ });
+    await qualityCard.getByText(fixture.label).waitFor();
+    const scoreCells = testReport.locator('[class*="scores"] b');
+    assert.match(await scoreCells.first().innerText(), fixture.scoreText instanceof RegExp ? fixture.scoreText : new RegExp(`^${fixture.scoreText}$`));
+    await qualityCard.locator("summary").click();
+    await qualityCard.getByText(new RegExp(fixture.name)).waitFor();
+    if (fixture.name === "rescue") await qualityCard.getByText(/Octave correction|八度修正/).waitFor();
+    if (fixture.name === "insufficient") assert.equal(await testReport.getByRole("button", { name: /Follow with this take|用这一遍走谱/ }).isDisabled(), true);
+    assert.equal(posts, 1);
+    await testPage.close();
+  }
+  assert.deepEqual(pageErrors, []);
+  console.log(`QUALITY_PREFLIGHT_BROWSER_OK: ${base || "/"}; viewport 390x844; zero/null/rescue, invalid XML blocks POST, diagnostics`);
   console.log("REPORT_BROWSER_OK: pitch charts; bounded playback; B sync, undo, confirmation, preview, persistence, manual-measures POST and main-player audio/timing import verified");
 } finally {
   await browser?.close();

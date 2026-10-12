@@ -17,6 +17,11 @@
 .report { margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--sf-border); }
 .report h2 { font-size: 16px; margin: 0 0 12px; }
 .report h3 { font-size: 13px; }
+.quality { padding: 12px; margin: 12px 0; border: 1px solid var(--sf-border); border-radius: 12px; background: var(--sf-elevated); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.quality h3 { margin: 0 0 8px; font-size: 14px; }
+.quality p { margin: 6px 0; }
+.quality summary { cursor: pointer; }
+.quality summary:focus-visible { outline: 2px solid var(--sf-focus); outline-offset: 2px; }
 .scores { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .scores div { display: flex; flex-direction: column; align-items: center; padding: 10px; border: 1px solid var(--sf-border); border-radius: 10px; color: var(--sf-muted); font-size: 12px; }
 .scores b { color: var(--sf-accent); font-size: 26px; }
@@ -42,6 +47,7 @@
 .omr, .take { border-radius: 14px; padding: 14px; }
 .scores div { background: linear-gradient(145deg, var(--sf-accent-soft), var(--sf-surface)); padding: 18px 10px; border-radius: 14px; }
 .scores b { font-size: 36px; font-variant-numeric: tabular-nums; letter-spacing: -.05em; }
+.scores b[data-unscored="true"] { font-size: 20px; letter-spacing: 0; }
 .hint { font-size: 13px; line-height: 1.7; }
 .omrButton, .takeRow button { min-height: 40px; }
 .panel { overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--sf-border) transparent; }

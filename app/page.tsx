@@ -760,8 +760,11 @@ export default function ScoreFollowPage() {
   const [scorePath, setScorePath] = useState("");
   // buildPreloadText 在下方定义，bundle 构建经 ref 间接调用（避 TDZ）
   const buildPreloadTextRef = useRef<((useManual?: boolean, includePdf?: boolean) => Promise<string | null>) | null>(null);
-  const [lang, setLang] = useState<Lang>(() =>
-    typeof window !== "undefined" && localStorage.getItem("sf-lang") === "en" ? "en" : "zh");
+  const [lang, setLang] = useState<Lang>("zh");
+  useEffect(() => {
+    // Match the exported HTML on the first render, then restore the preference.
+    try { if (localStorage.getItem("sf-lang") === "en") setLang("en"); } catch { /* unavailable storage */ }
+  }, []);
   const tx = (k: keyof typeof STR) => STR[k][lang];
   const toggleLang = useCallback(() => {
     setLang((v) => {

@@ -27,6 +27,23 @@ export function isValidAnalysisResult(r: unknown): boolean {
   if (!r || typeof r !== "object") return false;
   const o = r as Record<string, unknown>;
   if (typeof o.version !== "string" || !o.version) return false;
+  if (o.quality !== undefined) {
+    if (!o.quality || typeof o.quality !== "object") return false;
+    const q = o.quality as Record<string, unknown>;
+    if (typeof q.version !== "string" || !q.version ||
+        !["complete", "complete_with_rescue", "partial", "insufficient_evidence"].includes(String(q.outcome)) ||
+        !Array.isArray(q.issues) || !q.issues.every((issue) => typeof issue === "string") ||
+        typeof q.followReady !== "boolean") return false;
+    for (const key of ["pitchCoverage", "timingCoverage"]) {
+      if (typeof q[key] !== "number" || !Number.isFinite(q[key]) || q[key] < 0 || q[key] > 1) return false;
+    }
+  }
+  if (o.diagnostics !== undefined) {
+    if (!o.diagnostics || typeof o.diagnostics !== "object") return false;
+    const d = o.diagnostics as Record<string, unknown>;
+    if (typeof d.analysisId !== "string" || !d.analysisId || typeof d.algorithmVersion !== "string" || !d.algorithmVersion ||
+        typeof d.inputHash !== "string" || !/^[a-f0-9]{64}$/.test(d.inputHash) || !countValue(d.elapsedMs)) return false;
+  }
   if (!Array.isArray(o.notes) || !Array.isArray(o.limitations)) return false;
   if (o.measureIntervals !== undefined) {
     if (!Array.isArray(o.measureIntervals)) return false;
@@ -56,6 +73,14 @@ export function isValidAnalysisResult(r: unknown): boolean {
   if (ss.measureCount !== undefined && !(typeof ss.measureCount === "number" && Number.isInteger(ss.measureCount) && ss.measureCount >= 0)) return false;
   if (ss.startMeasure !== undefined && !measureValue(ss.startMeasure)) return false;
   if (ss.endMeasure !== undefined && !measureValue(ss.endMeasure)) return false;
+  if (ss.rescueReasons !== undefined && (!Array.isArray(ss.rescueReasons) || !ss.rescueReasons.every((v) => typeof v === "string"))) return false;
+  if (ss.syncAdvice !== undefined && ss.syncAdvice !== null && typeof ss.syncAdvice !== "string") return false;
+  for (const key of ["scoredPitchNotes", "timingCandidateNotes"]) {
+    if (ss[key] !== undefined && !countValue(ss[key])) return false;
+  }
+  for (const key of ["coveredSec", "detectedBpm"]) {
+    if (ss[key] !== undefined && !numOrNull(ss[key])) return false;
+  }
   return true;
 }
 

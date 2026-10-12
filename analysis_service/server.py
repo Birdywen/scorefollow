@@ -9,6 +9,8 @@ import binascii
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import hashlib
+import logging
 import os
 import threading
 import time
@@ -18,6 +20,8 @@ from uuid import uuid4
 from . import vamp_features
 from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score, read_wav, validate_measure_sync
 from .omr import MAX_PDF, recognize
+from .quality import assess_quality
+from .engine import VERSION as STRING_VERSION
 
 MAX_BODY = 16_000_000
 MAX_OMR_BODY = 21_000_000
@@ -31,15 +35,30 @@ allowed_origins = set(os.getenv(
 ).split(","))
 # Shared secret for the store relay (X-Analysis-Token header). Empty = open (local dev/tests).
 API_TOKEN = os.environ.get("ANALYSIS_API_TOKEN", "")
+logger = logging.getLogger("scorefollow.analysis")
+
+
+def log_event(event: str, job_id: str, **fields) -> None:
+    # No filenames, audio, XML, tokens or exception messages in structured logs.
+    logger.info(json.dumps({"event": event, "analysisId": job_id, **fields}, allow_nan=False))
 
 
 def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_measure: int,
         first_beat_audio_sec: float | None = None, sync_mode: str = "legacy", measure_sync=None,
         pitch_tolerance_cents: float = 25.0) -> None:
+    started = time.monotonic()
+    parameters = json.dumps([bpm, instrument, start_measure, first_beat_audio_sec,
+                             sync_mode, measure_sync, pitch_tolerance_cents], sort_keys=True)
+    fingerprint = hashlib.sha256(audio + xml.encode("utf-8") + parameters.encode()).hexdigest()
+    stage = "preparing"
     with lock:
-        jobs[job_id]["status"] = "analyzing"
+        jobs[job_id].update(status="analyzing", stage=stage, startedAt=time.time(), inputHash=fingerprint)
+    log_event("started", job_id, inputHash=fingerprint)
     try:
         if instrument == "piano":
+            stage = "transcribing"
+            with lock:
+                jobs[job_id]["stage"] = stage
             # 钢琴走独立复音通道: 转录即传感器, 不经过单声部 FFT 管道
             from .piano_engine import analyze_piano
             result = analyze_piano(audio, xml, bpm, start_measure)
@@ -48,8 +67,14 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
             summary.setdefault("degraded", False)
             summary.setdefault("degradedReasons", [])
         else:
+            stage = "extracting_features"
+            with lock:
+                jobs[job_id]["stage"] = stage
             # 有 Vamp 插件就用 pYIN+QM 当耳朵, 没有则引擎退回自研检测(前端无感)
             pitch_notes, onset_hint, beat_map = vamp_features.extract_all(audio)
+            stage = "aligning_and_scoring"
+            with lock:
+                jobs[job_id]["stage"] = stage
             result = analyze(audio, xml, bpm, instrument, start_measure, first_beat_audio_sec, sync_mode,
                              pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map, 
                              measure_sync=measure_sync, pitch_tolerance_cents=pitch_tolerance_cents)
@@ -62,9 +87,20 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
                 reasons = vamp_features.degradation_reasons(pitch_notes, onset_hint, effective_beat)
                 summary.setdefault("degraded", bool(reasons))
                 summary.setdefault("degradedReasons", reasons)
-        update = {"status": "completed", "result": result}
+        result["quality"] = assess_quality(result)
+        elapsed = round((time.monotonic() - started) * 1000)
+        result["diagnostics"] = {"analysisId": job_id, "algorithmVersion": result["version"],
+                                 "inputHash": fingerprint, "elapsedMs": elapsed}
+        update = {"status": "completed", "stage": "completed", "result": result,
+                  "finishedAt": time.time(), "elapsedMs": elapsed}
+        log_event("completed", job_id, algorithmVersion=result["version"], elapsedMs=elapsed,
+                  outcome=result["quality"]["outcome"], rescueReasons=summary.get("rescueReasons", []))
     except Exception as exc:
-        update = {"status": "failed", "error": str(exc) if isinstance(exc, ValueError) else "分析失败，请检查音频和谱面"}
+        elapsed = round((time.monotonic() - started) * 1000)
+        update = {"status": "failed", "stage": stage, "errorClass": type(exc).__name__,
+                  "finishedAt": time.time(), "elapsedMs": elapsed,
+                  "error": str(exc) if isinstance(exc, ValueError) else "分析失败，请检查音频和谱面"}
+        log_event("failed", job_id, stage=stage, errorClass=type(exc).__name__, elapsedMs=elapsed)
     with lock:
         jobs[job_id].update(update)
 
@@ -210,7 +246,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path == "/health":
-            self.respond(200, {"status": "ok"})
+            self.respond(200, {"status": "ok", "stringAlgorithmVersion": STRING_VERSION,
+                               "qualityVersion": "evidence-1"})
             return
         if not self.authorized():
             self.respond(401, {"error": "未授权"})
@@ -226,6 +263,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     host = os.getenv("ANALYSIS_HOST", "127.0.0.1")
     port = int(os.getenv("ANALYSIS_PORT", "8765"))
     print(f"Analysis API listening on http://{host}:{port}", flush=True)

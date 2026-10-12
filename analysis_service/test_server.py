@@ -44,6 +44,13 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(headers["Access-Control-Allow-Origin"], "http://localhost:3000")
             if job["status"] == "completed":
                 self.assertEqual(job["result"]["summary"]["noteCount"], 5)
+                self.assertIn(job["result"]["quality"]["outcome"], ("complete", "partial"))
+                diagnostics = job["result"]["diagnostics"]
+                self.assertEqual(diagnostics["analysisId"], data["id"])
+                self.assertEqual(len(diagnostics["inputHash"]), 64)
+                self.assertEqual(diagnostics["algorithmVersion"], job["result"]["version"])
+                self.assertGreaterEqual(diagnostics["elapsedMs"], 0)
+                self.assertEqual(job["stage"], "completed")
                 break
             time.sleep(.05)
         else:
@@ -56,6 +63,26 @@ class ApiTests(unittest.TestCase):
             "audioWavBase64": "???", "bpm": 60, "instrument": "violin"})
         self.assertEqual(status, 400)
         self.assertIn("error", data)
+
+    def test_failure_records_stage_without_logging_private_inputs(self):
+        from unittest.mock import patch
+        from .server import jobs, lock, run
+        job_id = "failure-diagnostic-fixture"
+        with lock:
+            jobs[job_id] = {"id": job_id, "status": "queued", "createdAt": time.time(), "kind": "analysis"}
+        try:
+            with patch("analysis_service.server.vamp_features.extract_all", side_effect=RuntimeError("private-token-do-not-log")):
+                with self.assertLogs("scorefollow.analysis", level="INFO") as captured:
+                    run(job_id, recording(), score(), 60, "violin", 1)
+            _, _, job = self.request("GET", "/jobs/" + job_id)
+            self.assertEqual(job["status"], "failed")
+            self.assertEqual(job["stage"], "extracting_features")
+            self.assertEqual(job["errorClass"], "RuntimeError")
+            self.assertNotIn("private-token", json.dumps(job))
+            self.assertNotIn("private-token", "".join(captured.output))
+        finally:
+            with lock:
+                jobs.pop(job_id, None)
 
     def test_analysis_of_selected_excerpt_over_http(self):
         status, _, data = self.request("POST", "/jobs", {"scoreXml": score(), "startMeasure": 3,
