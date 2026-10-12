@@ -155,4 +155,4 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 版本：string-mono-0.8 → 0.9（输出结构变化，旧缓存不复用）。
 - 验证：test_rescue_attempts.py（先失败后通过）、全量 `python3 -B -m unittest discover -s analysis_service -t .`（注意必须带 -t .，否则相对导入全部 _FailedTest）。
 - 环境备注：oracle 仓库 .git/hooks 有 LFS hook（10-12 21:03 安装），git-lfs 仅在 /tmp/opencode/git-lfs-tool，非交互 ssh 不在 PATH，会拦 worktree/checkout；本次 worktree/commit/push 仅对单条命令用 `-c core.hooksPath=/dev/null`（提交不含 LFS 文件），未改 hook 配置。
-- 部署：主工作区当前检出 research/vamp-plugins，直接重启服务会加载不含本修复的代码；部署方式待定。
+- 部署（birdy 授权）：research/vamp-plugins rebase 到 8942131 后推入 main（全量 238 tests OK，tsc/analysis-guard 通过；LFS 对象远端齐全）。分析服务改由独立部署目录运行：/home/ubuntu/n/scorefollow-deploy（只跟 main 的 worktree，GIT_LFS_SKIP_SMUDGE=1，不含数据集音频），systemd drop-in /etc/systemd/system/scorefollow-analysis.service.d/deploy-dir.conf 覆盖 WorkingDirectory；health string-mono-0.9。回滚：删 drop-in → daemon-reload → restart。~/n/scorefollow 留作研究工作区，切分支不再影响线上；以后构建/重启在部署目录内进行。
