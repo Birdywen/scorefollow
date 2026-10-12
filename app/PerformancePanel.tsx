@@ -44,7 +44,8 @@ type Result = {
     noteCount: number; measureCount?: number; startMeasure?: number; endMeasure?: number;
     voicedNotes: number; timedNotes: number; confidence: string;
     syncMode?: string; tempoMismatch?: boolean; detectedBpm?: number | null; recordedFirstBeatSec?: number | null; estimatedLatencyMs?: number | null; coveredSec?: number;
-    autoLocated?: boolean; locationCost?: number | null };
+    autoLocated?: boolean; locationCost?: number | null;
+    autoMeasureSync?: boolean; octaveShift?: number | null; rescueReasons?: string[]; syncAdvice?: string | null };
 };
 type Take = {
   measureSync?: MeasureMarker[]; syncScoreXml?: string;
@@ -937,7 +938,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       </p>}
       {result.summary.syncMode === "metronome" && <p className={styles.hint}>
         {zh ? `节拍器同步 · 第一拍 ${result.summary.recordedFirstBeatSec}s · 延迟微调 ${result.summary.estimatedLatencyMs} ms` : `Metronome sync · first beat ${result.summary.recordedFirstBeatSec}s · latency ${result.summary.estimatedLatencyMs} ms`}</p>}
-      {result.summary.syncMode === "manual-measures" && <p className={styles.hint}>{zh ? "按已确认的小节标记对齐；节奏仅评估小节内音符，手动标记的首拍不评分。" : "Aligned to confirmed measure markers. Timing evaluates within-measure notes; manually marked downbeats are not graded."}</p>}
+      {result.summary.syncMode === "manual-measures" && !result.summary.autoMeasureSync && <p className={styles.hint}>{zh ? "按已确认的小节标记对齐；节奏仅评估小节内音符，手动标记的首拍不评分。" : "Aligned to confirmed measure markers. Timing evaluates within-measure notes; manually marked downbeats are not graded."}</p>}
+      {result.summary.autoMeasureSync && <p role="status" className={styles.warn}>{zh
+        ? `已按录音自动对齐小节${result.summary.octaveShift ? `（谱面移调 ${result.summary.octaveShift} 个半音）` : ""}${result.summary.detectedBpm ? `（实测约 ${result.summary.detectedBpm} BPM）` : ""}；小节内节奏照常评分，详见局限与说明`
+        : `Auto measure-synced to the recording${result.summary.octaveShift ? ` (score transposed ${result.summary.octaveShift} semitones)` : ""}${result.summary.detectedBpm ? ` (measured ≈ ${result.summary.detectedBpm} BPM)` : ""}; within-measure timing still graded, see limitations`}</p>}
+      {result.summary.syncAdvice && <p role="status" className={styles.warn}>{zh ? `自动对齐失败：${result.summary.syncAdvice}` : `Auto alignment failed: ${result.summary.syncAdvice}`}</p>}
       {/* 拍点网格与设定速度差 >25% 时后端弃用网格、按固定速度评分 (engine.py tempoMismatch) */}
       {result.summary.tempoMismatch && <p role="status" className={styles.warn}>{zh
         ? `检测速度约 ${result.summary.detectedBpm ?? "—"} BPM，与设定速度差别较大，已按固定速度评分`

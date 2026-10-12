@@ -98,9 +98,16 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(result["notes"][0]["pitchMidi"], played[0])
         self.assertIsNotNone(result["summary"]["locationCost"])
 
-    def test_without_pitch_sensor_auto_mode_explains_failure(self):
+    def test_without_pitch_sensor_auto_mode_falls_back_to_builtin(self):
+        # 无 pYIN 时退回内置跟踪分段定位：干净录音照常定位，不再报错。
+        result = analyze(recording(PITCHES[:10]), xml_for(PITCHES), 60, "violin", start_measure=0)
+        self.assertTrue(result["summary"]["autoLocated"])
+        self.assertEqual(result["summary"]["startMeasure"], 1)
+
+    def test_without_pitch_sensor_and_too_few_events_still_explains_failure(self):
+        # 可用事件不足 8 个才保留原报错（传感器缺失 + 内置也分不出事件）。
         with self.assertRaisesRegex(ValueError, "pYIN"):
-            analyze(recording(PITCHES[:10]), xml_for(PITCHES), 60, "violin", start_measure=0)
+            analyze(recording(PITCHES[:3]), xml_for(PITCHES), 60, "violin", start_measure=0)
 
 
 if __name__ == "__main__":

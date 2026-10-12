@@ -65,6 +65,7 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 已修 #11（`Detect semitone legato onsets…`）：半音过渡 2 帧差仅 ~0.78 半音（阈值 0.85），补"前后段各自平稳、中位数差 ≥0.6 半音"阶跃判据。回归：`test_semitone_legato_onsets_are_detected`；揉弦对照（±30 音分 5.5 Hz 持续音）可判起音数不增加。风险：宽幅慢揉弦（>±30 音分）未经真实录音验证。
 - 已定（产品决定）：稳定地慢只扣 `timingAccuracyScore`；`rhythmStabilityScore` 对去除线性速度趋势后的残差计算（≥6 个起音才去趋势）。回归：`test_steady_slow_tempo_costs_accuracy_not_stability`。
 - 已实现：`tempoMismatch` 在报告摘要区（PerformancePanel 结果区，startMeasure 行之前）显示检测 BPM；录音面板不显示（产品决定）。
+- 2026-10-12 刚性网格补救：自动对齐小节 + 八度/速度自适应（engine.py `_auto_measure_sync`，版本 string-mono-0.4）。legacy 指定小节路径在刚性网格解释失败（出不了分或过低）时，用内置跟踪分段做音高证据重对齐：(0,-12,+12) 移调搜索 + align_excerpt（不移调优先，移调候选须明显更优才胜出），可用时按分段锚点生成 markers 并递归走 manual-measures 重算（只定小节边界，小节内照常评分）。原因进 `rescueReasons`（octave/tempo/pause/offset/range）+ limitations 中文说明；全败时 `syncAdvice` 给出可操作建议，绝不静默零分。速度带 [0.8, 1.25] 与拍点粗筛同带：带内慢 5–10% 照实报 late，带外才重对齐；拖慢/抖动/噪声/离群测试因原因全空不受影响。另：无 pYIN 的自动定位退回内置分段（原来直接报错），事件不足 8 个才保留原报错。实案：Lully Gavotte（谱面高八度 + 面板 80 实测 ~132 + 中途 1.4 s 停顿 + 40 s 额外练习）修复前音准 null/节奏 0，修复后 95/87。回归：`test_auto_rescue.py`（7 项）+ `test_without_pitch_sensor…` 按新语义更新；全量 170 tests OK。
 
 未决：
 
