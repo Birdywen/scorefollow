@@ -8,7 +8,7 @@ type Metro = { play: () => boolean; stop: () => boolean; isPlaying: () => boolea
 const engine = () => (window as unknown as { __sgaMetroControl?: Metro }).__sgaMetroControl;
 const sounds = ["wood", "clave", "beep", "digital", "snare", "voice_zh", "voice_en"];
 
-export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden: boolean }) {
+export default function MetroDock({ lang, hidden, onEnginePlay }: { lang: "zh" | "en"; hidden: boolean; onEnginePlay?: () => void }) {
   const zh = lang === "zh";
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
@@ -73,8 +73,8 @@ export default function MetroDock({ lang, hidden }: { lang: "zh" | "en"; hidden:
     const api = engine();
     if (!api) return;
     if (api.isPlaying()) api.stop();
-    else if (!api.play()) setNotice(zh ? "请先载入并识别谱面" : "Load and recognize a score first");
-    else { setNotice(""); setOpen(false); }
+    else if (api.play()) { setNotice(""); setOpen(false); try { onEnginePlay?.(); } catch { /* noop */ } }
+    else setNotice(zh ? "请先载入并识别谱面" : "Load and recognize a score first");
     touch();
   };
 

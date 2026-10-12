@@ -60,8 +60,8 @@ const topics = [
   {
     title: ["9 · 分析完怎么走谱回放", "9 · Follow-along playback after analysis"],
     text: [
-      "节拍器走谱和录音走谱是两套时间基准，但共用同一个蓝色小节阴影：节拍器按内部时钟走，录音按音频播放时刻查小节起点表。两条路都能进走谱：一是报告里点“将自动小节同步写入光标”（需要谱面已析出小节），二是点“用这一遍走谱”（把该遍录音和每小节起点一起载入谱面播放器）。然后回到谱面按 ▶ 播放，阴影就跟着录音走；暂停、变速不影响对应关系。没有谱面小节数据或可用起点不足时会明确报错，不会乱指。",
-      "Metronome and recording follow use different clocks but share the same blue measure shade: the metronome follows its internal clock, while a recording looks up the measure-start table by media time. Two ways in: “Apply auto measure sync to cursor” in the report (needs score measures), or “Follow with this take” (loads the take audio plus its measure starts into the score player). Then back to the score and press ▶; the shade follows the recording. Pausing or changing speed keeps the mapping. Missing score measures or too few usable starts fail with an explicit error instead of guessing.",
+      "节拍器走谱和录音走谱是两套时间基准，但共用同一个蓝色小节阴影：节拍器按内部时钟走，录音按音频播放时刻查小节起点表。两条路都能进走谱：一是报告里点“将自动小节同步写入光标”（需要谱面已析出小节），二是点“用这一遍走谱”（把该遍录音和每小节起点一起载入谱面播放器）。然后回到谱面按 ▶ 播放，阴影就跟着录音走；暂停、变速不影响对应关系。没有谱面小节数据或可用起点不足时会明确报错，不会乱指。同一时间只跟一个时钟：播录音会自动停掉节拍器并藏起它的阴影，开节拍器（或开始同步录音）会暂停录音并停掉录音阴影，所以任何时候最多只看到一个蓝色阴影。",
+      "Metronome and recording follow use different clocks but share the same blue measure shade: the metronome follows its internal clock, while a recording looks up the measure-start table by media time. Two ways in: “Apply auto measure sync to cursor” in the report (needs score measures), or “Follow with this take” (loads the take audio plus its measure starts into the score player). Then back to the score and press ▶; the shade follows the recording. Pausing or changing speed keeps the mapping. Missing score measures or too few usable starts fail with an explicit error instead of guessing. One clock at a time: playing a recording stops the metronome and hides its shade; starting the metronome (or a synced recording) pauses the recording and parks its shade, so at most one blue shade is ever visible.",
     ],
   },
 ];

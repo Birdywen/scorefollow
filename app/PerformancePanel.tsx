@@ -478,6 +478,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         throw new Error(zh ? "节拍器启动失败，录音未保存" : "Metronome failed to start; the recording was discarded");
       }
       onJump(startMeasure);
+      // 节拍器接管谱面时钟：停掉 React 阴影，旧 sga-shade 接管（单时钟规则）。
+      try { window.dispatchEvent(new Event("sf:metro-takeover")); } catch { /* noop */ }
       tickTimer.current = setInterval(() => {
         if (!alive.current) return;
         const info = measureAndBeatAt(sess, performance.now());

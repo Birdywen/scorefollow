@@ -2424,8 +2424,35 @@ export default function ScoreFollowPage() {
     rafRef.current = requestAnimationFrame(tick);
   }, [now, mediaURL]);
 
+  // 单时钟规则：一个视图同一时间只跟一个时钟、只显示一个阴影。
+  // 播录音（doPlay/原生播放）→ 停掉旧节拍器引擎并藏起它的 sga-shade，demaat 接管；
+  // 节拍器接管（▶/🥁/圆盘/录音）→ 暂停录音并停掉 React 阴影，sga-shade 接管。
+  function parkLegacyShade() {
+    try { document.getElementById("sga-shade")?.style.setProperty("display", "none"); } catch { /* noop */ }
+  }
+  const stopMetroForMedia = useCallback(() => {
+    try {
+      const mc = metroControl();
+      if (mc && mc.isPlaying()) mc.stop();
+    } catch { /* noop */ }
+    setMetroPlaying(false);
+    parkLegacyShade();
+  }, []);
+  const yieldToMetro = useCallback(() => {
+    try {
+      const md = mediaRef.current as unknown as { paused?: boolean; pause?: () => void } | null;
+      if (md && mediaURL && md.paused === false) md.pause?.();
+    } catch { /* noop */ }
+    setCursor(null);
+  }, [mediaURL]);
+  useEffect(() => {
+    const takeover = () => yieldToMetro();
+    window.addEventListener("sf:metro-takeover", takeover);
+    return () => window.removeEventListener("sf:metro-takeover", takeover);
+  }, [yieldToMetro]);
   const doPlay = useCallback(() => {
     enterAutoFs();
+    stopMetroForMedia();
     const m = mediaRef.current as any;
     if (m && mediaURL) { m.playbackRate = speed; void m.play(); }
     else {
@@ -2458,6 +2485,7 @@ export default function ScoreFollowPage() {
   // 谱面播放器原生控件（或外部调用 el.play()）启动/暂停音频时，同样点亮
   // 跟谱状态：与 doPlay/doPause 对齐，但绝不触发自动全屏。
   const syncMediaPlaying = useCallback(() => {
+    stopMetroForMedia();
     const m = mediaRef.current as unknown as { playbackRate?: number } | null;
     if (m && mediaURL && typeof m.playbackRate === "number") m.playbackRate = speed;
     setPlaying(true);
@@ -3721,7 +3749,7 @@ export default function ScoreFollowPage() {
 
   return (
     <main className={styles.page} data-fullscreen={fullScreen ? "true" : "false"} data-theme={darkTheme ? "dark" : "light"} data-mode={correctMode ? "correct" : diagnosticMode ? "diagnostic" : "practice"}>
-      <MetroDock lang={lang} hidden={helpOpen || correctMode || !!preloadPreview || tunerOpen || playing} />
+      <MetroDock lang={lang} hidden={helpOpen || correctMode || !!preloadPreview || tunerOpen || playing} onEnginePlay={() => { yieldToMetro(); }} />
       {!chromeOpen && <button className={styles.showui} onClick={() => setChromeOpen(true)} title="Show toolbar (T)">UI</button>}
       {chromeOpen && <header className={styles.topbar}>
         <span className={styles.tbLogo}><svg className={styles.tbLogoSvg} width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="3" height="8" rx="1.5" fill="#2563eb"><animate attributeName="height" values="8;3;8" dur="1.1s" repeatCount="indefinite" /><animate attributeName="y" values="13;18;13" dur="1.1s" repeatCount="indefinite" /></rect><rect x="7" y="9" width="3" height="12" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="12;5;12" dur="1.1s" begin="0.15s" repeatCount="indefinite" /><animate attributeName="y" values="9;16;9" dur="1.1s" begin="0.15s" repeatCount="indefinite" /></rect><rect x="12" y="5" width="3" height="16" rx="1.5" fill="#2563eb"><animate attributeName="height" values="16;7;16" dur="1.1s" begin="0.3s" repeatCount="indefinite" /><animate attributeName="y" values="5;14;5" dur="1.1s" begin="0.3s" repeatCount="indefinite" /></rect><rect x="17" y="10" width="3" height="11" rx="1.5" fill="#0ea5e9"><animate attributeName="height" values="11;4;11" dur="1.1s" begin="0.45s" repeatCount="indefinite" /><animate attributeName="y" values="10;17;10" dur="1.1s" begin="0.45s" repeatCount="indefinite" /></rect></svg>MEGA-METRO</span>
@@ -3831,7 +3859,7 @@ export default function ScoreFollowPage() {
           {!mediaURL ? (
             <button className={styles.practicePlay} onClick={() => {
               const mc = metroControl();
-              if (mc) { metroPlaying ? mc.stop() : mc.play(); }
+              if (mc) { if (metroPlaying) mc.stop(); else if (mc.play()) yieldToMetro(); }
               else { playing ? doPause() : doPlay(); }
             }} title={metroAvail
               ? (lang === "zh" ? "节拍器播放/停止(含预备拍); 播放中点小节=暖机重起" : "Metro play/stop with count-in; tap a measure while playing to restart there")
@@ -3845,7 +3873,7 @@ export default function ScoreFollowPage() {
               </button>
               {metroAvail && (
                 <button className={`${styles.practiceBtn} ${metroPlaying ? styles.practiceBtnActive : ""}`} aria-pressed={metroPlaying}
-                  onClick={() => { const mc = metroControl(); if (mc) { metroPlaying ? mc.stop() : mc.play(); } }}
+                  onClick={() => { const mc = metroControl(); if (mc) { if (metroPlaying) mc.stop(); else if (mc.play()) yieldToMetro(); } }}
                   title={lang === "zh" ? "节拍器独立播放/停止(含预备拍); 播放中点小节=暖机重起" : "Metro play/stop with count-in; tap a measure while playing to restart there"}>
                   🥁
                 </button>
@@ -4087,6 +4115,7 @@ export default function ScoreFollowPage() {
             setMediaURL(url);
             setMediaName(name);
             setMediaKind("audio");
+            parkLegacyShade();
             w.loadTimes(entries);
             setTapCount(entries.length);
             if (!showCursor) return { warning: lang === "zh"

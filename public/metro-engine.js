@@ -485,15 +485,24 @@ function boot(){
       var rng=barRangeToIdx(seq[segI][0], seq[segI][1]);
       var s0=rng[0], s1=rng[1];
       if(s0<0){ segI++; return playSeg(); }
+      var entryLen=B.length;
       var spb=60/st.bpm, t0=performance.now(), nBeats=s1-s0+1;
       var startBeat=(startIdx!=null&&startIdx>=s0&&startIdx<=s1)?startIdx-s0:0;
       var lastBi=startBeat;
       st.iSeq=s0+startBeat; lastRowY=-1; place(st.iSeq); click(B[st.iSeq][5]===1,B[st.iSeq][5]);
       info.textContent='seq '+(segI+1)+'/'+seq.length+' (m'+seq[segI][0]+'-'+seq[segI][1]+')';
       function fr(ts){ if(!st.playing) return;
+        if(s1>=B.length){
+          if(B.length>0&&B.length!==entryLen){ return playSeg(); }
+          st.playing=false; setPlayBtn(false); info.textContent='range error'; return;
+        }
         var bi=startBeat+Math.floor((ts-t0)/1000/spb);
         if(bi>=nBeats){ segI++; return playSeg(); }
-        if(bi!==lastBi){ lastBi=bi; var idx=s0+bi; st.iSeq=idx; place(idx); click(B[idx][5]===1,B[idx][5]); info.textContent='seq '+(segI+1)+'/'+seq.length+' (m'+seq[segI][0]+'-'+seq[segI][1]+')'; }
+        if(bi!==lastBi){ lastBi=bi; var idx=s0+bi; var be=B[idx];
+          if(!be){ st._recN=(st._recN||0)+1;
+            if(st._recN>8){ st.playing=false; setPlayBtn(false); info.textContent='range error'; return; }
+            st.raf=requestAnimationFrame(fr); return; }
+          st._recN=0; st.iSeq=idx; place(idx); click(be[5]===1,be[5]); info.textContent='seq '+(segI+1)+'/'+seq.length+' (m'+seq[segI][0]+'-'+seq[segI][1]+')'; }
         st.raf=requestAnimationFrame(fr);
       }
       st.raf=requestAnimationFrame(fr);
@@ -508,17 +517,26 @@ function boot(){
     st.s0=s0; if(st.iSeq<s0||st.iSeq>s1) st.iSeq=s0;
     st.loopLeft=st.loopOn?(st.loopN||999999):1;
     var spb=60/st.bpm,t0=performance.now(),nBeats=s1-s0+1;
+    var entryLen=B.length;
     var startBeat=st.iSeq-s0;
     var lastBi=startBeat;
     lastRowY=-1; place(st.iSeq); click(B[st.iSeq][5]===1,B[st.iSeq][5]);
     function fr(ts){ if(!st.playing) return;
+      if(s1>=B.length){
+        if(B.length>0&&B.length!==entryLen){ return playLoop(); }
+        st.playing=false; setPlayBtn(false); info.textContent='range error'; return;
+      }
       var bi=startBeat+Math.floor((ts-t0)/1000/spb);
       if(bi>=nBeats){ if(st.loopOn){ st.loopLeft--;
           if(st.loopLeft<=0){ finishAt(s0); return; }
           t0=performance.now(); lastBi=0; lastRowY=-1; startBeat=0; st.iSeq=s0; place(s0); click(B[s0][5]===1,B[s0][5]);
           st.raf=requestAnimationFrame(fr); return;
         } else { finishAt(s0); return; } }
-      if(bi!==lastBi){ lastBi=bi; var idx=s0+bi; st.iSeq=idx; place(idx); click(B[idx][5]===1,B[idx][5]); }
+      if(bi!==lastBi){ lastBi=bi; var idx=s0+bi; var be=B[idx];
+        if(!be){ st._recN=(st._recN||0)+1;
+          if(st._recN>8){ st.playing=false; setPlayBtn(false); info.textContent='range error'; return; }
+          st.raf=requestAnimationFrame(fr); return; }
+        st._recN=0; st.iSeq=idx; place(idx); click(be[5]===1,be[5]); }
       st.raf=requestAnimationFrame(fr);
     }
     st.raf=requestAnimationFrame(fr);
