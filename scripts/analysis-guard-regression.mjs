@@ -28,6 +28,7 @@ const diagnostics = { analysisId: "fixture", algorithmVersion: "1", inputHash: "
 assert.equal(guard.isValidAnalysisResult({ ...valid, quality, diagnostics }), true);
 assert.equal(guard.isValidAnalysisResult({ ...valid, quality: { ...quality, overallScore: 89, overallWeights: { pitch: .5, rhythm: .5 } }, diagnostics }), true);
 assert.equal(guard.isValidAnalysisResult({ ...valid, quality: { ...quality, overallScore: null }, diagnostics }), true);
+assert.equal(guard.isValidAnalysisResult({ ...valid, quality: { ...quality, outcome: "score_audio_mismatch", overallScore: null, pitchMatchRate: .14, followReady: false }, diagnostics }), true);
 for (const bad of [null, { ...quality, outcome: "unknown" }, { ...quality, overallScore: 101 }, { ...quality, overallScore: "90" }, { ...quality, pitchCoverage: Infinity }, { ...quality, timingCoverage: -1 }, { ...quality, issues: [null] }, { ...quality, followReady: "yes" }]) {
   assert.equal(guard.isValidAnalysisResult({ ...valid, quality: bad }), false);
 }

@@ -878,7 +878,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
                 return <span role="status" className={`${styles.chip} ${tone}`}>{chip.label}{busyTakeId === take.id && analysisJob.pollCount > 0 ? ` · poll ${analysisJob.pollCount}` : ""}{busyTakeId === take.id && analysisJob.progress != null ? ` · ${analysisJob.progress}%` : ""}</span>; })()}
               {take.result && <span className={styles.hint}>
                 {take.result.summary.autoLocated && (zh ? `定位第 ${take.result.summary.startMeasure}–${take.result.summary.endMeasure} 小节 · ` : `Located m${take.result.summary.startMeasure}–${take.result.summary.endMeasure} · `)}
-                {zh ? "音准" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</span>}
+                {take.result.quality?.outcome === "score_audio_mismatch" ? (zh ? "输入可能不匹配" : "Possible score/take mismatch") : <>{zh ? "音准" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</>}</span>}
             </div>
             {take.error && <p className={styles.error}>{take.error}</p>}
             {take.jobId && <p className={styles.hint}>{zh ? "分析编号" : "Analysis ID"}：{take.jobId}</p>}
@@ -953,10 +953,10 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       <h2><span className={styles.stepNum} aria-hidden="true">4</span> {zh ? "演奏报告" : "Performance report"}</h2>
       <AnalysisQuality summary={result.summary} quality={result.quality} diagnostics={result.diagnostics} version={result.version} zh={zh} />
       {result.instrument !== "piano" && result.summary.pitchToleranceCents == null && <p role="status" className={styles.hint}>{zh ? "这是旧评分规则的报告。图表已按 ±15 音分显示；请更新分析服务并重新分析，刷新分数与错音数量。" : "This report uses the old scoring rules. Charts now use ±15 cents; update the analysis service and reanalyze to refresh the score and wrong-note totals."}</p>}
-      <div className={styles.scores}><div><b data-unscored={result.summary.pitchScore == null}>{result.summary.pitchScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "音准" : "Pitch"}</div>
-        <div><b data-unscored={result.summary.rhythmScore == null}>{result.summary.rhythmScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "跟拍" : "Timing"}</div>
+      <div className={styles.scores}><div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.pitchScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.pitchScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "音准" : "Pitch"}</div>
+        <div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.rhythmScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.rhythmScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "跟拍" : "Timing"}</div>
         {/* 综合分只取后端 quality.overallScore，前端不补算；旧报告显示“未计算”，两项都缺显示“证据不足”，绝不显示 0 */}
-        <div><b data-unscored={result.quality?.overallScore == null}>{result.quality?.overallScore ?? (result.summary.pitchScore == null && result.summary.rhythmScore == null ? (zh ? "证据不足" : "Insufficient evidence") : (zh ? "未计算" : "Not computed"))}</b>{zh ? "综合" : "Overall"}</div></div>
+        <div><b data-unscored={result.quality?.overallScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.quality?.overallScore ?? (result.summary.pitchScore == null && result.summary.rhythmScore == null ? (zh ? "证据不足" : "Insufficient evidence") : (zh ? "未计算" : "Not computed"))}</b>{zh ? "综合" : "Overall"}</div></div>
       {/* 引擎状态: 后端已回传 degraded/degradedReasons(旧报告缺失则不渲染, 不抛错) */}
       {result.summary.degraded === true && <p role="status" className={styles.warn} title={onlyGridRejected(result.summary.degradedReasons) ? (zh ? "节拍跟踪器正常运行，但拍点网格与谱面音高不吻合，未采用；已改用音高证据对齐。常见原因：谱面八度或速度与录音不符" : "The beat tracker ran, but its grid disagreed with the score pitches and was not used; alignment fell back to pitch evidence. Usually the score octave or tempo differs from the take") : zh ? "完整 vamp 插件（pYIN + QM）不可用，已退回内置算法；分数仍可参考，但起音与节拍精度低于完整算法" : "Full vamp plugins (pYIN + QM) unavailable; fell back to builtin detectors. Scores still apply but onset/beat precision is lower"}>
         {zh ? `降级算法：${degradedLabels(result.summary.degradedReasons, true)}` : `Degraded engine: ${degradedLabels(result.summary.degradedReasons, false)}`}

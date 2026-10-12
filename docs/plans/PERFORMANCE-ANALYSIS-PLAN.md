@@ -130,3 +130,12 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 前端：分数区加“综合”，“综合音高”更名“音准”；guard 校验 overallScore 为 0–100 或 null。
 - 版本：引擎 0.6→0.7 使缓存失效（质量版本字面量在未提交 server.py，未动）。
 - 未做：outcome 增 score_audio_mismatch / failed（需同步 guard 枚举与质量卡片），下一轮。
+
+
+## 2026-10-12 阶段一：输入可能不匹配 score_audio_mismatch（string-mono-0.8）
+
+- 现象：无关录音显示音准 0 / 节奏 38；Suzuki 录音配 Dotzauer 谱无对齐失败提示、节奏 88。
+- 取证（vamp-beat，bpm 80）：命中率 correct/scored — 无关录音 0.11/0.35/0.14，错配谱 0.18；Suzuki 0.80，模拟差演奏（40% 音 ±2 半音）0.72/0.82；纯噪声已是 failed“无法检测到演奏”。
+- 判据（quality.py）：scored≥12 且命中率<0.4 且时间线未核实（syncAdvice / pitchScore 空 / low_coverage）且未补救成功 → outcome score_audio_mismatch，issue 同名，followReady=false，overallScore=null；新增 quality.pitchMatchRate。已核实时间线上的大量错音仍按演奏评分。
+- 前端：状态“输入可能不匹配”+命中率与排查提示；音准/跟拍/综合显示“不匹配”，不显示 0；guard 枚举加入新值（先发前端再重启后端）。
+- 未做：failed（分析失败可重试）——无 result，需在任务状态层处理（useAnalysisJob.ts）。

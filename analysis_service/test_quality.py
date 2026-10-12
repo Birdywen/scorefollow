@@ -90,3 +90,47 @@ class OverallScoreTests(unittest.TestCase):
 
     def test_zero_scores_are_real(self):
         self.assertEqual(self.q(pitchScore=0, rhythmScore=0)["overallScore"], 0)
+
+
+class MismatchTests(unittest.TestCase):
+    def q(self, **patch):
+        s = {"noteCount": 46, "scoredPitchNotes": 37, "timedNotes": 38, "timingCandidateNotes": 45,
+             "pitchScore": 0, "rhythmScore": 38, "correctPitchNotes": 4, "confidence": "medium",
+             "syncAdvice": "alignment failed"}
+        s.update(patch)
+        return assess_quality({"summary": s, "measureIntervals": []})
+
+    def test_unrelated_take_is_mismatch_not_zero(self):
+        q = self.q()
+        self.assertEqual(q["outcome"], "score_audio_mismatch")
+        self.assertIn("score_audio_mismatch", q["issues"])
+        self.assertIsNone(q["overallScore"])
+        self.assertFalse(q["followReady"])
+        self.assertEqual(q["pitchMatchRate"], round(4 / 37, 3))
+
+    def test_wrong_score_without_advice_is_mismatch(self):
+        q = self.q(noteCount=400, scoredPitchNotes=255, timedNotes=300, timingCandidateNotes=390,
+                   pitchScore=None, rhythmScore=88, correctPitchNotes=47, syncAdvice=None)
+        self.assertEqual(q["outcome"], "score_audio_mismatch")
+
+    def test_rescued_poor_player_is_scored(self):
+        q = self.q(noteCount=120, scoredPitchNotes=103, timedNotes=110, timingCandidateNotes=119,
+                   pitchScore=67, rhythmScore=90, correctPitchNotes=74, syncAdvice=None, autoMeasureSync=True)
+        self.assertNotEqual(q["outcome"], "score_audio_mismatch")
+
+    def test_verified_timeline_with_many_wrong_notes_is_scored(self):
+        q = self.q(noteCount=45, scoredPitchNotes=40, timedNotes=42, timingCandidateNotes=44,
+                   pitchScore=30, rhythmScore=70, correctPitchNotes=10, syncAdvice=None)
+        self.assertEqual(q["outcome"], "complete")
+        self.assertEqual(q["overallScore"], 50)
+
+    def test_too_few_notes_is_not_judged(self):
+        q = self.q(noteCount=9, scoredPitchNotes=8, timedNotes=8, timingCandidateNotes=8, correctPitchNotes=1)
+        self.assertEqual(q["outcome"], "partial")
+        self.assertIsNone(q["pitchMatchRate"])
+
+    def test_old_report_without_counts_is_not_judged(self):
+        q = assess_quality({"summary": {"noteCount": 10, "scoredPitchNotes": 9, "timedNotes": 9,
+                                        "pitchScore": 0, "rhythmScore": 0, "confidence": "medium"},
+                            "measureIntervals": []})
+        self.assertNotEqual(q["outcome"], "score_audio_mismatch")

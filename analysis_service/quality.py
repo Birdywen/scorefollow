@@ -31,8 +31,21 @@ def assess_quality(result: dict) -> dict:
         issues.append("tempo_mismatch")
     if summary.get("takeBeyondScoreAfterSec") is not None:
         issues.append("take_beyond_score")
+    # Score/take mismatch: most scorable notes miss the score pitch AND the
+    # timeline is unverified and was not rescued. A verified timeline with many
+    # wrong notes is a poor performance and stays scored. Thresholds from
+    # replay probes (mismatch <= .35, real or poor takes >= .72).
+    scored = summary.get("scoredPitchNotes") or 0
+    correct = summary.get("correctPitchNotes")
+    match_rate = round(correct / scored, 3) if correct is not None and scored >= 12 else None
+    unverified = bool(summary.get("syncAdvice")) or summary.get("pitchScore") is None or "low_coverage" in issues
+    mismatch = match_rate is not None and match_rate < .4 and unverified and not summary.get("autoMeasureSync")
+    if mismatch:
+        issues.append("score_audio_mismatch")
     if not scores:
         outcome = "insufficient_evidence"
+    elif mismatch:
+        outcome = "score_audio_mismatch"
     elif scores < 2 or "alignment_unverified" in issues or "low_coverage" in issues or \
             "range" in (summary.get("rescueReasons") or []):
         outcome = "partial"
@@ -55,8 +68,8 @@ def assess_quality(result: dict) -> dict:
             and "low_coverage" not in issues:
         overall = int(math.floor(pitch * weights["pitch"] + rhythm * weights["rhythm"] + .5))
     return {"version": "evidence-1", "outcome": outcome, "overallScore": overall,
-            "overallWeights": weights, "issues": issues,
+            "overallWeights": weights, "pitchMatchRate": match_rate, "issues": issues,
             "pitchCoverage": round(pitch_coverage, 3), "timingCoverage": round(timing_coverage, 3),
             # This indicates a usable timeline, never a claim of verified accuracy.
             "followReady": bool(valid_timeline and summary.get("confidence") != "low"
-                                and not summary.get("syncAdvice"))}
+                                and not summary.get("syncAdvice") and not mismatch)}
