@@ -4049,6 +4049,24 @@ export default function ScoreFollowPage() {
             setTapCount(entries.length);
             return null;
           }}
+          onFollowTake={({ name, url, starts }) => {
+            const w = wijzerRef.current;
+            if (!w.measures.length) return lang === "zh" ? "谱面尚未分析出小节" : "Score measures not analyzed yet";
+            const entries = (starts ?? [])
+              .filter((s) => Number.isInteger(s.measure) && s.measure >= 1 && Number.isFinite(s.startSec) && s.startSec >= 0)
+              .map((s) => ({ t: Math.round(s.startSec * 1000) / 1000, mix: s.measure - 1 }))
+              .filter((e) => e.mix < w.measures.length);
+            if (entries.length < 2) return lang === "zh" ? "可用小节起点不足" : "Not enough usable measure starts";
+            for (let i = 1; i < entries.length; i++) {
+              if (!(entries[i].t > entries[i - 1].t)) return lang === "zh" ? "小节起点时间不递增" : "Measure starts are not increasing";
+            }
+            setMediaURL(url);
+            setMediaName(name);
+            setMediaKind("audio");
+            w.loadTimes(entries);
+            setTapCount(entries.length);
+            return null;
+          }}
          onJump={(measure) => placeCursor(measure - 1)} onClose={() => setPerformanceOpen(false)} />}
         {chromeOpen && advOpen && (
           <aside id="sf-control-panel" className={`${styles.advpanel} ${styles.controlPanel}`} aria-label={tx("panelBtn")}>

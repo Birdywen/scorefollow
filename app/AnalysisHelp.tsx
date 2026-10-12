@@ -18,8 +18,8 @@ const topics = [
   {
     title: ["3 · 普通分析还是自动定位？", "3 · Analyze or Find excerpt?"],
     text: [
-      "知道起点时，添加录音前设置起始小节和 BPM，再点“分析这一遍”；这些参数保存在每一遍录音上。起点未知的未同步弦乐录音可点“自动定位片段”，系统综合音高序列与可用的独立拍点寻找起始音符。重复乐句、可靠音符太少或长短窗口结论不一致时会拒绝定位：请选择更有辨识度的片段，或手动指定起始小节。定位只找开头，不会在中途跳小节、重弹后持续重新定位；钢琴和带节拍器同步标记的录音不能使用此按钮。",
-      "If you know the start, set the start measure and BPM before adding a take, then choose Analyze; each take stores these settings. For an unsynced string recording with an unknown start, use Find excerpt. It matches the pitch sequence and available independent beat times to a starting note. Repeated phrases, too few reliable events or disagreement between short and long windows can prevent localization: choose a more distinctive passage or specify the start measure manually. Localization finds the opening only; it does not recover from later jumps or restarts. Piano and metronome-synced takes cannot use this button.",
+      "知道起点时，添加录音前设置起始小节和 BPM，再点“分析这一遍”；这些参数保存在每一遍录音上。起点未知的未同步弦乐录音可点“自动定位片段”：系统先用音高序列粗筛候选起点，再用整段音高证据精排，区分重复乐句；证据不足就明确拒绝，请换更有辨识度的片段，或手动指定起始小节。定位成功会同时给出结束小节和每小节在录音中的时间，可直接用于走谱回放。钢琴和带节拍器同步标记的录音不能使用此按钮。",
+      "If you know the start, set the start measure and BPM before adding a take, then choose Analyze; each take stores these settings. For an unsynced string recording with an unknown start, use Find excerpt: the system shortlists candidate starts from the pitch sequence, then re-ranks them with whole-passage pitch evidence to separate repeated phrases. Weak evidence fails explicitly—choose a more distinctive passage or specify the start measure manually. A successful location also reports the end measure and per-measure audio times, ready for follow-along playback. Piano and metronome-synced takes cannot use this button.",
     ],
   },
   {
@@ -55,6 +55,13 @@ const topics = [
     text: [
       "可导入谱面播放器当前音频及其 B 同步数据，也可在分析面板选中录音后开始 B 同步。设置第一个小节，播放并在每小节首拍按 B；最后再标记一次结束边界。时间取自音频播放器，暂停或变速不改变时间基准。退格撤销，时间框可修正，回听按钮只播放该小节。核对 MusicXML/PDF 的小节编号后确认同步，再点分析；标记会随这一遍录音保存，修改后必须重新确认。只分析最后一个标记之前的完整小节，不推测未标记尾段。当前支持单声部弦乐；手动标记的首拍不计节奏分。",
       "Import the score player’s current audio and B-sync data, or select a take and start B sync inside Analyze. Set the first measure, play, and press B at each measure’s downbeat; add one final end boundary. Timestamps come from the media player, so pausing or changing playback speed does not change the time reference. Backspace undoes; edit timestamps and preview each measure before confirming. Check MusicXML/PDF numbering, confirm sync, then Analyze. Markers are stored with the take; edits require confirmation again. Only complete intervals before the final marker are analyzed, with no guessed tail. Currently supported for monophonic strings. Manually marked downbeats do not receive rhythm grades.",
+    ],
+  },
+  {
+    title: ["9 · 分析完怎么走谱回放", "9 · Follow-along playback after analysis"],
+    text: [
+      "节拍器走谱和录音走谱是两套时间基准，但共用同一个蓝色小节阴影：节拍器按内部时钟走，录音按音频播放时刻查小节起点表。两条路都能进走谱：一是报告里点“将自动小节同步写入光标”（需要谱面已析出小节），二是点“用这一遍走谱”（把该遍录音和每小节起点一起载入谱面播放器）。然后回到谱面按 ▶ 播放，阴影就跟着录音走；暂停、变速不影响对应关系。没有谱面小节数据或可用起点不足时会明确报错，不会乱指。",
+      "Metronome and recording follow use different clocks but share the same blue measure shade: the metronome follows its internal clock, while a recording looks up the measure-start table by media time. Two ways in: “Apply auto measure sync to cursor” in the report (needs score measures), or “Follow with this take” (loads the take audio plus its measure starts into the score player). Then back to the score and press ▶; the shade follows the recording. Pausing or changing speed keeps the mapping. Missing score measures or too few usable starts fail with an explicit error instead of guessing.",
     ],
   },
 ];
