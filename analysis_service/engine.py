@@ -17,7 +17,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.4"
+VERSION = "string-mono-0.5"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -560,6 +560,8 @@ def _usable_excerpt(excerpt: dict) -> bool:
     只要音高吻合（cost<=0.90）、速度在乐理范围内、匹配数/覆盖率达标且有分段
     锚点，仍可用——markers 本来就走分段锚点，不走全局线。其它 fail-closed
     （不吻合/歧义）照常抛异常，由调用方转 advice。"""
+    if excerpt.get("boundarySupported") is False:
+        return False
     if excerpt.get("confident"):
         return True
     slope = excerpt.get("quarterPeriod")
@@ -616,7 +618,8 @@ def _needs_rescue_check(pitch_score, rhythm_score, confidence) -> bool:
 def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
                        pitches: np.ndarray, energy: np.ndarray, sec_per_beat: float,
                        duration_sec: float, requested_start: int, score_last: int,
-                       rigid_start: float, onsets: list[float]) -> dict:
+                       rigid_start: float, onsets: list[float],
+                       pitch_notes: list | None = None) -> dict:
     """刚性网格解释失败时的补救：用音高证据重对齐并返回小节级网格。
 
     (0, -12, +12) 依次试 align_excerpt（不移调优先：移调候选须明显更优才胜出，
@@ -630,11 +633,12 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
     plan: dict = {"shift": 0, "alignment": None, "markers": [], "reasons": [],
                   "detected_bpm": None, "advice": None, "limitations": [],
                   "start_measure": requested_start}
-    events = segment_builtin_events(times, pitches, energy)
+    events = usable_events(pitch_notes) if pitch_notes else segment_builtin_events(times, pitches, energy)
     if len(events) < 8:
         plan["advice"] = "可用音高事件不足 8 个，无法自动对齐；可使用手动小节同步逐小节对齐后重分析。"
         return plan
     failures = []
+    boundary_failure = None
     cands: list[tuple[float, int, dict]] = []
     for shift in OCTAVE_SEARCH_SHIFTS:
         shifted = notes if shift == 0 else [{**n, "pitchMidi": float(n["pitchMidi"]) + shift} for n in notes]
@@ -645,8 +649,10 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
             continue
         if _usable_excerpt(excerpt):
             cands.append((excerpt["cost"], shift, excerpt))
+        elif excerpt.get("boundarySupported") is False:
+            boundary_failure = "谱面与录音首尾的时间证据冲突，不能确认覆盖范围；请检查谱面是否完整"
     if not cands:
-        msg = failures[0] if failures else "录音片段与乐谱不吻合；请指定起始小节"
+        msg = boundary_failure or (failures[0] if failures else "录音片段与乐谱不吻合；请指定起始小节")
         plan["advice"] = f"自动对齐失败（{msg}）；可使用手动小节同步逐小节对齐后重分析。"
         return plan
     cands.sort(key=lambda c: c[0])
@@ -674,12 +680,19 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
     if abs(t0 - rigid_start) > 0.30:
         reasons.append("offset")
     boundaries = measure_start_beats(xml, include_end=True)
-    first_beat: dict[int, float] = {}
-    for n in notes:
-        first_beat.setdefault(n["measure"], float(n["onsetBeat"]))
-    lo_m, hi_m = min(first_beat), max(first_beat)
-    end_audio = excerpt.get("endAudioSec") or duration_sec
-    if lo_m != requested_start or hi_m < score_last or end_audio < duration_sec - 2.0:
+    # Only complete measures inside the actually matched score range can be
+    # rescued. Partial first/last measures must not be extrapolated to full ones.
+    lo_m = notes[excerpt["start"]]["measure"]
+    hi_m = notes[excerpt["end"]]["measure"]
+    if any(n["measure"] == lo_m for n in notes[:excerpt["start"]]):
+        lo_m += 1
+    if any(n["measure"] == hi_m for n in notes[excerpt["end"] + 1:]):
+        hi_m -= 1
+    if lo_m > hi_m:
+        plan["advice"] = "定位片段没有完整小节，无法自动重建边界；请使用手动小节同步逐小节对齐后重分析。"
+        return plan
+    end_audio = excerpt["endAudioSec"]
+    if lo_m != requested_start or hi_m < score_last or end_audio < events[-1][1] - 2.0:
         reasons.append("range")
     markers = []
     for m in range(lo_m, hi_m + 2):
@@ -906,6 +919,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     auto_located = start_measure == 0
     location_cost = None
     alignment = None
+    boundary_conflict = False
     if auto_located:
         if sync_mode == "metronome" or first_beat_audio_sec is not None:
             raise ValueError("自动定位仅支持未同步的单声部录音")
@@ -931,6 +945,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                                     beat_map=beat_map if sync_mode == "vamp-beat" else None)
         except ValueError:
             excerpt = None
+        boundary_conflict = excerpt is not None and excerpt.get("boundarySupported") is False
         if excerpt is not None and excerpt.get("confident"):
             alignment = excerpt
             index, location_cost = excerpt["start"], excerpt["cost"]
@@ -1024,6 +1039,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             else:
                 beat_time = None
 
+    # A rejected QM pulse must not leave an auto-located excerpt on a known
+    # wrong tempo unit. Calibrate one global ruler, never per-note expected times.
+    auto_tempo_refit = bool(auto_located and alignment is not None and
+                           sync_mode == "legacy" and tempo_mismatch and
+                           not TEMPO_BAND[0] <= alignment["quarterPeriod"] / sec_per_beat <= TEMPO_BAND[1])
+    if auto_tempo_refit:
+        sec_per_beat = alignment["quarterPeriod"]
+        detected_bpm = round(60.0 / sec_per_beat / tracker_beat_quarters(xml), 1)
+
     manual_boundaries = measure_start_beats(xml) if sync_mode == "manual-measures" else {}
     if sync_mode == "manual-measures":
         boundaries = measure_start_beats(xml, include_end=True)
@@ -1048,10 +1072,13 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # Align the first pitched onset with the first written note, even if the
         # MusicXML starts with an all-rest measure. Silence before it is not scored.
         start = (location_anchor if auto_located else onsets[0]) - notes[0]["onsetBeat"] * sec_per_beat
+        if auto_tempo_refit:
+            start = alignment["t0"]
     # Score excerpts can start at any measure. Never count score notes beyond
     # the recording as missed notes, including when the full score is hours long.
     last_voiced = times[voiced[-1]]
-    if sync_mode != "manual-measures":
+    rescue_notes = score_notes if auto_located else [n for n in score_notes if n["measure"] >= start_measure]
+    if sync_mode != "manual-measures" and alignment is None:
         notes = [n for n in notes if (beat_time(n["onsetBeat"] - base_beat) if beat_time is not None
                                     else start + n["onsetBeat"] * sec_per_beat) <= last_voiced + 0.06]
     if not notes:
@@ -1342,7 +1369,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "degraded": degraded, "degradedReasons": degraded_reasons,
                         "clipped": clipped, "detectedBpm": detected_bpm if detected_bpm is not None else mismatch_bpm,
                         "tempoMismatch": tempo_mismatch,
-                        "autoMeasureSync": False, "octaveShift": None, "rescueReasons": [],
+                        "autoMeasureSync": False, "octaveShift": None,
+                        "rescueReasons": ["tempo"] if auto_tempo_refit else [],
                         "syncAdvice": None},
             "notes": aligned, "limitations": ["仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",
                                            "手动小节边界用于对齐；仅评估小节内节奏，手动标记的首拍不评分。"
@@ -1350,24 +1378,34 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                                            "音高按十二平均律；首音作为时间零点，不计入节奏得分。"
                                            if sync_mode == "legacy" else
                                            "音高按十二平均律；节拍器第一拍锚定时间轴，后端仅做 ±150 ms 微调。"]}
+    if auto_tempo_refit:
+        result["limitations"].append(
+            f"拍点网格与谱面速度口径不一致，已按片段证据校准整体速度为 {detected_bpm} BPM；逐音节奏偏差仍按固定速度参考评分。")
     # 刚性网格补救：解释失败（疑似输入错误：八度 / 速度 / 停顿 / 多余内容）时，
     # 用音高证据重对齐并按小节锚点重算一次。只进不出：补救失败保留刚性结果并
     # 给出 syncAdvice；好片段因 _needs_rescue_check 根本不进这里，零行为变化。
-    if sync_mode == "legacy" and not auto_located and pitch_notes is None and \
+    if boundary_conflict:
+        result["summary"]["syncAdvice"] = "谱面与录音首尾的时间证据冲突，覆盖范围未核实；请检查谱面是否完整，并使用手动小节同步后重分析。"
+    # An already supported excerpt may begin mid-measure (a cropped take).
+    # Preserve that note-level range instead of replacing it with whole measures.
+    if sync_mode == "legacy" and alignment is None and \
             _needs_rescue_check(pitch_score, rhythm_score,
                                 "medium" if voiced_count / len(notes) >= .8 else "low"):
-        _plan = _auto_measure_sync(xml=xml, notes=notes, times=times, pitches=pitches,
+        _plan = _auto_measure_sync(xml=xml, notes=rescue_notes, times=times, pitches=pitches,
                                    energy=energy, sec_per_beat=sec_per_beat,
                                    duration_sec=duration_sec,
                                    requested_start=start_measure,
                                    score_last=score_notes[-1]["measure"],
-                                   rigid_start=start, onsets=onsets)
+                                   rigid_start=start, onsets=onsets, pitch_notes=pitch_notes)
         if _plan["markers"]:
             _xml2 = transpose_score_xml(xml, _plan["shift"]) if _plan["shift"] else xml
             _rescued = analyze(wav, _xml2, bpm, instrument, _plan["start_measure"],
                                sync_mode="manual-measures", measure_sync=_plan["markers"],
-                               onset_hint=onset_hint, pitch_tolerance_cents=pitch_tolerance_cents)
+                               pitch_notes=pitch_notes, onset_hint=onset_hint,
+                               pitch_tolerance_cents=pitch_tolerance_cents)
             _summary = _rescued["summary"]
+            _summary["autoLocated"] = auto_located
+            _summary["locationCost"] = location_cost
             _summary["autoMeasureSync"] = True
             _summary["octaveShift"] = _plan["shift"] or None
             _summary["rescueReasons"] = _plan["reasons"]

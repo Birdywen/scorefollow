@@ -21,7 +21,8 @@ def assess_quality(result: dict) -> dict:
         issues.append("tempo_mismatch")
     if not scores:
         outcome = "insufficient_evidence"
-    elif scores < 2 or "alignment_unverified" in issues or "low_coverage" in issues:
+    elif scores < 2 or "alignment_unverified" in issues or "low_coverage" in issues or \
+            "range" in (summary.get("rescueReasons") or []):
         outcome = "partial"
     elif summary.get("autoMeasureSync"):
         outcome = "complete_with_rescue"

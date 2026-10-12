@@ -70,6 +70,67 @@ class AutoRescueTests(unittest.TestCase):
         self.assertGreaterEqual(summary["pitchScore"], 90)
         self.assertGreaterEqual(summary["rhythmScore"] or 0, 60)
 
+    def test_wrong_slow_panel_tempo_keeps_full_score_with_either_sensor(self):
+        xml = legato_score(PITCHES)
+        take = legato_recording(PITCHES, 60 / 80 / 1.6)
+        events = [(.12 + i * .46875, .12 + (i + .9) * .46875, float(m))
+                  for i, m in enumerate(PITCHES)]
+        for sensor in (None, events):
+            with self.subTest(sensor="builtin" if sensor is None else "external"):
+                result = analyze(take, xml, 80, "violin", start_measure=1, pitch_notes=sensor)
+                summary = result["summary"]
+                self.assertTrue(summary["autoMeasureSync"])
+                self.assertEqual(summary["noteCount"], len(PITCHES))
+                self.assertEqual(summary["endMeasure"], 4)
+                self.assertEqual(result["notes"][-1]["pitchMidi"], PITCHES[-1])
+                self.assertEqual("fused-pitch" in summary["sensors"], sensor is not None)
+
+    def test_partial_take_does_not_extrapolate_missing_score_measures(self):
+        pitches = [69, 71, 72, 74, 76, 74, 71, 69, 72, 76, 71, 74, 69, 76, 72, 71]
+        events = [(.12 + i * .5, .12 + (i + .9) * .5, float(m))
+                  for i, m in enumerate(pitches[:10])]
+        from .engine import _auto_measure_sync, parse_score
+        plan = _auto_measure_sync(xml=legato_score(pitches), notes=parse_score(legato_score(pitches)),
+                                  times=np.array([0., 5.4]), pitches=np.array([69., 76.]),
+                                  energy=np.ones(2), sec_per_beat=.75, duration_sec=5.4,
+                                  requested_start=1, score_last=4, rigid_start=.12,
+                                  onsets=[.12], pitch_notes=events)
+        self.assertIn("range", plan["reasons"])
+        self.assertEqual([m["measure"] for m in plan["markers"]], [1, 2, 3])
+        self.assertLess(plan["markers"][-1]["audioSec"], 5.0)
+
+    def test_supported_mid_measure_crop_preserves_note_range_at_wrong_tempo(self):
+        pitches = [69, 71, 72, 74, 76, 74, 71, 69, 72, 76, 71, 74, 69, 76, 72, 71]
+        played = pitches[2:12]
+        events = [(.12 + i * .5, .12 + (i + .9) * .5, float(m))
+                  for i, m in enumerate(played)]
+        for bpm in (80, 200):
+            with self.subTest(bpm=bpm):
+                result = analyze(legato_recording(played, .5), legato_score(pitches),
+                                 bpm, "violin", start_measure=0, pitch_notes=events)
+                self.assertTrue(result["summary"]["autoLocated"])
+                self.assertFalse(result["summary"]["autoMeasureSync"])
+                self.assertEqual(result["summary"]["startMeasure"], 1)
+                self.assertEqual(result["summary"]["noteCount"], len(played))
+                self.assertEqual(result["notes"][0]["pitchMidi"], played[0])
+
+    def test_rejected_sensor_grid_refits_global_tempo_without_washing_wrong_notes(self):
+        played = list(PITCHES)
+        played[5] += 1
+        played[13] += 1
+        events = [(.12 + i * .5, .12 + (i + .9) * .5, float(m))
+                  for i, m in enumerate(played)]
+        result = analyze(legato_recording(played, .5), legato_score(PITCHES), 80,
+                         "violin", start_measure=0, pitch_notes=events,
+                         sync_mode="vamp-beat", beat_map=[.12 + i * .5 for i in range(17)])
+        summary = result["summary"]
+        self.assertTrue(summary["tempoMismatch"])
+        self.assertIn("tempo", summary["rescueReasons"])
+        self.assertAlmostEqual(summary["detectedBpm"], 120., delta=1.)
+        self.assertEqual(summary["noteCount"], len(PITCHES))
+        self.assertGreaterEqual(summary["wrongPitchNotes"], 2)
+        self.assertLess(summary["pitchScore"], 100)
+
     def test_in_band_slow_tempo_stays_reported_as_late(self):
         # 带内慢 10% 是演奏偏差不是输入错误：必须照实报 late，不准补救。
         xml = legato_score(PITCHES)

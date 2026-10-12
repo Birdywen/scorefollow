@@ -281,7 +281,7 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
     rival starts; full-length pitch-only paths re-score them, which separates
     repeated phrases the prefix alone cannot (distant rivals go band-inf).
     A robust global line audioSec = t0 + slope * scoreBeat over matched pairs
-    yields the tempo, the end boundary and per-measure times. Partial takes
+    yields the tempo; supported piecewise anchors supply the boundaries. Partial takes
     align partially: the end is where the audio ends, not the score.
 
     Fail-closed like locate_excerpt: unrelated audio or genuinely ambiguous
@@ -346,9 +346,17 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
     else:
         measure_times = [{"measure": m, "audioSec": round(intercept + slope * ob, 3)}
                          for m, ob in sorted(by_measure.items())] if slope is not None else []
+    # A small median residual can hide a contradictory tail (e.g. incomplete
+    # notation forced onto a complete recording). Never certify its boundaries
+    # from the global line after the local anchors have rejected those events.
+    edge_pairs = (matched[0], matched[-1])
+    boundary_supported = bool(anchors) and slope is not None and all(
+        abs(anchor_time(anchors, score_notes[s]["onsetBeat"], slope) - segments[e][0]) <= .60
+        for s, e in edge_pairs)
+    confident = confident and boundary_supported
     last = score_notes[end_index]
-    end_audio = (round(intercept + slope * (last["onsetBeat"] + last["durationBeat"]), 3)
-                 if slope is not None else None)
+    end_audio = (round(anchor_time(anchors, last["onsetBeat"] + last["durationBeat"], slope), 3)
+                 if boundary_supported else None)
     return {"start": index, "end": end_index, "cost": round(best, 3),
             "quarterPeriod": round(slope, 4) if slope is not None else None,
             "t0": round(intercept, 3) if slope is not None else None,
@@ -356,7 +364,10 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
             "events": events_map, "matched": len(matched),
             "coverage": round(len(matched_audio) / n, 3),
             "residualMs": None if med_resid == float("inf") else int(round(med_resid * 1000)),
-            "confident": confident, "anchors": anchors}
+            "confident": confident, "anchors": anchors,
+            "boundarySupported": boundary_supported,
+            "matchedStartSec": segments[matched[0][1]][0],
+            "matchedEndSec": segments[matched[-1][1]][1]}
 
 
 def _time_anchors(qs: np.ndarray, ts: np.ndarray, slope) -> list:

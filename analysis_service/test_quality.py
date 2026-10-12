@@ -37,3 +37,9 @@ class QualityTests(unittest.TestCase):
         result = self.result()
         result["measureIntervals"][1]["startSec"] = 1.0
         self.assertFalse(assess_quality(result)["followReady"])
+
+    def test_rescued_excerpt_is_partial_even_with_high_scores(self):
+        q = assess_quality(self.result(pitchScore=100, rhythmScore=100,
+                                       autoMeasureSync=True, rescueReasons=["range"]))
+        self.assertEqual(q["outcome"], "partial")
+        self.assertTrue(q["followReady"])

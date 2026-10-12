@@ -64,6 +64,29 @@ class ExcerptAlignmentTests(unittest.TestCase):
         self.assertTrue(result["confident"])
         self.assertLess(result["cost"], 0.7)
 
+    def test_rejected_tail_cannot_have_a_confident_projected_boundary(self):
+        pitches = melody(40)
+        events = segments_for(pitches)
+        a, b, midi = events[-1]
+        events[-1] = (a + 30, b + 30, midi)
+        result = align_excerpt(parse_score(xml_for(pitches)), events)
+        # Nearly all matches are perfect: the median residual alone passes.
+        self.assertLess(result["residualMs"], 60)
+        self.assertFalse(result["boundarySupported"])
+        self.assertFalse(result["confident"])
+        self.assertIsNone(result["endAudioSec"])
+        self.assertEqual(result["matchedEndSec"], events[-1][1])
+        from .engine import _usable_excerpt
+        self.assertFalse(_usable_excerpt(result))
+
+    def test_supported_rubato_end_uses_local_anchors_not_global_line(self):
+        pitches = melody(40)
+        events = [(a + i * i * .001, b + i * i * .001, midi)
+                  for i, (a, b, midi) in enumerate(segments_for(pitches))]
+        result = align_excerpt(parse_score(xml_for(pitches)), events)
+        self.assertTrue(result["boundarySupported"])
+        self.assertAlmostEqual(result["endAudioSec"], events[-1][0] + result["quarterPeriod"], delta=.002)
+
     def test_repeat_with_distinguishing_tail_disambiguates(self):
         phrase = melody(20)
         tail_a = [84, 83, 81, 79, 77, 76, 74, 72, 71, 69]
