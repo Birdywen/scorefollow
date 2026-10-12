@@ -17,7 +17,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.5"
+VERSION = "string-mono-0.6"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}

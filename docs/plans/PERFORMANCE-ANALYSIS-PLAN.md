@@ -112,3 +112,11 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 根因：_select_grid_scale 用音高证据投票（±1.5 半音命中率 ≥0.6），谱面整体高八度时命中为 0，网格被否决、回退 legacy；判定正确，但被当成插件缺失。
 - 修法：否决时记 _beat_rejected（经私有参数 _beat_rejected_in 传入补救重算），degradation_reasons 输出 beat:rejected；quality 仅此一项时报 beat_grid_rejected 而非 builtin_detectors；前端标签“节拍网格未采用”并改悬停说明。旧报告（无 degradedReasons）行为不变。
 - 验证：GridRejectedTests（先失败后通过）、全量 unittest、tsc、analysis-guard、Suzuki bpm80 violin vamp-beat/legacy 回放。
+
+
+## 2026-10-12 引擎版本 string-mono-0.5 → 0.6（结果缓存失效）
+
+- 现象：ffe64c4 上线后同一份 Suzuki 输入经 HTTP 仍返回修复前结果（任务 3d09fabd…，0.1 秒，未重算）；bpm 81 绕开缓存则为 beat:rejected。
+- 根因：任务存储按 [kind, 输入哈希, 参数, (引擎版本, 质量版本)] 去重；ba09444 / 06ae511 / ffe64c4 均改变输出但未升引擎版本，旧结果持续命中。
+- 修法：VERSION 升到 string-mono-0.6，旧缓存键自然失效；不改任务存储。
+- 规则：凡改变分析输出（分数、summary 字段、quality issues、降级原因）的提交，必须同时升 engine.VERSION。
