@@ -1,7 +1,6 @@
-"""Local prototype API: python3 -m analysis_service.server.
+"""Analysis API: python3 -m analysis_service.server.
 
-Bind to loopback by default. A separate durable queue/storage and ingress controls
-are required before exposing this service to the public internet.
+Bind to loopback by default; main initializes private durable job storage.
 """
 
 import base64
@@ -12,6 +11,7 @@ import json
 import hashlib
 import logging
 import os
+from pathlib import Path
 import threading
 import time
 from urllib.parse import urlsplit
@@ -22,6 +22,7 @@ from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score, read_wav, vali
 from .omr import MAX_PDF, recognize
 from .quality import assess_quality
 from .engine import VERSION as STRING_VERSION
+from .job_store import JobStore, QueueFull, TERMINAL
 
 MAX_BODY = 16_000_000
 MAX_OMR_BODY = 21_000_000
@@ -29,6 +30,7 @@ TTL = 3600
 jobs: dict[str, dict] = {}
 lock = threading.Lock()
 pool = ThreadPoolExecutor(max_workers=2)
+job_store: JobStore | None = None  # Initialized by main, never during import/test discovery.
 allowed_origins = set(os.getenv(
     "ANALYSIS_ALLOWED_ORIGINS",
     "http://localhost:3000,http://127.0.0.1:3000,http://150.136.51.61,https://ezmusicstore.com",
@@ -43,6 +45,25 @@ def log_event(event: str, job_id: str, **fields) -> None:
     logger.info(json.dumps({"event": event, "analysisId": job_id, **fields}, allow_nan=False))
 
 
+def update_job(job_id: str, change: dict) -> None:
+    with lock:
+        if job_store is not None and job_store.contains(job_id):
+            job_store.update(job_id, change)
+            jobs[job_id].update({key: value for key, value in change.items() if key != "result"})
+        else:
+            jobs[job_id].update(change)
+
+
+def fail_job(job_id: str, change: dict) -> None:
+    try:
+        update_job(job_id, change)
+    except Exception:
+        # Failed persistence must never publish an uncommitted completed result.
+        change.update(status="failed", errorClass="StorageError", error="任务保存失败，请稍后重新提交。")
+        with lock:
+            jobs[job_id].update(change)
+
+
 def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_measure: int,
         first_beat_audio_sec: float | None = None, sync_mode: str = "legacy", measure_sync=None,
         pitch_tolerance_cents: float = 25.0) -> None:
@@ -51,14 +72,12 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
                              sync_mode, measure_sync, pitch_tolerance_cents], sort_keys=True)
     fingerprint = hashlib.sha256(audio + xml.encode("utf-8") + parameters.encode()).hexdigest()
     stage = "preparing"
-    with lock:
-        jobs[job_id].update(status="analyzing", stage=stage, startedAt=time.time(), inputHash=fingerprint)
-    log_event("started", job_id, inputHash=fingerprint)
     try:
+        update_job(job_id, {"status": "analyzing", "stage": stage, "startedAt": time.time(), "inputHash": fingerprint})
+        log_event("started", job_id, inputHash=fingerprint)
         if instrument == "piano":
             stage = "transcribing"
-            with lock:
-                jobs[job_id]["stage"] = stage
+            update_job(job_id, {"stage": stage})
             # 钢琴走独立复音通道: 转录即传感器, 不经过单声部 FFT 管道
             from .piano_engine import analyze_piano
             result = analyze_piano(audio, xml, bpm, start_measure)
@@ -68,13 +87,11 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
             summary.setdefault("degradedReasons", [])
         else:
             stage = "extracting_features"
-            with lock:
-                jobs[job_id]["stage"] = stage
+            update_job(job_id, {"stage": stage})
             # 有 Vamp 插件就用 pYIN+QM 当耳朵, 没有则引擎退回自研检测(前端无感)
             pitch_notes, onset_hint, beat_map = vamp_features.extract_all(audio)
             stage = "aligning_and_scoring"
-            with lock:
-                jobs[job_id]["stage"] = stage
+            update_job(job_id, {"stage": stage})
             result = analyze(audio, xml, bpm, instrument, start_measure, first_beat_audio_sec, sync_mode,
                              pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map, 
                              measure_sync=measure_sync, pitch_tolerance_cents=pitch_tolerance_cents)
@@ -93,6 +110,8 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
                                  "inputHash": fingerprint, "elapsedMs": elapsed}
         update = {"status": "completed", "stage": "completed", "result": result,
                   "finishedAt": time.time(), "elapsedMs": elapsed}
+        stage = "persisting_result"
+        update_job(job_id, update)
         log_event("completed", job_id, algorithmVersion=result["version"], elapsedMs=elapsed,
                   outcome=result["quality"]["outcome"], rescueReasons=summary.get("rescueReasons", []))
     except Exception as exc:
@@ -101,23 +120,22 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
                   "finishedAt": time.time(), "elapsedMs": elapsed,
                   "error": str(exc) if isinstance(exc, ValueError) else "分析失败，请检查音频和谱面"}
         log_event("failed", job_id, stage=stage, errorClass=type(exc).__name__, elapsedMs=elapsed)
-    with lock:
-        jobs[job_id].update(update)
+        fail_job(job_id, update)
 
 
 def run_omr(job_id: str, pdf: bytes, filename: str, rest_beats: int | None) -> None:
     def update(status: str, percent: float) -> None:
-        with lock:
-            jobs[job_id].update(status=status, progress=percent)
-    with lock:
-        jobs[job_id]["status"] = "uploading"
+        update_job(job_id, {"status": status, "stage": status, "progress": percent})
     try:
+        update_job(job_id, {"status": "uploading", "stage": "uploading"})
         result = recognize(pdf, filename, rest_beats, update)
-        change = {"status": "completed", "progress": 100, "result": result}
+        change = {"status": "completed", "stage": "completed", "progress": 100, "result": result,
+                  "finishedAt": time.time()}
+        update_job(job_id, change)
     except Exception as exc:
-        change = {"status": "failed", "error": str(exc) if isinstance(exc, ValueError) else "OMR 识别失败，请稍后重试"}
-    with lock:
-        jobs[job_id].update(change)
+        change = {"status": "failed", "errorClass": type(exc).__name__, "finishedAt": time.time(),
+                  "error": str(exc) if isinstance(exc, ValueError) else "OMR 识别失败，请稍后重试"}
+        fail_job(job_id, change)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -223,23 +241,52 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError, binascii.Error) as exc:
             self.respond(400, {"error": str(exc)})
             return
-        with lock:
-            for key in list(jobs):
-                if time.time() - jobs[key]["createdAt"] > TTL:
-                    del jobs[key]
-            pending = sum(j["status"] in ("queued", "analyzing", "uploading", "recognizing") for j in jobs.values())
-            if pending >= 4:
-                self.respond(429, {"error": "分析队列已满，请稍后重试"})
-                return
-            job_id = uuid4().hex
-            jobs[job_id] = {"id": job_id, "status": "queued", "createdAt": time.time(), "kind": "omr" if path == "/omr/jobs" else "analysis"}
-        if path == "/omr/jobs":
-            pool.submit(run_omr, job_id, pdf, filename, rest_beats)
-        else:
-            pool.submit(run, job_id, audio, xml, bpm, instrument, start_measure,
-                        float(first_beat) if first_beat is not None else None, sync_mode, measure_sync,
-                        float(pitch_tolerance_cents))
-        self.respond(202, {"id": job_id, "status": "queued"})
+        kind = "omr" if path == "/omr/jobs" else "analysis"
+        try:
+            with lock:
+                for key in list(jobs):
+                    job = jobs[key]
+                    if job["status"] in TERMINAL and time.time() - job.get("finishedAt", job.get("createdAt", time.time())) > TTL:
+                        del jobs[key]
+                if job_store is not None:
+                    job_store.expire(TTL)
+                    if kind == "omr":
+                        inputs = {"input.pdf": pdf}
+                        parameters = {"filename": filename, "prependRestBeats": rest_beats}
+                        version = "omr-adapter-1"
+                    else:
+                        from .piano_engine import VERSION as PIANO_VERSION
+                        inputs = {"audio.wav": audio, "score.musicxml": xml.encode()}
+                        parameters = {"bpm": bpm, "instrument": instrument, "startMeasure": start_measure,
+                                      "firstBeatAudioSec": float(first_beat) if first_beat is not None else None,
+                                      "syncMode": sync_mode, "measureSync": measure_sync,
+                                      "pitchToleranceCents": float(pitch_tolerance_cents)}
+                        version = [PIANO_VERSION if instrument == "piano" else STRING_VERSION, "evidence-1"]
+                    job, created = job_store.submit(kind, inputs, parameters, version, ttl=TTL)
+                    job_id = job["id"]
+                    jobs[job_id] = {key: value for key, value in job.items() if key != "result"}
+                else:
+                    if sum(j["status"] not in TERMINAL for j in jobs.values()) >= 4:
+                        raise QueueFull()
+                    job_id, created = uuid4().hex, True
+                    jobs[job_id] = {"id": job_id, "status": "queued", "createdAt": time.time(), "kind": kind}
+            if created:
+                if kind == "omr":
+                    pool.submit(run_omr, job_id, pdf, filename, rest_beats)
+                else:
+                    pool.submit(run, job_id, audio, xml, bpm, instrument, start_measure,
+                                float(first_beat) if first_beat is not None else None, sync_mode, measure_sync,
+                                float(pitch_tolerance_cents))
+        except QueueFull:
+            self.respond(429, {"error": "分析队列已满，请稍后重试"})
+            return
+        except Exception:
+            if "job_id" in locals() and created:
+                fail_job(job_id, {"status": "failed", "stage": "enqueueing", "errorClass": "QueueUnavailable",
+                                  "finishedAt": time.time(), "error": "任务未能入队，请稍后重新提交。"})
+            self.respond(503, {"error": "任务服务暂不可用，请稍后重新提交。"})
+            return
+        self.respond(202, {"id": job_id, "status": jobs[job_id]["status"]})
 
     def do_GET(self) -> None:
         if not self.cors():
@@ -257,17 +304,33 @@ class Handler(BaseHTTPRequestHandler):
             return
         kind = "omr" if path.startswith("/omr/") else "analysis"
         with lock:
-            job = jobs.get(path.removeprefix("/omr/jobs/").removeprefix("/jobs/"))
-            payload = dict(job) if job and job["kind"] == kind and time.time() - job["createdAt"] <= TTL else None
+            job_id = path.removeprefix("/omr/jobs/").removeprefix("/jobs/")
+            memory = jobs.get(job_id)
+            try:
+                job = job_store.get(job_id, TTL) if job_store is not None else memory
+                if memory and memory.get("errorClass") == "StorageError":
+                    job = memory
+            except Exception:
+                self.respond(503, {"error": "任务服务暂不可用，请稍后重试。"})
+                return
+            expired = job and job["status"] in TERMINAL and time.time() - job.get("finishedAt", job["createdAt"]) > TTL
+            payload = dict(job) if job and job["kind"] == kind and not expired else None
         self.respond(200, payload) if payload else self.respond(404, {"error": "任务不存在或已过期"})
 
 
 def main() -> None:
+    global job_store
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     host = os.getenv("ANALYSIS_HOST", "127.0.0.1")
     port = int(os.getenv("ANALYSIS_PORT", "8765"))
+    job_store = JobStore(os.getenv("ANALYSIS_DATA_DIR", str(Path.home() / ".local/share/scorefollow-analysis")))
+    recovered = job_store.acquire_and_recover()
+    logger.info(json.dumps({"event": "startup_recovery", "interruptedJobs": recovered}))
     print(f"Analysis API listening on http://{host}:{port}", flush=True)
-    ThreadingHTTPServer((host, port), Handler).serve_forever()
+    try:
+        ThreadingHTTPServer((host, port), Handler).serve_forever()
+    finally:
+        job_store.close()
 
 
 if __name__ == "__main__":
