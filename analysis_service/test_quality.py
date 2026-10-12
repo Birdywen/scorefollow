@@ -60,3 +60,33 @@ class TakeBeyondScoreQualityTests(unittest.TestCase):
         from .quality import assess_quality
         summary = {"noteCount": 10, "scoredPitchNotes": 9, "pitchScore": 95, "rhythmScore": 85}
         self.assertNotIn("take_beyond_score", assess_quality({"summary": summary})["issues"])
+
+
+class OverallScoreTests(unittest.TestCase):
+    def q(self, **patch):
+        s = {"noteCount": 10, "scoredPitchNotes": 9, "timedNotes": 9, "timingCandidateNotes": 9,
+             "pitchScore": 95, "rhythmScore": 82, "confidence": "medium"}
+        s.update(patch)
+        return assess_quality({"summary": s, "measureIntervals": []})
+
+    def test_both_scores_give_weighted_overall(self):
+        q = self.q()
+        self.assertEqual(q["overallScore"], 89)
+        self.assertEqual(q["overallWeights"], {"pitch": .5, "rhythm": .5})
+
+    def test_take_beyond_score_prefix_still_has_overall(self):
+        q = self.q(takeBeyondScoreAfterSec=72.3, autoMeasureSync=True, rescueReasons=["range"])
+        self.assertEqual(q["overallScore"], 89)
+
+    def test_missing_component_is_not_computed(self):
+        self.assertIsNone(self.q(pitchScore=None)["overallScore"])
+        self.assertIsNone(self.q(rhythmScore=None)["overallScore"])
+
+    def test_unverified_alignment_is_not_computed(self):
+        self.assertIsNone(self.q(syncAdvice="Review alignment")["overallScore"])
+
+    def test_low_coverage_is_not_computed(self):
+        self.assertIsNone(self.q(scoredPitchNotes=3)["overallScore"])
+
+    def test_zero_scores_are_real(self):
+        self.assertEqual(self.q(pitchScore=0, rhythmScore=0)["overallScore"], 0)

@@ -120,3 +120,13 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 根因：任务存储按 [kind, 输入哈希, 参数, (引擎版本, 质量版本)] 去重；ba09444 / 06ae511 / ffe64c4 均改变输出但未升引擎版本，旧结果持续命中。
 - 修法：VERSION 升到 string-mono-0.6，旧缓存键自然失效；不改任务存储。
 - 规则：凡改变分析输出（分数、summary 字段、quality issues、降级原因）的提交，必须同时升 engine.VERSION。
+
+
+## 2026-10-12 阶段一：综合分 overallScore（string-mono-0.7）
+
+- 位置：quality.overallScore / quality.overallWeights，由 server 对补救与普通两条返回路径统一计算（server.py assess_quality）。
+- 公式：floor(pitch*0.5 + rhythm*0.5 + .5)；默认权重随结果返回，待校准（APP-ROBUSTNESS-PLAN 记“overallScore 从未属于现有契约，需另行明确权重及校准”，此处按产品阶段一要求先上默认权重，校准另议）。
+- 计算条件：音准、节奏均非空，且无 alignment_unverified / low_coverage；0 分为真实分照算。旧报告无此字段，前端不补算，显示“未计算”；两项皆空显示“证据不足”。
+- 前端：分数区加“综合”，“综合音高”更名“音准”；guard 校验 overallScore 为 0–100 或 null。
+- 版本：引擎 0.6→0.7 使缓存失效（质量版本字面量在未提交 server.py，未动）。
+- 未做：outcome 增 score_audio_mismatch / failed（需同步 guard 枚举与质量卡片），下一轮。

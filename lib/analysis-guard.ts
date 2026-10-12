@@ -32,6 +32,7 @@ export function isValidAnalysisResult(r: unknown): boolean {
     const q = o.quality as Record<string, unknown>;
     if (typeof q.version !== "string" || !q.version ||
         !["complete", "complete_with_rescue", "partial", "insufficient_evidence"].includes(String(q.outcome)) ||
+        (q.overallScore !== undefined && q.overallScore !== null && !(typeof q.overallScore === "number" && Number.isFinite(q.overallScore) && q.overallScore >= 0 && q.overallScore <= 100)) ||
         !Array.isArray(q.issues) || !q.issues.every((issue) => typeof issue === "string") ||
         typeof q.followReady !== "boolean") return false;
     for (const key of ["pitchCoverage", "timingCoverage"]) {

@@ -3,6 +3,7 @@ import styles from "./performance.module.css";
 export type Quality = {
   version: string; outcome: "complete" | "complete_with_rescue" | "partial" | "insufficient_evidence";
   issues: string[]; pitchCoverage: number; timingCoverage: number; followReady: boolean;
+  overallScore?: number | null; overallWeights?: { pitch: number; rhythm: number };
 };
 
 type Summary = {

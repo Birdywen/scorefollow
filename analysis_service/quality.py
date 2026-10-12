@@ -1,5 +1,10 @@
 """Evidence quality is independent of the player's score; zero is a valid score."""
 
+import math
+
+# Default weights; returned with every result so they can be recalibrated.
+OVERALL_WEIGHTS = {"pitch": 0.5, "rhythm": 0.5}
+
 
 def assess_quality(result: dict) -> dict:
     summary = result["summary"]
@@ -41,7 +46,16 @@ def assess_quality(result: dict) -> dict:
         (i == 0 or item["measure"] > intervals[i - 1]["measure"] and
          item["startSec"] >= intervals[i - 1]["endSec"] - .001)
         for i, item in enumerate(intervals))
-    return {"version": "evidence-1", "outcome": outcome, "issues": issues,
+    # Combined score only when both components exist on a verified, covered
+    # timeline; never back-filled for old or incomplete reports.
+    pitch, rhythm = summary.get("pitchScore"), summary.get("rhythmScore")
+    weights = dict(OVERALL_WEIGHTS)
+    overall = None
+    if pitch is not None and rhythm is not None and "alignment_unverified" not in issues \
+            and "low_coverage" not in issues:
+        overall = int(math.floor(pitch * weights["pitch"] + rhythm * weights["rhythm"] + .5))
+    return {"version": "evidence-1", "outcome": outcome, "overallScore": overall,
+            "overallWeights": weights, "issues": issues,
             "pitchCoverage": round(pitch_coverage, 3), "timingCoverage": round(timing_coverage, 3),
             # This indicates a usable timeline, never a claim of verified accuracy.
             "followReady": bool(valid_timeline and summary.get("confidence") != "low"

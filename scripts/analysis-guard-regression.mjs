@@ -26,7 +26,9 @@ const valid = { version: "1", notes: [note], limitations: [], summary };
 const quality = { version: "evidence-1", outcome: "complete", issues: [], pitchCoverage: 1, timingCoverage: 1, followReady: true };
 const diagnostics = { analysisId: "fixture", algorithmVersion: "1", inputHash: "a".repeat(64), elapsedMs: 50 };
 assert.equal(guard.isValidAnalysisResult({ ...valid, quality, diagnostics }), true);
-for (const bad of [null, { ...quality, outcome: "unknown" }, { ...quality, pitchCoverage: Infinity }, { ...quality, timingCoverage: -1 }, { ...quality, issues: [null] }, { ...quality, followReady: "yes" }]) {
+assert.equal(guard.isValidAnalysisResult({ ...valid, quality: { ...quality, overallScore: 89, overallWeights: { pitch: .5, rhythm: .5 } }, diagnostics }), true);
+assert.equal(guard.isValidAnalysisResult({ ...valid, quality: { ...quality, overallScore: null }, diagnostics }), true);
+for (const bad of [null, { ...quality, outcome: "unknown" }, { ...quality, overallScore: 101 }, { ...quality, overallScore: "90" }, { ...quality, pitchCoverage: Infinity }, { ...quality, timingCoverage: -1 }, { ...quality, issues: [null] }, { ...quality, followReady: "yes" }]) {
   assert.equal(guard.isValidAnalysisResult({ ...valid, quality: bad }), false);
 }
 assert.equal(guard.isValidAnalysisResult({ ...valid, diagnostics: { ...diagnostics, elapsedMs: -1 } }), false);
