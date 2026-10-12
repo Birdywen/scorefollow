@@ -247,9 +247,8 @@ function boot(){
     st._lastMA=MA; B=buildB(MA); applyData();
   }
 
-  var sty=document.createElement('style'); sty.id='sga-hide-demaat';
-  sty.textContent='.demaat{opacity:0 !important;}';
-  document.head.appendChild(sty);
+  // React owns the audio-follow cursor; clock takeover hides it when needed.
+  // A global opacity rule would also hide it after the metronome has stopped.
   var sty2=document.createElement('style'); sty2.id='sga-hide-barnum';
   document.head.appendChild(sty2);
   // 修复1: 改用 textContent 动态切换 (不依赖 style.disabled 浏览器兼容性)
@@ -350,7 +349,7 @@ function boot(){
     shade.style.transition='none';
     shade.style.left=(e[6]-pad)+'px'; shade.style.top=(e[2]-pad)+'px';
     shade.style.width=(e[7]-e[6]+pad*2)+'px'; shade.style.height=(e[3]-e[2]+pad*2)+'px';
-    shade.style.display='block';
+    // Relayout must preserve visibility: audio follow may have parked this shade.
     lastShadeTop=e[2]-pad;
     void shade.offsetWidth;
     requestAnimationFrame(function(){ shade.style.transition=SHADE_TR; });
