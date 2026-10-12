@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 import numpy as np
 
-from .alignment import locate_excerpt, usable_events
+from .alignment import align_excerpt, locate_excerpt, usable_events
 from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
@@ -658,16 +658,33 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 beat_map = None
     auto_located = start_measure == 0
     location_cost = None
+    alignment = None
     if auto_located:
         if sync_mode == "metronome" or first_beat_audio_sec is not None:
             raise ValueError("自动定位仅支持未同步的单声部录音")
         if not pitch_notes:
             raise ValueError("自动定位需要 pYIN 音高传感器；请指定起始小节")
         reliable_events = usable_events(pitch_notes)
-        index, location_cost = locate_excerpt(score_notes, pitch_notes,
-                                              beat_map=beat_map if sync_mode == "vamp-beat" else None)
+        # Full-excerpt alignment first: start + end + measure time map from
+        # audio events and XML alone (panel-tempo independent). Falls back to
+        # the legacy start-only location when the excerpt is ambiguous; scoring
+        # math below is untouched either way.
+        try:
+            excerpt = align_excerpt(score_notes, pitch_notes,
+                                    beat_map=beat_map if sync_mode == "vamp-beat" else None)
+        except ValueError:
+            excerpt = None
+        if excerpt is not None and excerpt.get("confident"):
+            alignment = excerpt
+            index, location_cost = excerpt["start"], excerpt["cost"]
+            notes = score_notes[alignment["start"]: alignment["end"] + 1]
+        else:
+            index, location_cost = locate_excerpt(score_notes, pitch_notes,
+                                                  beat_map=beat_map if sync_mode == "vamp-beat" else None)
+            notes = score_notes[index:]
+        if not notes:
+            raise ValueError("录音不足以覆盖所选开始小节")
         location_anchor = reliable_events[0][0]
-        notes = score_notes[index:]
         start_measure = notes[0]["measure"]
     else:
         notes = [n for n in score_notes if n["measure"] >= start_measure]
@@ -996,12 +1013,29 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     boundaries = measure_start_beats(xml, include_end=True)
     def audio_time(beat):
         return beat_time(beat - base_beat) if beat_time is not None else start + beat * sec_per_beat
-    measure_intervals = []
-    for measure in range(notes[0]["measure"], notes[-1]["measure"] + 1):
-        lo = max(0.0, audio_time(boundaries[measure]))
-        hi = min(duration_sec, audio_time(boundaries[measure + 1]))
-        if hi > lo:
-            measure_intervals.append({"measure": measure, "startSec": round(lo, 3), "endSec": round(hi, 3)})
+    # Automatic measure sync: when full-excerpt alignment is confident, derive
+    # per-measure times from its fitted line (audio events + XML only). This is
+    # the same standing as user-confirmed markers (piecewise measure anchors),
+    # never per-note warp: intra-measure timing stays measurable. Otherwise the
+    # live grid (vamp-beat) or the fixed grid (legacy/metronome) rules as before.
+    alignment_intervals = None
+    if alignment is not None and alignment.get("t0") is not None:
+        _slope, _t0 = alignment["quarterPeriod"], alignment["t0"]
+        alignment_intervals = []
+        for measure in range(notes[0]["measure"], notes[-1]["measure"] + 1):
+            lo = max(0.0, round(_t0 + _slope * boundaries[measure], 3))
+            hi = min(duration_sec, round(_t0 + _slope * boundaries[measure + 1], 3))
+            if hi > lo:
+                alignment_intervals.append({"measure": measure, "startSec": lo, "endSec": hi})
+        if not alignment_intervals:
+            alignment_intervals = None
+    measure_intervals = alignment_intervals if alignment_intervals is not None else []
+    if not measure_intervals:
+        for measure in range(notes[0]["measure"], notes[-1]["measure"] + 1):
+            lo = max(0.0, audio_time(boundaries[measure]))
+            hi = min(duration_sec, audio_time(boundaries[measure + 1]))
+            if hi > lo:
+                measure_intervals.append({"measure": measure, "startSec": round(lo, 3), "endSec": round(hi, 3)})
     clipped = raw_clipped  # 归一化前测得, 见 read_wav 调用处
     sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
     # Optional-plugin degradation is explicit in the payload (not logs only),

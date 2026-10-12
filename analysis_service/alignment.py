@@ -1,8 +1,17 @@
 """Conservative subsequence alignment for locating an audio excerpt in a score.
 
-Only the *starting score note* is inferred here. Warped DTW times must never be
-used as ground truth for rhythm scoring; the engine uses its independent beat
-tracker after localization.
+locate_excerpt infers only the *starting score note*. align_excerpt goes
+further (start + end + measure time map) for automatic measure sync, still
+without warping rhythm ground truth: it fits one global line
+audioSec = t0 + slope * scoreBeat (tempo + offset only), so intra-measure
+timing stays measurable. The engine keeps scoring against its independent
+beat grid; the alignment selects the note range and derives measureIntervals.
+
+Beat-tracker positions are deliberately NOT used as a rigid ruler inside the
+search: over a long take, rubato accumulates beats of drift and a rigid
+penalty punishes the true path (observed: true-start cost 0.315 -> 0.953 on a
+6/8 take, failing the .70 gate). Time evidence enters only through the fitted
+line; an optional beat-ratio sanity check is unit-agnostic (pulse ratios only).
 """
 
 import math
@@ -113,3 +122,231 @@ def locate_excerpt(score_notes: list[dict], pitch_notes: list, *, max_events: in
             if short_index != index:
                 raise ValueError("长短片段定位起点不一致，无法可靠评分；请指定起始小节")
     return index, round(best, 3)
+
+
+def _pitch_diff(midi: float, target: float) -> float:
+    """Edit cost between a measured pitch and a written one.
+
+    A 1200-cent discrepancy may be a pitch-tracker octave error, but is never
+    as cheap as an exact match. Continuous cents keep near-misses ordered.
+    """
+    cents = abs(midi - target) * 100
+    return min(2.5, cents / 100, abs(cents - 1200) / 100 + .75)
+
+
+def _prefix_candidates(score_notes: list[dict], events: list[float],
+                       limit: int = 64, margin: float = 0.40, cap: int = 16) -> list:
+    """Pitch-only scan of the excerpt prefix; returns [(cost, start)] kept.
+
+    Deliberately no beat-tracker positions here (see module docstring): the
+    prefix only needs to INCLUDE the true start among a few rivals; the full
+    path below disambiguates repeats. Same anchor gate and band rule as
+    locate_excerpt so behaviour stays comparable.
+    """
+    k = min(len(events), limit)
+    head = events[:k]
+    band = max(4, k // 3)
+    floor = max(6, int(k * .65))
+    scored = []
+    for start in range(len(score_notes)):
+        written = [float(note["pitchMidi"]) for note in score_notes[start:start + 2 * k + 4]]
+        anchor_cents = abs(head[0] - written[0]) * 100 if written else float("inf")
+        if min(anchor_cents, abs(anchor_cents - 1200)) > 150:
+            continue
+        if len(written) < max(6, int(k * .65)):
+            continue
+        prev = [0.0] + [float("inf")] * len(written)
+        for i, midi in enumerate(head, 1):
+            row = [float("inf")] * (len(written) + 1)
+            for j, target in enumerate(written, 1):
+                if abs(i - j) > band:
+                    continue
+                diff = _pitch_diff(midi, target)
+                row[j] = (prev[j - 1] + diff if i == 1 or j == 1 else
+                          min(prev[j - 1] + diff, prev[j] + 1.25, row[j - 1] + .85))
+            prev = row
+        scored.append((min(prev[floor:]) / k if len(prev) > floor else float("inf"), start))
+    scored.sort()
+    if not scored or not math.isfinite(scored[0][0]):
+        raise ValueError("录音与乐谱不足以定位片段；请指定起始小节")
+    cutoff = scored[0][0] + margin
+    return [(c, s) for c, s in scored if c <= cutoff][:cap]
+
+
+def _full_path(score_notes: list[dict], events: list[float], start: int) -> tuple:
+    """Full-length pitch-only DTW from `start`; free end over remaining score.
+
+    Returns (mean_cost, end_j, back) with end_j the 1-based column where the
+    last audio event lands, or (inf, 0, None) when the remaining score cannot
+    cover the excerpt (band-unreachable: correct rejection, not an error).
+    """
+    n = len(events)
+    written = [float(note["pitchMidi"]) for note in score_notes[start:]]
+    m = len(written)
+    if m < 8:
+        return float("inf"), 0, None
+    band = max(4, n // 3)
+    floor = max(4, n // 10)
+    prev = np.full(m + 1, np.inf)
+    prev[0] = 0.0
+    back = np.zeros((n + 1, m + 1), dtype=np.uint8)
+    for i, midi in enumerate(events, 1):
+        row = np.full(m + 1, np.inf)
+        lo = max(1, i - band)
+        hi = min(m, i + band)
+        for j in range(lo, hi + 1):
+            diff = _pitch_diff(midi, written[j - 1])
+            if i == 1 or j == 1:
+                row[j] = prev[j - 1] + diff
+                back[i, j] = 1
+            else:
+                options = (prev[j - 1] + diff, prev[j] + 1.25, row[j - 1] + .85)
+                action = int(np.argmin(options))
+                row[j] = options[action]
+                back[i, j] = action + 1
+        prev = row
+    tail = prev[floor:]
+    if not np.isfinite(tail).any():
+        return float("inf"), 0, None
+    end_j = int(np.argmin(tail)) + floor
+    return float(prev[end_j]) / n, end_j, back
+
+
+def _backtrack_pairs(back: np.ndarray, n: int, end_j: int) -> list:
+    """Match moves (score_col_1based, event_idx_0based) from (n, end_j)."""
+    pairs = []
+    i, j = n, end_j
+    while i > 0 and j > 0:
+        action = int(back[i, j])
+        if action == 1:
+            pairs.append((j, i - 1))
+            i -= 1
+            j -= 1
+        elif action == 2:
+            i -= 1
+        elif action == 3:
+            j -= 1
+        else:
+            break
+    pairs.reverse()
+    return pairs
+
+
+def _robust_line(qs: np.ndarray, ts: np.ndarray) -> tuple:
+    """Theil-Sen-lite slope + median intercept; (slope, intercept) or (None, None)."""
+    slopes = []
+    for k in range(len(qs)):
+        dq = qs[k + 1:] - qs[k]
+        mask = dq >= 2.0
+        if np.any(mask):
+            slopes.append((ts[k + 1:][mask] - ts[k]) / dq[mask])
+    if slopes:
+        slope = float(np.median(np.concatenate(slopes)))
+    elif qs[-1] - qs[0] >= 0.5:
+        slope = float((ts[-1] - ts[0]) / (qs[-1] - qs[0]))
+    else:
+        return None, None
+    intercept = float(np.median(ts - slope * qs))
+    return slope, intercept
+
+
+_PULSE_RATIOS = (0.5, 2.0 / 3.0, 1.0, 1.5, 2.0)
+
+
+def _beat_ratio_ok(beat_map, slope: float) -> bool:
+    """Unit-agnostic sanity: fitted sec/quarter vs beat interval pulse ratio.
+
+    Returns True when the beat tracker is unusable (neutral) or the ratio is
+    near a musical pulse ratio; the tracker's absolute unit is never assumed,
+    so 4/4 quarter-pulse and 6/8 dotted-pulse grids both pass.
+    """
+    if not beat_map:
+        return True
+    beats = sorted(set(float(b) for b in beat_map if math.isfinite(float(b)) and float(b) >= 0))
+    if len(beats) < 4:
+        return True
+    gaps = np.diff(beats)
+    med = float(np.median(gaps))
+    if not med > 0 or float(np.max(gaps)) > med * 2.5:
+        return True
+    ratio = slope / med
+    return any(abs(ratio - x) / x <= 0.2 for x in _PULSE_RATIOS)
+
+
+def align_excerpt(score_notes: list[dict], pitch_notes: list,
+                  beat_map: list | None = None) -> dict:
+    """Locate an excerpt's start AND end; derive its measure time map.
+
+    Two stages: pitch-only prefix scan (no rigid beat ruler) keeps a few
+    rival starts; full-length pitch-only paths re-score them, which separates
+    repeated phrases the prefix alone cannot (distant rivals go band-inf).
+    A robust global line audioSec = t0 + slope * scoreBeat over matched pairs
+    yields the tempo, the end boundary and per-measure times. Partial takes
+    align partially: the end is where the audio ends, not the score.
+
+    Fail-closed like locate_excerpt: unrelated audio or genuinely ambiguous
+    repeats raise ValueError asking for an explicit start measure.
+    """
+    segments = usable_events(pitch_notes)
+    events = [midi for _, _, midi in segments]
+    n = len(events)
+    if n < 8 or len(score_notes) < 8:
+        raise ValueError("片段定位需要至少 8 个可靠的音高事件；请指定起始小节")
+    stage1 = _prefix_candidates(score_notes, events)
+    full = []
+    for _, start in stage1:
+        cost, end_j, back = _full_path(score_notes, events, start)
+        if math.isfinite(cost):
+            full.append((cost, start, end_j, back))
+    if not full:
+        raise ValueError("录音与乐谱不足以定位片段；请指定起始小节")
+    full.sort(key=lambda r: r[0])
+    best, index, end_j, back = full[0]
+    distinct = max(3, n // 3)
+    alternative = next((c for c, i, _, _ in full if abs(i - index) > distinct), float("inf"))
+    tied = any(i != index and abs(c - best) <= 1e-8 for c, i, _, _ in full)
+    if best > 0.90:
+        raise ValueError("录音片段与乐谱不吻合；请指定起始小节")
+    if alternative - best < 0.16 or tied:
+        raise ValueError("重复乐句的起止位置无法区分；请指定起始小节")
+    pairs = _backtrack_pairs(back, n, end_j)
+    if not pairs:
+        raise ValueError("录音片段与乐谱不吻合；请指定起始小节")
+    matched_audio = {e for _, e in pairs}
+    matched = [(index + sj - 1, e) for sj, e in pairs]
+    end_index = max(s for s, _ in matched)
+    qs = np.array([score_notes[s]["onsetBeat"] for s, _ in matched])
+    ts = np.array([segments[e][0] for _, e in matched])
+    slope, intercept = _robust_line(qs, ts)
+    confident = True
+    med_resid = float("inf")
+    if slope is None or not 0.15 <= slope <= 2.0:
+        confident = False
+    else:
+        med_resid = float(np.median(np.abs(ts - (intercept + slope * qs))))
+        if med_resid > 0.60:
+            confident = False
+    if len(matched) < 8 or len(matched_audio) / n < 0.5:
+        confident = False
+    if confident and not _beat_ratio_ok(beat_map, slope):
+        confident = False
+    events_map = {s: segments[e] for s, e in matched}
+    # Per-measure boundaries from the fitted line (first in-range note onset).
+    by_measure: dict[int, float] = {}
+    for s in range(index, end_index + 1):
+        m = score_notes[s]["measure"]
+        if m not in by_measure:
+            by_measure[m] = score_notes[s]["onsetBeat"]
+    measure_times = [{"measure": m, "audioSec": round(intercept + slope * ob, 3)}
+                     for m, ob in sorted(by_measure.items())] if slope is not None else []
+    last = score_notes[end_index]
+    end_audio = (round(intercept + slope * (last["onsetBeat"] + last["durationBeat"]), 3)
+                 if slope is not None else None)
+    return {"start": index, "end": end_index, "cost": round(best, 3),
+            "quarterPeriod": round(slope, 4) if slope is not None else None,
+            "t0": round(intercept, 3) if slope is not None else None,
+            "measureTimes": measure_times, "endAudioSec": end_audio,
+            "events": events_map, "matched": len(matched),
+            "coverage": round(len(matched_audio) / n, 3),
+            "residualMs": None if med_resid == float("inf") else int(round(med_resid * 1000)),
+            "confident": confident}
