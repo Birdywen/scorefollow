@@ -4359,7 +4359,13 @@ export default function ScoreFollowPage() {
         )}
         {showCursor && cursor && (
           <div className="demaat" style={{
-            position: "absolute", background: "rgba(0,0,255,0.2)",
+            position: "absolute",
+            // 与旧节拍器 sga-shade 蓝色默认保持一致 (metro-engine.js applyShadeStyle blue/opacity 0.28)。
+            background: "linear-gradient(180deg,rgba(0,224,255,0.28),rgba(0,150,255,0.160))",
+            boxShadow: "0 0 16px 3px rgba(0,200,255,0.40),inset 0 0 10px rgba(255,255,255,0.22)",
+            border: "1.5px solid rgba(120,235,255,0.65)",
+            borderRadius: 9,
+            mixBlendMode: "multiply",
             left: `${(cursor.x / (analysis?.pageW || 1)) * 100}%`,
             top: `${(cursor.y / (analysis?.pageH || 1)) * 100}%`,
             width: `${(cursor.w / (analysis?.pageW || 1)) * 100}%`,
