@@ -17,7 +17,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.8"
+VERSION = "string-mono-0.9"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -630,7 +630,7 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
     （与手动点选同等地位：只定小节边界，小节内照常评分）；全败或无原因时
     markers 为空，调用方保留刚性结果（失败原因进 advice，绝不静默零分）。
     """
-    plan: dict = {"shift": 0, "alignment": None, "markers": [], "reasons": [],
+    plan: dict = {"shift": 0, "alignment": None, "markers": [], "reasons": [], "attempts": [],
                   "detected_bpm": None, "advice": None, "limitations": [],
                   "start_measure": requested_start}
     events = usable_events(pitch_notes) if pitch_notes else segment_builtin_events(times, pitches, energy)
@@ -646,11 +646,16 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
             excerpt = align_excerpt(shifted, events)
         except ValueError as exc:
             failures.append(str(exc))
+            plan["attempts"].append({"shift": shift, "reason": "error", "detail": str(exc)})
             continue
         if _usable_excerpt(excerpt):
             cands.append((excerpt["cost"], shift, excerpt))
+            plan["attempts"].append({"shift": shift, "reason": "usable"})
         elif excerpt.get("boundarySupported") is False:
             boundary_failure = "谱面与录音首尾的时间证据冲突，不能确认覆盖范围；请检查谱面是否完整"
+            plan["attempts"].append({"shift": shift, "reason": "boundary_unsupported"})
+        else:
+            plan["attempts"].append({"shift": shift, "reason": "unusable"})
     if not cands:
         msg = boundary_failure or (failures[0] if failures else "录音片段与乐谱不吻合；请指定起始小节")
         plan["advice"] = f"自动对齐失败（{msg}）；可使用手动小节同步逐小节对齐后重分析。"
@@ -1427,12 +1432,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             _summary["autoMeasureSync"] = True
             _summary["octaveShift"] = _plan["shift"] or None
             _summary["rescueReasons"] = _plan["reasons"]
+            _summary["rescueAttempts"] = _plan["attempts"]
             _summary["detectedBpm"] = _plan["detected_bpm"]
             _summary["takeBeyondScoreAfterSec"] = _plan.get("take_beyond_score_after")
             if "tempo" in _plan["reasons"]:
                 _summary["tempoMismatch"] = True
             _rescued["limitations"] = list(_rescued.get("limitations") or []) + _plan["limitations"]
             return _rescued
+        result["summary"]["rescueAttempts"] = _plan["attempts"]
         if _plan["advice"]:
             result["summary"]["syncAdvice"] = _plan["advice"]
     return result
