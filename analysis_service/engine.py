@@ -8,6 +8,7 @@ import io
 import math
 import wave
 import xml.etree.ElementTree as ET
+from collections import OrderedDict
 from decimal import Decimal, InvalidOperation
 
 import numpy as np
@@ -17,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.12"
+VERSION = "string-mono-0.13"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -865,7 +866,8 @@ def _select_grid_phase(beats: np.ndarray, med: float, anchor: int, notes: list,
 
 
 BP_TIMEOUT_SEC = 30
-_BP_CACHE: dict = {}
+_BP_CACHE_CAP = 64
+_BP_CACHE: OrderedDict = OrderedDict()
 
 
 def bp_monophonic(notes, window: float = 0.05, head: float = 0.05) -> list:
@@ -913,6 +915,7 @@ def _bp_locate_events(signal, rate):
     x = np.ascontiguousarray(signal, dtype=np.float32)
     key = (hashlib.blake2b(x.tobytes(), digest_size=16).digest(), int(rate))
     if key in _BP_CACHE:
+        _BP_CACHE.move_to_end(key)
         return _BP_CACHE[key]
     events = None
     try:
@@ -934,9 +937,9 @@ def _bp_locate_events(signal, rate):
         events = bp_monophonic(raw.get('notes')) or None
     except Exception:
         events = None
-    if len(_BP_CACHE) >= 16:
-        _BP_CACHE.clear()
     _BP_CACHE[key] = events
+    while len(_BP_CACHE) > _BP_CACHE_CAP:
+        _BP_CACHE.popitem(last=False)
     return events
 
 
@@ -1040,16 +1043,6 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 raise ValueError("自动定位需要 pYIN 音高传感器；请指定起始小节")
             pitch_events = _ev
         reliable_events = pitch_events
-        # 0.12: Basic Pitch events (when configured) get the first try at both
-        # locate layers; pYIN and the fused retry keep their 0.11 order after it.
-        bp_events = _bp_locate_events(signal, rate)
-        bp_excerpt = None
-        if bp_events:
-            try:
-                bp_excerpt = align_excerpt(score_notes, bp_events,
-                                           beat_map=beat_map if sync_mode == "vamp-beat" else None)
-            except ValueError:
-                bp_excerpt = None
         # Full-excerpt alignment first: start + end + measure time map from
         # audio events and XML alone (panel-tempo independent). Falls back to
         # the legacy start-only location when the excerpt is ambiguous; scoring
@@ -1059,8 +1052,20 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                                     beat_map=beat_map if sync_mode == "vamp-beat" else None)
         except ValueError:
             excerpt = None
-        if bp_excerpt is not None and bp_excerpt.get("confident"):
-            excerpt, reliable_events, bp_locate = bp_excerpt, bp_events, "align"
+        # 0.13: pYIN-first. Basic Pitch runs lazily, only when the pYIN
+        # full-excerpt alignment is missing or unconfident; the locate layer
+        # below is pYIN-first too (BP second, fused last).
+        bp_events, bp_excerpt = None, None
+        if excerpt is None or not excerpt.get("confident"):
+            bp_events = _bp_locate_events(signal, rate)
+            if bp_events:
+                try:
+                    bp_excerpt = align_excerpt(score_notes, bp_events,
+                                               beat_map=beat_map if sync_mode == "vamp-beat" else None)
+                except ValueError:
+                    bp_excerpt = None
+            if bp_excerpt is not None and bp_excerpt.get("confident"):
+                excerpt, reliable_events, bp_locate = bp_excerpt, bp_events, "align"
         boundary_conflict = excerpt is not None and excerpt.get("boundarySupported") is False
         if excerpt is not None and excerpt.get("confident"):
             alignment = excerpt
@@ -1069,26 +1074,31 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         else:
             locate_beats = beat_map if sync_mode == "vamp-beat" else None
             bp_hit = None
-            if bp_events:
-                try:
-                    bp_hit = locate_excerpt(score_notes, bp_events, beat_map=locate_beats)
-                except ValueError:
-                    bp_hit = None
             try:
-                index, location_cost = bp_hit if bp_hit is not None else locate_excerpt(
+                index, location_cost = locate_excerpt(
                     score_notes, reliable_events, beat_map=locate_beats)
             except ValueError as first_error:
-                # pYIN's note tracker merges fast passages (16ths); retry once with
-                # QM-onset segments + pYIN frame pitch under the same gates. The
-                # original error survives if the fused events cannot locate either.
-                fused = _fused_locate_events(signal, rate)
-                if not fused:
-                    raise
-                try:
-                    index, location_cost = locate_excerpt(score_notes, fused, beat_map=locate_beats)
-                except ValueError:
-                    raise first_error from None
-                fused_locate = True
+                # pYIN-first fallback: BP gets the second try at the locate
+                # layer; the fused retry stays last, as in 0.11/0.12.
+                if bp_events:
+                    try:
+                        bp_hit = locate_excerpt(score_notes, bp_events, beat_map=locate_beats)
+                    except ValueError:
+                        bp_hit = None
+                if bp_hit is not None:
+                    index, location_cost = bp_hit
+                else:
+                    # pYIN's note tracker merges fast passages (16ths); retry once with
+                    # QM-onset segments + pYIN frame pitch under the same gates. The
+                    # original error survives if the fused events cannot locate either.
+                    fused = _fused_locate_events(signal, rate)
+                    if not fused:
+                        raise
+                    try:
+                        index, location_cost = locate_excerpt(score_notes, fused, beat_map=locate_beats)
+                    except ValueError:
+                        raise first_error from None
+                    fused_locate = True
             if bp_hit is not None:
                 reliable_events, bp_locate = bp_events, "locate"
             notes = score_notes[index:]

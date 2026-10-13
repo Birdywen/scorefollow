@@ -74,6 +74,53 @@ class BpLocateTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '不足以定位'):
                 run(BAD)
 
+    def test_bp_skipped_when_pyin_align_confident(self):
+        with patch(BP) as bp_mock, patch(FUSED, return_value=None):
+            summary = run(GOOD)['summary']
+        bp_mock.assert_not_called()
+        self.assertEqual(summary['startMeasure'], 8)
+        self.assertNotIn('bp-locate', summary['sensors'])
+
+    def test_bp_runs_when_pyin_path_fails(self):
+        with patch(BP, return_value=GOOD) as bp_mock, patch(FUSED, return_value=None):
+            summary = run(BAD)['summary']
+        bp_mock.assert_called_once()
+        self.assertTrue(summary['autoLocated'])
+        self.assertIn('bp-locate', summary['sensors'])
+
+    def test_pyin_locate_preferred_over_bp_hit_in_fallback(self):
+        with patch('analysis_service.engine.align_excerpt', side_effect=ValueError('no align')), \
+                patch(BP, return_value=GOOD), patch(FUSED, return_value=None):
+            summary = run(GOOD)['summary']
+        self.assertEqual(summary['startMeasure'], 8)
+        self.assertNotIn('bp-locate', summary['sensors'])
+
+
+class BpCacheTests(unittest.TestCase):
+    def test_lru_evicts_oldest_beyond_cap(self):
+        import hashlib
+        import pathlib
+        from . import engine as E
+        E._BP_CACHE.clear()
+        self.addCleanup(E._BP_CACHE.clear)
+
+        def fake_run(cmd, **kwargs):
+            pathlib.Path(cmd[5]).write_text('{"notes": [[0.1, 0.5, 60]]}')
+            return 0
+
+        with patch.dict(os.environ, {'SCOREFOLLOW_BP_PYTHON': '/fake/sf-bp-python'}), \
+                patch('subprocess.run', side_effect=fake_run):
+            first_key = None
+            for i in range(E._BP_CACHE_CAP + 6):
+                sig = np.full(2205, 0.1 + i * 0.001, dtype=np.float32)
+                self.assertEqual(
+                    E._bp_locate_events(sig, 22050), [(0.1, 0.5, 60)])
+                if i == 0:
+                    raw = np.ascontiguousarray(sig, dtype=np.float32).tobytes()
+                    first_key = (hashlib.blake2b(raw, digest_size=16).digest(), 22050)
+        self.assertLessEqual(len(E._BP_CACHE), E._BP_CACHE_CAP)
+        self.assertNotIn(first_key, E._BP_CACHE)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -10,7 +10,7 @@
   ],
   "pitch": 94,
   "rhythm": 80,
-  "latency": 0.8,
+  "latency": 0.82,
   "leg": "pyin"
  },
  {
@@ -24,7 +24,7 @@
   ],
   "pitch": 100,
   "rhythm": 87,
-  "latency": 0.35,
+  "latency": 0.36,
   "leg": "pyin"
  },
  {
@@ -95,7 +95,7 @@
   ],
   "pitch": 100,
   "rhythm": 86,
-  "latency": 0.33,
+  "latency": 0.34,
   "leg": "pyin"
  },
  {
@@ -168,14 +168,14 @@
   "id": "dotzauer_b1_no01__09_s1_slow",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 2.47,
+  "latency": 2.32,
   "leg": "bp-fallback"
  },
  {
   "id": "dotzauer_b1_no11__10_s0_fast",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 2.54,
+  "latency": 2.45,
   "leg": "bp-fallback"
  },
  {
@@ -196,14 +196,14 @@
   "id": "dotzauer_b1_no11__10_s2_full",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 2.49,
+  "latency": 2.33,
   "leg": "bp-fallback"
  },
  {
   "id": "dotzauer_b1_no15__11_s0_fast",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 6.22,
+  "latency": 6.17,
   "leg": "bp-fallback"
  },
  {
@@ -224,7 +224,7 @@
   "id": "dotzauer_b1_no20__12_fast",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 5.2,
+  "latency": 5.08,
   "leg": "bp-fallback"
  },
  {
@@ -241,7 +241,7 @@
   "id": "dotzauer_b1_no26__14_slow",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 2.38,
+  "latency": 2.43,
   "leg": "bp-fallback"
  },
  {
@@ -255,7 +255,7 @@
   ],
   "pitch": 100,
   "rhythm": 58,
-  "latency": 0.26,
+  "latency": 0.27,
   "leg": "pyin"
  },
  {
@@ -283,7 +283,7 @@
   ],
   "pitch": null,
   "rhythm": 76,
-  "latency": 0.37,
+  "latency": 0.36,
   "leg": "pyin"
  },
  {
@@ -325,7 +325,7 @@
   ],
   "pitch": 82,
   "rhythm": null,
-  "latency": 0.3,
+  "latency": 0.32,
   "leg": "pyin"
  },
  {
@@ -350,7 +350,7 @@
   ],
   "pitch": null,
   "rhythm": 84,
-  "latency": 3.82,
+  "latency": 3.92,
   "leg": "bp-fallback"
  },
  {
@@ -379,14 +379,14 @@
   ],
   "pitch": 86,
   "rhythm": 88,
-  "latency": 3.66,
+  "latency": 3.67,
   "leg": "bp-fallback"
  },
  {
   "id": "dotzauer_b1_no33__20_s1_slow",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 2.88,
+  "latency": 2.83,
   "leg": "bp-fallback"
  },
  {
@@ -415,7 +415,7 @@
   ],
   "pitch": null,
   "rhythm": null,
-  "latency": 2.51,
+  "latency": 2.49,
   "leg": "pyin"
  },
  {
@@ -429,7 +429,7 @@
   ],
   "pitch": 99,
   "rhythm": 83,
-  "latency": 0.63,
+  "latency": 0.62,
   "leg": "pyin"
  },
  {
@@ -471,7 +471,7 @@
   ],
   "pitch": 100,
   "rhythm": 82,
-  "latency": 0.25,
+  "latency": 0.24,
   "leg": "pyin"
  },
  {
@@ -493,7 +493,7 @@
   ],
   "pitch": null,
   "rhythm": 4,
-  "latency": 2.62,
+  "latency": 2.64,
   "leg": "bp-fallback"
  },
  {
@@ -504,7 +504,7 @@
   "id": "dotzauer_b1_no25__26_s0_fast",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 6.19,
+  "latency": 6.21,
   "leg": "bp-fallback"
  },
  {
@@ -518,7 +518,7 @@
   ],
   "pitch": null,
   "rhythm": 74,
-  "latency": 0.83,
+  "latency": 0.82,
   "leg": "pyin"
  },
  {
@@ -533,7 +533,7 @@
   ],
   "pitch": null,
   "rhythm": 83,
-  "latency": 3.44,
+  "latency": 3.4,
   "leg": "bp-fallback"
  },
  {
@@ -575,7 +575,7 @@
   ],
   "pitch": 100,
   "rhythm": 65,
-  "latency": 0.34,
+  "latency": 0.33,
   "leg": "pyin"
  },
  {
@@ -594,7 +594,7 @@
   ],
   "pitch": 100,
   "rhythm": 88,
-  "latency": 0.55,
+  "latency": 0.54,
   "leg": "pyin"
  },
  {
@@ -623,7 +623,7 @@
   ],
   "pitch": 92,
   "rhythm": 32,
-  "latency": 3.57,
+  "latency": 3.42,
   "leg": "bp-fallback"
  },
  {
@@ -638,14 +638,14 @@
   ],
   "pitch": 100,
   "rhythm": 88,
-  "latency": 3.22,
+  "latency": 3.27,
   "leg": "bp-fallback"
  },
  {
   "id": "dotzauer_b1_no28__33_s0_fast",
   "status": "failed",
   "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-  "latency": 4.52,
+  "latency": 4.45,
   "leg": "bp-fallback"
  },
  {
@@ -659,7 +659,7 @@
   ],
   "pitch": 100,
   "rhythm": 76,
-  "latency": 0.7,
+  "latency": 0.71,
   "leg": "pyin"
  },
  {
@@ -687,12 +687,12 @@
   ],
   "pitch": null,
   "rhythm": null,
-  "latency": 0.58,
+  "latency": 0.59,
   "leg": "pyin"
  },
  {
   "id": "dotzauer_b1_no08__35_slow",
-  "status": "incompatible",
+  "status": "failed",
   "error": "Incomplete fixed excerpt"
  },
  {
@@ -706,7 +706,7 @@
   ],
   "pitch": 92,
   "rhythm": 78,
-  "latency": 0.74,
+  "latency": 0.73,
   "leg": "pyin"
  },
  {
@@ -735,7 +735,7 @@
   ],
   "pitch": null,
   "rhythm": null,
-  "latency": 3.49,
+  "latency": 3.54,
   "leg": "bp-fallback"
  },
  {

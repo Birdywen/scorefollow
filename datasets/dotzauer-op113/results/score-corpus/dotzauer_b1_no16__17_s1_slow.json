@@ -16,7 +16,7 @@
   },
   "status": "scored",
   "result": {
-    "version": "string-mono-0.12",
+    "version": "string-mono-0.13",
     "instrument": "cello",
     "bpm": 112,
     "mode": "fixed-tempo-monophonic",
@@ -24,45 +24,45 @@
       {
         "measure": 6,
         "startSec": 0.0,
-        "endSec": 1.557
+        "endSec": 1.552
       },
       {
         "measure": 7,
-        "startSec": 1.557,
-        "endSec": 5.093
+        "startSec": 1.552,
+        "endSec": 5.1
       },
       {
         "measure": 8,
-        "startSec": 5.093,
-        "endSec": 8.628
+        "startSec": 5.1,
+        "endSec": 8.647
       },
       {
         "measure": 9,
-        "startSec": 8.628,
-        "endSec": 12.279
+        "startSec": 8.647,
+        "endSec": 12.298
       },
       {
         "measure": 10,
-        "startSec": 12.279,
-        "endSec": 17.251
+        "startSec": 12.298,
+        "endSec": 17.198
       },
       {
         "measure": 11,
-        "startSec": 17.251,
-        "endSec": 18.0
+        "startSec": 17.198,
+        "endSec": 17.98
       }
     ],
     "measureSync": null,
     "measureScores": [
       {
         "measure": 6,
-        "pitchScore": 20,
+        "pitchScore": 32,
         "noteCount": 4,
         "scoredNotes": 2
       },
       {
         "measure": 7,
-        "pitchScore": 70,
+        "pitchScore": 75,
         "noteCount": 2,
         "scoredNotes": 3
       },
@@ -92,21 +92,21 @@
       }
     ],
     "syncSuggestion": {
-      "appliedOffsetSec": 0.0,
+      "appliedOffsetSec": -0.02,
       "candidates": [
         {
-          "offsetSec": 0.0,
-          "medianResidualMs": 28,
+          "offsetSec": -0.02,
+          "medianResidualMs": 23,
           "pitchMatchRate": 0.222
         },
         {
-          "offsetSec": -0.06,
-          "medianResidualMs": 73,
+          "offsetSec": 0.04,
+          "medianResidualMs": 61,
           "pitchMatchRate": 0.222
         },
         {
-          "offsetSec": 0.06,
-          "medianResidualMs": 73,
+          "offsetSec": -0.08,
+          "medianResidualMs": 69,
           "pitchMatchRate": 0.222
         }
       ],
@@ -120,51 +120,51 @@
       },
       {
         "measure": 7,
-        "audioSec": 1.557
+        "audioSec": 1.552
       },
       {
         "measure": 8,
-        "audioSec": 5.093
+        "audioSec": 5.1
       },
       {
         "measure": 9,
-        "audioSec": 8.628
+        "audioSec": 8.647
       },
       {
         "measure": 10,
-        "audioSec": 12.279
+        "audioSec": 12.298
       },
       {
         "measure": 11,
-        "audioSec": 17.251
+        "audioSec": 17.198
       },
       {
         "measure": 12,
-        "audioSec": 18.0
+        "audioSec": 17.98
       }
     ],
     "rhythm": {
       "source": "legacy-grid",
       "beats": [
         0.0,
-        0.984,
-        1.968,
-        2.952,
-        3.936,
-        4.92,
-        5.903,
-        6.887,
-        7.871,
-        8.855,
-        9.839,
-        10.823,
-        11.807,
-        12.791,
-        13.775,
-        14.759,
-        15.742,
-        16.726,
-        17.71
+        0.982,
+        1.964,
+        2.946,
+        3.928,
+        4.91,
+        5.892,
+        6.874,
+        7.856,
+        8.838,
+        9.82,
+        10.802,
+        11.784,
+        12.766,
+        13.748,
+        14.73,
+        15.712,
+        16.694,
+        17.676
       ],
       "downbeats": [
         {
@@ -173,23 +173,23 @@
         },
         {
           "measure": 7,
-          "sec": 1.557
+          "sec": 1.552
         },
         {
           "measure": 8,
-          "sec": 5.093
+          "sec": 5.1
         },
         {
           "measure": 9,
-          "sec": 8.628
+          "sec": 8.647
         },
         {
           "measure": 10,
-          "sec": 12.279
+          "sec": 12.298
         },
         {
           "measure": 11,
-          "sec": 17.251
+          "sec": 17.198
         }
       ],
       "phrases": [
@@ -198,20 +198,20 @@
           "startMeasure": 6,
           "endMeasure": 9,
           "startSec": 0.0,
-          "endSec": 12.279
+          "endSec": 12.298
         },
         {
           "index": 2,
           "startMeasure": 10,
           "endMeasure": 11,
-          "startSec": 12.279,
-          "endSec": 18.0
+          "startSec": 12.298,
+          "endSec": 17.98
         }
       ],
       "phraseMeasures": 4
     },
     "summary": {
-      "pitchScore": 80,
+      "pitchScore": 82,
       "intonationScore": 100,
       "pitchToleranceCents": 25.0,
       "timingCandidateNotes": 18,
@@ -233,7 +233,7 @@
       "startMeasure": 6,
       "endMeasure": 11,
       "autoLocated": true,
-      "locationCost": 0.433,
+      "locationCost": 0.376,
       "noteCount": 19,
       "voicedNotes": 14,
       "timedNotes": 9,
@@ -244,15 +244,14 @@
       "coveredSec": 18.0,
       "sensors": [
         "fused-pitch",
-        "qm-onset",
-        "bp-locate"
+        "qm-onset"
       ],
       "degraded": true,
       "degradedReasons": [
         "beat:legacy"
       ],
       "clipped": false,
-      "detectedBpm": 61.0,
+      "detectedBpm": 61.1,
       "tempoMismatch": true,
       "autoMeasureSync": false,
       "octaveShift": null,
@@ -268,9 +267,9 @@
         "onsetBeat": 22.0,
         "durationBeat": 0.75,
         "pitchMidi": 55,
-        "expectedSec": -1.093,
+        "expectedSec": -1.036,
         "performedSec": null,
-        "expectedEndSec": -0.355,
+        "expectedEndSec": -0.3,
         "pitchErrorCents": null,
         "timingErrorMs": null,
         "confidence": 0.0,
@@ -293,9 +292,9 @@
         "onsetBeat": 22.75,
         "durationBeat": 0.25,
         "pitchMidi": 57,
-        "expectedSec": -0.355,
+        "expectedSec": -0.3,
         "performedSec": null,
-        "expectedEndSec": -0.109,
+        "expectedEndSec": -0.054,
         "pitchErrorCents": null,
         "timingErrorMs": null,
         "confidence": 0.0,
@@ -318,12 +317,12 @@
         "onsetBeat": 23.0,
         "durationBeat": 0.75,
         "pitchMidi": 53,
-        "expectedSec": -0.109,
+        "expectedSec": -0.054,
         "performedSec": 0.047,
-        "expectedEndSec": 0.629,
-        "pitchErrorCents": 183.9,
-        "timingErrorMs": 156,
-        "confidence": 0.99,
+        "expectedEndSec": 0.682,
+        "pitchErrorCents": 109.4,
+        "timingErrorMs": 101,
+        "confidence": 0.98,
         "pitchStatus": "sharp",
         "timingStatus": "late",
         "rawPitchErrorCents": null,
@@ -340,11 +339,11 @@
         "onsetBeat": 23.75,
         "durationBeat": 0.25,
         "pitchMidi": 55,
-        "expectedSec": 0.629,
-        "performedSec": 0.597,
-        "expectedEndSec": 0.875,
+        "expectedSec": 0.682,
+        "performedSec": 0.693,
+        "expectedEndSec": 0.928,
         "pitchErrorCents": null,
-        "timingErrorMs": -31,
+        "timingErrorMs": 11,
         "confidence": 0.0,
         "pitchStatus": "uncertain",
         "timingStatus": "correct",
@@ -362,11 +361,11 @@
         "onsetBeat": 24.0,
         "durationBeat": 2.0,
         "pitchMidi": 52,
-        "expectedSec": 0.875,
+        "expectedSec": 0.928,
         "performedSec": 0.885,
-        "expectedEndSec": 2.842,
+        "expectedEndSec": 2.892,
         "pitchErrorCents": null,
-        "timingErrorMs": 10,
+        "timingErrorMs": -43,
         "confidence": 0.0,
         "pitchStatus": "uncertain",
         "timingStatus": "correct",
@@ -384,15 +383,15 @@
         "onsetBeat": 26.0,
         "durationBeat": 2.0,
         "pitchMidi": 53,
-        "expectedSec": 2.842,
+        "expectedSec": 2.892,
         "performedSec": null,
-        "expectedEndSec": 4.81,
-        "pitchErrorCents": 0.6,
+        "expectedEndSec": 4.856,
+        "pitchErrorCents": 0.1,
         "timingErrorMs": null,
         "confidence": 1.03,
         "pitchStatus": "correct",
         "timingStatus": "uncertain",
-        "rawPitchErrorCents": 200.6,
+        "rawPitchErrorCents": 200.1,
         "pitchDisplaced": true,
         "displacedFromMeasure": 6,
         "matchStatus": "matched",
@@ -410,10 +409,10 @@
         "onsetBeat": 28.0,
         "durationBeat": 2.0,
         "pitchMidi": 55,
-        "expectedSec": 4.81,
+        "expectedSec": 4.856,
         "performedSec": null,
-        "expectedEndSec": 6.778,
-        "pitchErrorCents": 3.7,
+        "expectedEndSec": 6.82,
+        "pitchErrorCents": 3.1,
         "timingErrorMs": null,
         "confidence": 1.04,
         "pitchStatus": "correct",
@@ -436,9 +435,9 @@
         "onsetBeat": 32.0,
         "durationBeat": 2.0,
         "pitchMidi": 45,
-        "expectedSec": 8.746,
+        "expectedSec": 8.784,
         "performedSec": null,
-        "expectedEndSec": 10.714,
+        "expectedEndSec": 10.748,
         "pitchErrorCents": 1.1,
         "timingErrorMs": null,
         "confidence": 1.02,
@@ -462,9 +461,9 @@
         "onsetBeat": 34.0,
         "durationBeat": 1.75,
         "pitchMidi": 57,
-        "expectedSec": 10.714,
+        "expectedSec": 10.748,
         "performedSec": null,
-        "expectedEndSec": 12.435,
+        "expectedEndSec": 12.466,
         "pitchErrorCents": 1.1,
         "timingErrorMs": null,
         "confidence": 1.03,
@@ -488,11 +487,11 @@
         "onsetBeat": 35.75,
         "durationBeat": 0.25,
         "pitchMidi": 55,
-        "expectedSec": 12.435,
+        "expectedSec": 12.466,
         "performedSec": 12.319,
-        "expectedEndSec": 12.681,
-        "pitchErrorCents": -168.6,
-        "timingErrorMs": -117,
+        "expectedEndSec": 12.712,
+        "pitchErrorCents": -167.2,
+        "timingErrorMs": -148,
         "confidence": 0.99,
         "pitchStatus": "flat",
         "timingStatus": "early",
@@ -510,12 +509,12 @@
         "onsetBeat": 36.0,
         "durationBeat": 0.75,
         "pitchMidi": 53,
-        "expectedSec": 12.681,
+        "expectedSec": 12.712,
         "performedSec": null,
-        "expectedEndSec": 13.419,
-        "pitchErrorCents": 14.1,
+        "expectedEndSec": 13.448,
+        "pitchErrorCents": 14.3,
         "timingErrorMs": null,
-        "confidence": 1.04,
+        "confidence": 1.03,
         "pitchStatus": "correct",
         "timingStatus": "uncertain",
         "rawPitchErrorCents": null,
@@ -536,12 +535,12 @@
         "onsetBeat": 36.75,
         "durationBeat": 0.25,
         "pitchMidi": 55,
-        "expectedSec": 13.419,
+        "expectedSec": 13.448,
         "performedSec": 13.432,
-        "expectedEndSec": 13.665,
+        "expectedEndSec": 13.694,
         "pitchErrorCents": -266.2,
-        "timingErrorMs": 13,
-        "confidence": 0.92,
+        "timingErrorMs": -16,
+        "confidence": 0.91,
         "pitchStatus": "dropped",
         "timingStatus": "correct",
         "rawPitchErrorCents": null,
@@ -559,10 +558,10 @@
         "onsetBeat": 37.0,
         "durationBeat": 0.75,
         "pitchMidi": 52,
-        "expectedSec": 13.665,
+        "expectedSec": 13.694,
         "performedSec": null,
-        "expectedEndSec": 14.403,
-        "pitchErrorCents": 1.8,
+        "expectedEndSec": 14.43,
+        "pitchErrorCents": 1.9,
         "timingErrorMs": null,
         "confidence": 1.04,
         "pitchStatus": "correct",
@@ -585,11 +584,11 @@
         "onsetBeat": 37.75,
         "durationBeat": 0.25,
         "pitchMidi": 55,
-        "expectedSec": 14.403,
+        "expectedSec": 14.431,
         "performedSec": 14.39,
-        "expectedEndSec": 14.649,
-        "pitchErrorCents": 4.0,
-        "timingErrorMs": -13,
+        "expectedEndSec": 14.676,
+        "pitchErrorCents": 6.9,
+        "timingErrorMs": -41,
         "confidence": 1.02,
         "pitchStatus": "correct",
         "timingStatus": "correct",
@@ -607,11 +606,11 @@
         "onsetBeat": 38.0,
         "durationBeat": 0.75,
         "pitchMidi": 53,
-        "expectedSec": 14.649,
+        "expectedSec": 14.676,
         "performedSec": 14.677,
-        "expectedEndSec": 15.387,
+        "expectedEndSec": 15.413,
         "pitchErrorCents": 2.8,
-        "timingErrorMs": 28,
+        "timingErrorMs": 1,
         "confidence": 1.03,
         "pitchStatus": "correct",
         "timingStatus": "correct",
@@ -629,12 +628,12 @@
         "onsetBeat": 38.75,
         "durationBeat": 0.25,
         "pitchMidi": 50,
-        "expectedSec": 15.387,
+        "expectedSec": 15.413,
         "performedSec": null,
-        "expectedEndSec": 15.633,
+        "expectedEndSec": 15.658,
         "pitchErrorCents": -21.5,
         "timingErrorMs": null,
-        "confidence": 0.94,
+        "confidence": 0.99,
         "pitchStatus": "correct",
         "timingStatus": "uncertain",
         "rawPitchErrorCents": 278.5,
@@ -655,11 +654,11 @@
         "onsetBeat": 39.0,
         "durationBeat": 0.75,
         "pitchMidi": 47,
-        "expectedSec": 15.633,
+        "expectedSec": 15.658,
         "performedSec": 15.647,
-        "expectedEndSec": 16.371,
+        "expectedEndSec": 16.395,
         "pitchErrorCents": null,
-        "timingErrorMs": 14,
+        "timingErrorMs": -11,
         "confidence": 0.0,
         "pitchStatus": "uncertain",
         "timingStatus": "correct",
@@ -677,15 +676,15 @@
         "onsetBeat": 39.75,
         "durationBeat": 0.25,
         "pitchMidi": 45,
-        "expectedSec": 16.371,
+        "expectedSec": 16.395,
         "performedSec": null,
-        "expectedEndSec": 16.617,
-        "pitchErrorCents": 0.5,
+        "expectedEndSec": 16.64,
+        "pitchErrorCents": 0.3,
         "timingErrorMs": null,
         "confidence": 1.04,
         "pitchStatus": "correct",
         "timingStatus": "uncertain",
-        "rawPitchErrorCents": 200.5,
+        "rawPitchErrorCents": 200.3,
         "pitchDisplaced": true,
         "displacedFromMeasure": 10,
         "matchStatus": "matched",
@@ -703,11 +702,11 @@
         "onsetBeat": 40.0,
         "durationBeat": 2.0,
         "pitchMidi": 43,
-        "expectedSec": 16.617,
+        "expectedSec": 16.64,
         "performedSec": 16.796,
-        "expectedEndSec": 18.585,
+        "expectedEndSec": 18.604,
         "pitchErrorCents": 204.2,
-        "timingErrorMs": 179,
+        "timingErrorMs": 156,
         "confidence": 1.03,
         "pitchStatus": "dropped",
         "timingStatus": "late",
@@ -724,7 +723,7 @@
     "limitations": [
       "仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",
       "音高按十二平均律；首音作为时间零点，不计入节奏得分。",
-      "拍点网格与谱面速度口径不一致，已按片段证据校准整体速度为 61.0 BPM；逐音节奏偏差仍按固定速度参考评分。"
+      "拍点网格与谱面速度口径不一致，已按片段证据校准整体速度为 61.1 BPM；逐音节奏偏差仍按固定速度参考评分。"
     ]
   }
 }

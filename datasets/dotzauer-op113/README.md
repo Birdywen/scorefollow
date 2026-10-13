@@ -115,3 +115,21 @@ clips, 1 unmatched skip**. Thus the number of scored clips increased from 20 to
 32; polyphony-related input rejection is eliminated. This is still partial
 scoring coverage, not a note-accuracy benchmark. The earlier counts above record
 the raw-OCR baseline and remain available in commit `6f3fadd`.
+
+## Basic Pitch locate update (string-mono-0.12/0.13)
+
+Auto-location gained an optional Basic Pitch path: note events from an isolated
+venv worker (`SCOREFOLLOW_BP_PYTHON`), reduced to monophonic, tried at the
+full-excerpt align layer and the start-only locate layer, with the pYIN+fused
+order kept as fallback. BP rescued 13 previously unlocatable clips with zero
+regressions: the probes now yield **45 scored, 11 analysis failures,
+7 incompatible clips, 1 unmatched skip** (80.4% of compatible clips).
+
+0.13 switched both layers to pYIN-first: BP runs lazily, only when the pYIN
+full-excerpt alignment is missing or unconfident, and the locate layer tries
+pYIN before BP (fused stays last). Coverage is unchanged at 45 scored with an
+identical scored set; BP subprocess calls drop from 64 to ~26 per corpus run
+and the BP cache is a 64-entry LRU instead of clear-on-16. Evidence and the
+strategy harness live in `results/bp-value/` (`scripts/bp-value.py`).
+`accuracy_claim` remains false: scored growth is location coverage, not a
+note-accuracy benchmark.
