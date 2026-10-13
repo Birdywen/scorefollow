@@ -1,7 +1,7 @@
 {
   "counts": {
-    "scored": 32,
-    "failed": 24,
+    "scored": 45,
+    "failed": 11,
     "incompatible": 7,
     "skipped": 1
   },
@@ -79,9 +79,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no02__03_slow",
@@ -117,9 +115,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no17__05_s0_fast",
@@ -551,9 +547,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no31__19_s1_slow",
@@ -589,9 +583,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no33__20_s1_slow",
@@ -629,9 +621,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no33__20_s3_full",
@@ -649,9 +639,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no06__21_fast",
@@ -761,9 +749,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_noop120_7__25_fast",
@@ -809,9 +795,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no32__27_s0_fast",
@@ -829,9 +813,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no32__27_s1_slow",
@@ -949,9 +931,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no27__32_s1_slow",
@@ -969,9 +949,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no28__33_s0_fast",
@@ -1119,9 +1097,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no23__37_s1_slow",
@@ -1139,9 +1115,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     }
   ]
 }
