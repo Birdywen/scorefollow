@@ -762,6 +762,7 @@ export default function ScoreFollowPage() {
   // 公开谱库推送 Score/: 路径 + 状态(密钥复用直传服务器同一密钥)
   const [scoreBusy, setScoreBusy] = useState(false);
   const [scoreMsg, setScoreMsg] = useState("");
+  const [scoreMsgTone, setScoreMsgTone] = useState<"" | "info" | "success" | "error">("");
   const [scorePath, setScorePath] = useState("");
   // buildPreloadText 在下方定义，bundle 构建经 ref 间接调用（避 TDZ）
   const buildPreloadTextRef = useRef<((useManual?: boolean, includePdf?: boolean) => Promise<string | null>) | null>(null);
@@ -3581,11 +3582,13 @@ export default function ScoreFollowPage() {
   // 落盘即公开可 fetch, 索引页 /scores/ 自动收录, 返回可分享链接并复制。
   const publishToScore = useCallback(async () => {
     if (!analysis || !numPages) {
+      setScoreMsgTone("error");
       setScoreMsg(lang === "zh" ? "先载入并分析谱面" : "Load and analyze a score first");
       return;
     }
     const secret = reportSecret.trim();
     if (!secret) {
+      setScoreMsgTone("error");
       setScoreMsg(lang === "zh" ? "先在上报区填写推送密钥（与直传服务器同一密钥）" : "Enter the upload secret first (same as server upload)");
       return;
     }
@@ -3599,22 +3602,27 @@ export default function ScoreFollowPage() {
     // 兼容旧习惯: 填了 .../曲名.js 就取目录部分
     folder = folder.replace(/\/[^/]+\.js$/i, "");
     if (!/^Score\/[0-9A-Za-z\-_./]{1,110}$/.test(folder) || folder.includes("..") || /\/$/.test(folder)) {
+      setScoreMsgTone("error");
       setScoreMsg(lang === "zh" ? "路径须形如 Score/书名/曲名（字母数字 - _ . /，会自动建文件夹）" : "Path must look like Score/book/piece (a folder is created)");
       return;
     }
     const bpt = buildPreloadTextRef.current;
     if (!bpt) {
+      setScoreMsgTone("error");
       setScoreMsg(lang === "zh" ? "谱面导出失败" : "Export failed");
       return;
     }
+    setScoreMsgTone("info");
     setScoreMsg(lang === "zh" ? "生成校正版/原始版中…" : "Building fixed/auto bundles…");
     const fixedJs = await bpt(true, false).catch(() => null);
     if (!fixedJs) {
+      setScoreMsgTone("error");
       setScoreMsg(lang === "zh" ? "谱面导出失败" : "Export failed");
       return;
     }
     const autoJs = await bpt(false, false).catch(() => null);
     if (!autoJs) {
+      setScoreMsgTone("error");
       setScoreMsg(lang === "zh" ? "原始版导出失败" : "Auto export failed");
       return;
     }
@@ -3635,6 +3643,7 @@ export default function ScoreFollowPage() {
     const path = `${folder}/fixed.js`;
     const metro = readMetroCfg();
     setScoreBusy(true);
+    setScoreMsgTone("info");
     setScoreMsg(lang === "zh" ? "推送公开谱库中…" : "Publishing to library…");
     try {
       const fd = new FormData();
@@ -3664,12 +3673,14 @@ export default function ScoreFollowPage() {
         }
       }
       if (!link) throw new Error(lastErr || "upload rejected");
+      setScoreMsgTone("success");
       setScoreMsg((lang === "zh" ? "已公开：" : "Published: ") + link);
       try {
         await navigator.clipboard.writeText(link);
         setScoreMsg((m) => m + (lang === "zh" ? "（已复制）" : " (copied)"));
       } catch { /* 剪贴板不可用时只展示链接 */ }
     } catch (e) {
+      setScoreMsgTone("error");
       setScoreMsg((lang === "zh" ? "推送失败：" : "Publish failed: ") + (e instanceof Error ? e.message : String(e)));
     } finally {
       setScoreBusy(false);
@@ -4136,7 +4147,7 @@ export default function ScoreFollowPage() {
           <aside id="sf-control-panel" className={`${styles.advpanel} ${styles.controlPanel}`} aria-label={tx("panelBtn")}>
             <div className={styles.pcardHead}><span>{lang === "zh" ? "练习工作台" : "Practice workspace"}</span><button onClick={() => setAdvOpen(false)} aria-label={tx("closePanel")}>×</button></div>
           <div className={styles.pcard}>
-             <div className={styles.pcardTitle}><span>{tx("viewSection")}</span></div>
+             <div className={styles.pcardTitle}><span className={styles.stepNum} aria-hidden="true">1</span><span>{tx("viewSection")}</span></div>
             <div className={styles.pillRow}>
               {([
                  [showSystems, setShowSystems, "systemOverlay"],
@@ -4154,7 +4165,7 @@ export default function ScoreFollowPage() {
               <p className={styles.expertHint}>{lang === "zh" ? "诊断视图 = 全开上方四个覆盖层 + 底栏技术信息(版本/谱距/置信/耗时); 覆盖层只跟四个勾选走" : "Diagnostics = all four overlays above on + technical footer; overlays follow only the four checkboxes"}</p>
             </div>
           <div className={styles.pcard}>
-             <div className={styles.pcardTitle}><span>{tx("modeSection")}</span></div>
+             <div className={styles.pcardTitle}><span className={styles.stepNum} aria-hidden="true">2</span><span>{tx("modeSection")}</span></div>
             <div className={styles.pillRow}>
              {(["fast", "balanced", "scan"] as AnalysisProfileName[]).map((name) => (
                 <label key={name} className={`${styles.pill} ${profileName === name ? styles.pillOn : ""}`}><input type="radio" name="profile" checked={profileName === name} onChange={() => applyProfile(name)} /> {name}</label>
@@ -4172,7 +4183,7 @@ export default function ScoreFollowPage() {
            </div>
           {/* 小节/阈值参数已并入下方高级(开发者)折叠区 */}
           <div className={styles.pcard}>
-             <div className={styles.pcardTitle}><span>{tx("fileSection")}</span></div>
+             <div className={styles.pcardTitle}><span className={styles.stepNum} aria-hidden="true">3</span><span>{tx("fileSection")}</span></div>
             <button className={styles.pfileBtn} onClick={saveTiming}>{tx("saveTiming")}</button>
             <button className={styles.pfileBtn} onClick={() => void savePreload()}>{tx("savePreload")}</button>
             <div className={styles.pillRow}>
@@ -4191,7 +4202,7 @@ export default function ScoreFollowPage() {
                 {lang === "zh" ? "公开谱库" : "Library"}
               </a>
             </div>
-            {scoreMsg && <p className={styles.expertHint}>{scoreMsg}</p>}
+            {scoreMsg && <p role="status" className={`${styles.statusChip} ${scoreMsgTone === "error" ? styles.statusChipError : scoreMsgTone === "success" ? styles.statusChipSuccess : ""}`}>{scoreMsg}</p>}
             <label className={styles.pfileBtn}>{tx("loadTiming")} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTiming(f); }} /></label>
             <label className={styles.pfileBtn}>{tx("loadPreload")} <input type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); }} /></label>
             <label className={styles.pfileBtn} title={lang === "zh" ? "载入 scripts/homr-gate.py 生成的门数据(本地 HoMR 音符模板, 否决符干)" : "Load gate data from scripts/homr-gate.py (local HoMR note templates, veto stems)"}>{lang === "zh" ? "载入门数据" : "Load gate"} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadHomrGate(f); e.target.value = ""; }} /></label>
@@ -4203,7 +4214,7 @@ export default function ScoreFollowPage() {
              <p className={styles.expertHint}>{lang === "zh" ? `${numPages} 页 · ${correctedPages} 页校正 · ${tapCount} 个同步点 · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "包含" : "不包含"}` : `${numPages} pages · ${correctedPages} corrected · ${tapCount} sync points · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "included" : "excluded"}`}</p>
           </div>
           <details className={styles.pcard} open={expertOpen} onToggle={(e) => { const o = (e.target as HTMLDetailsElement).open; setExpertOpen(o); try { localStorage.setItem("sf-expert-open", o ? "1" : "0"); } catch { /* ignore */ } }}>
-             <summary className={styles.pcardTitle}><span>{tx("expertSection")} · {tx("expertDev")}</span><span>›</span></summary>
+             <summary className={styles.pcardTitle}><span className={styles.stepNum} aria-hidden="true">4</span><span>{tx("expertSection")} · {tx("expertDev")}</span><span className={styles.pcardCaret} aria-hidden="true">›</span></summary>
              <p className={styles.expertHint}>{lang === "zh" ? "仅在识别困难时调整；修改后会重新分析谱面。" : "Adjust only when recognition needs tuning; changes rerun analysis."}</p>
              <div className={styles.pcardTitle}>{tx("timingSection")}</div>
              {(["drmpl", "drmpl2", "dx"] as const).map((k) => (
