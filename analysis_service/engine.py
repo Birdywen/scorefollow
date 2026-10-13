@@ -17,7 +17,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.10"
+VERSION = "string-mono-0.11"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -135,7 +135,7 @@ def parse_score(xml: str) -> list[dict]:
                     alter = int(alter)
                     accidentals[(name, octave)] = alter
                 else:
-                    accidental = pitch.findtext("./{*}accidental")
+                    accidental = item.findtext("./{*}accidental")
                     if accidental is None:
                         alter = accidentals.get((name, octave), key_alter.get(name, 0))
                     else:

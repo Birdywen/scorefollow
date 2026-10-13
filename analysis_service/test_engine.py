@@ -193,6 +193,20 @@ class EngineTests(unittest.TestCase):
         result = parse_score(xml)
         self.assertEqual([n["pitchMidi"] for n in result], [66, 73, 67])
 
+    def test_accidental_on_note_without_alter(self):
+        # 标准写法: <accidental> 是 <note> 的子元素; 只写记号不写 alter 时按记号读, 同小节延续, 过小节线回到调号。
+        xml = ('<score-partwise><part id="P1">'
+               '<measure number="1"><attributes><divisions>1</divisions>'
+               '<key><fifths>-1</fifths></key></attributes>'
+               '<note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration>'
+               '<accidental>natural</accidental></note>'
+               '<note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration></note>'
+               '</measure><measure number="2">'
+               '<note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration></note>'
+               '</measure></part></score-partwise>')
+        result = parse_score(xml)
+        self.assertEqual([n["pitchMidi"] for n in result], [71, 71, 70])
+
     def test_explicit_natural_carries_within_measure_then_key_returns(self):
         # 同小节内还原号延续, 过小节线回到调号。
         xml = ('<score-partwise><part id="P1">'
