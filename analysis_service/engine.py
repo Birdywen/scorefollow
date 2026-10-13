@@ -17,7 +17,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.9"
+VERSION = "string-mono-0.10"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -864,6 +864,12 @@ def _select_grid_phase(beats: np.ndarray, med: float, anchor: int, notes: list,
     return best if agree[best] - runner >= 0.15 else 0.0
 
 
+def _fused_locate_events(signal, rate):
+    """Optional onset+pitch-track events for the locate fallback; None without vamp."""
+    from .vamp_features import extract_fused_events
+    return extract_fused_events(signal, rate)
+
+
 def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: int = 1,
             first_beat_audio_sec: float | None = None, sync_mode: str = "legacy",
             pitch_notes: list | None = None, onset_hint: list | None = None,
@@ -940,6 +946,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     location_cost = None
     alignment = None
     boundary_conflict = False
+    fused_locate = False
     if auto_located:
         if sync_mode == "metronome" or first_beat_audio_sec is not None:
             raise ValueError("自动定位仅支持未同步的单声部录音")
@@ -971,8 +978,21 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             index, location_cost = excerpt["start"], excerpt["cost"]
             notes = score_notes[alignment["start"]: alignment["end"] + 1]
         else:
-            index, location_cost = locate_excerpt(score_notes, reliable_events,
-                                                  beat_map=beat_map if sync_mode == "vamp-beat" else None)
+            locate_beats = beat_map if sync_mode == "vamp-beat" else None
+            try:
+                index, location_cost = locate_excerpt(score_notes, reliable_events, beat_map=locate_beats)
+            except ValueError as first_error:
+                # pYIN's note tracker merges fast passages (16ths); retry once with
+                # QM-onset segments + pYIN frame pitch under the same gates. The
+                # original error survives if the fused events cannot locate either.
+                fused = _fused_locate_events(signal, rate)
+                if not fused:
+                    raise
+                try:
+                    index, location_cost = locate_excerpt(score_notes, fused, beat_map=locate_beats)
+                except ValueError:
+                    raise first_error from None
+                fused_locate = True
             notes = score_notes[index:]
         if not notes:
             raise ValueError("录音不足以覆盖所选开始小节")
@@ -1329,6 +1349,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 measure_intervals.append({"measure": measure, "startSec": round(lo, 3), "endSec": round(hi, 3)})
     clipped = raw_clipped  # 归一化前测得, 见 read_wav 调用处
     sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
+    if fused_locate:
+        sensors.append("fused-locate")
     # Optional-plugin degradation is explicit in the payload (not logs only),
     # derived from effective detector availability after engine guards
     # (single-note pitch guard, beat_map length/tempo filtering). Beat counts

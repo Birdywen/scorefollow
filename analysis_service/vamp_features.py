@@ -84,6 +84,58 @@ def extract_all(wav: bytes) -> tuple:
     return extract_pitch_notes(wav), extract_onsets(wav), extract_beats(wav)
 
 
+FUSED_ONSET_SENSITIVITY = 20
+FUSED_MAX_SEGMENT = 0.6
+_FUSED_CACHE: dict = {}
+
+
+def extract_fused_events(signal, rate, sensitivity: int = FUSED_ONSET_SENSITIVITY) -> list | None:
+    """QM onsets segment + pYIN smoothed pitch track (median per segment) ->
+    [(start_sec, end_sec, midi)]. Recovers fast passages that pYIN's note
+    tracker merges; adjacent segments within half a semitone are merged
+    (re-bow / vibrato splits). None when unavailable."""
+    try:
+        import hashlib
+        import numpy as np
+        import vamp
+        x = _load(signal, rate)
+        key = (hashlib.blake2b(x.tobytes(), digest_size=16).digest(), int(rate), int(sensitivity))
+        if key in _FUSED_CACHE:
+            return _FUSED_CACHE[key]
+        step, track = vamp.collect(x, rate, "pyin:pyin", output="smoothedpitchtrack",
+                                   parameters={"outputunvoiced": 2})["vector"]
+        step = float(step.to_float() if hasattr(step, "to_float") else step)
+        f = np.asarray(track, dtype=float)
+        duration = len(x) / rate
+        # outputunvoiced=2 keeps every frame (unvoiced <= 0): index * step is time.
+        if step <= 0 or abs(len(f) * step - duration) > 0.05 * duration + 0.1:
+            raise ValueError("pitch track frames misaligned")
+        t = np.arange(len(f)) * step
+        res = vamp.collect(x, rate, "qm-vamp-plugins:qm-onsetdetector", output="onsets",
+                           parameters={"sensitivity": sensitivity})
+        onsets = sorted(float(o["timestamp"]) for o in res["list"])
+        events = []
+        bounds = onsets + [duration]
+        for a, b in zip(bounds, bounds[1:]):
+            b = min(b, a + FUSED_MAX_SEGMENT)
+            mask = (t >= a + 0.01) & (t < b) & (f > 0)
+            if mask.sum() < 3:
+                continue
+            midi = float(np.median(69 + 12 * np.log2(f[mask] / 440.0)))
+            if events and abs(events[-1][2] - midi) < 0.5 and a - events[-1][1] < 0.05:
+                events[-1] = (events[-1][0], b, events[-1][2])
+                continue
+            events.append((a, b, midi))
+        out = events or None
+        if len(_FUSED_CACHE) >= 4:
+            _FUSED_CACHE.clear()
+        _FUSED_CACHE[key] = out
+        return out
+    except Exception as e:
+        logging.warning(f"extract_fused_events 降级: {e}")
+        return None
+
+
 def degradation_reasons(pitch_notes=None, onset_hint=None, beat_map=None,
                         beat_requested: bool = True, beat_rejected: bool = False) -> list:
     """Explicit optional-plugin degradation, derived from live detector outputs.
