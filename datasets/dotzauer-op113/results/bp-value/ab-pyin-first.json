@@ -1,0 +1,756 @@
+[
+ {
+  "id": "dotzauer_b1_no03__00_s0_fast",
+  "status": "scored",
+  "start": 13,
+  "cost": 0.281,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 94,
+  "rhythm": 80,
+  "latency": 0.8,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no03__00_s1_slow",
+  "status": "scored",
+  "start": 6,
+  "cost": 0.185,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 87,
+  "latency": 0.35,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no09__01_slow",
+  "status": "scored",
+  "start": 14,
+  "cost": 0.247,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 85,
+  "latency": 0.43,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no17__02_slow",
+  "status": "scored",
+  "start": 22,
+  "cost": 0.527,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 94,
+  "rhythm": 43,
+  "latency": 0.33,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no02__03_slow",
+  "status": "scored",
+  "start": 21,
+  "cost": 0.063,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 79,
+  "latency": 0.5,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no03__04_slow",
+  "status": "scored",
+  "start": 24,
+  "cost": 0.113,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "fused-locate"
+  ],
+  "pitch": 95,
+  "rhythm": 73,
+  "latency": 1.64,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no17__05_s0_fast",
+  "status": "scored",
+  "start": 14,
+  "cost": 0.335,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 86,
+  "latency": 0.33,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no17__05_s1_slow",
+  "status": "scored",
+  "start": 12,
+  "cost": 0.287,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 31,
+  "rhythm": 80,
+  "latency": 0.31,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no34__06_s0_fast",
+  "status": "incompatible",
+  "error": "反复/跳房子须先展开为顺序谱"
+ },
+ {
+  "id": "dotzauer_b1_no34__06_s1_slow",
+  "status": "incompatible",
+  "error": "反复/跳房子须先展开为顺序谱"
+ },
+ {
+  "id": "dotzauer_b1_no05__07_fast",
+  "status": "scored",
+  "start": 30,
+  "cost": 0.33,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 97,
+  "rhythm": 82,
+  "latency": 0.63,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no01__08_slow",
+  "status": "scored",
+  "start": 12,
+  "cost": 0.11,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 90,
+  "latency": 0.32,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no01__09_s0_fast",
+  "status": "scored",
+  "start": 12,
+  "cost": 0.111,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 90,
+  "latency": 0.35,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no01__09_s1_slow",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 2.47,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no11__10_s0_fast",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 2.54,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no11__10_s1_slow",
+  "status": "scored",
+  "start": 8,
+  "cost": 0.34,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 63,
+  "latency": 0.32,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no11__10_s2_full",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 2.49,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no15__11_s0_fast",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 6.22,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no15__11_s1_slow",
+  "status": "scored",
+  "start": 11,
+  "cost": 0.223,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": null,
+  "rhythm": null,
+  "latency": 0.77,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no20__12_fast",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 5.2,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no22__13_s0_fast",
+  "status": "incompatible",
+  "error": "中途变拍暂不支持，请按拍号分段分析"
+ },
+ {
+  "id": "dotzauer_b1_no22__13_s1_slow",
+  "status": "incompatible",
+  "error": "中途变拍暂不支持，请按拍号分段分析"
+ },
+ {
+  "id": "dotzauer_b1_no26__14_slow",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 2.38,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no12__15_s0_slow",
+  "status": "scored",
+  "start": 9,
+  "cost": 0.184,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 58,
+  "latency": 0.26,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no12__15_s1_full",
+  "status": "scored",
+  "start": 11,
+  "cost": 0.183,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 97,
+  "rhythm": 82,
+  "latency": 0.27,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no12__15_s2_fast",
+  "status": "scored",
+  "start": 16,
+  "cost": 0.165,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": null,
+  "rhythm": 76,
+  "latency": 0.37,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no13__16_fast",
+  "status": "scored",
+  "start": 36,
+  "cost": 0.524,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 97,
+  "rhythm": 87,
+  "latency": 0.7,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no16__17_s0_fast",
+  "status": "scored",
+  "start": 6,
+  "cost": 0.38,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 59,
+  "rhythm": null,
+  "latency": 0.51,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no16__17_s1_slow",
+  "status": "scored",
+  "start": 6,
+  "cost": 0.376,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 82,
+  "rhythm": null,
+  "latency": 0.3,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no22__18_s0_fast",
+  "status": "incompatible",
+  "error": "中途变拍暂不支持，请按拍号分段分析"
+ },
+ {
+  "id": "dotzauer_b1_no22__18_s1_slow",
+  "status": "incompatible",
+  "error": "中途变拍暂不支持，请按拍号分段分析"
+ },
+ {
+  "id": "dotzauer_b1_no31__19_s0_fast",
+  "status": "scored",
+  "start": 36,
+  "cost": 0.088,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "bp-locate"
+  ],
+  "pitch": null,
+  "rhythm": 84,
+  "latency": 3.82,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no31__19_s1_slow",
+  "status": "scored",
+  "start": 11,
+  "cost": 0.282,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": null,
+  "rhythm": 59,
+  "latency": 0.47,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no33__20_s0_fast",
+  "status": "scored",
+  "start": 24,
+  "cost": 0.216,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "bp-locate"
+  ],
+  "pitch": 86,
+  "rhythm": 88,
+  "latency": 3.66,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no33__20_s1_slow",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 2.88,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no33__20_s2_full",
+  "status": "scored",
+  "start": 10,
+  "cost": 0.668,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 87,
+  "latency": 0.49,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no33__20_s3_full",
+  "status": "scored",
+  "start": 13,
+  "cost": 0.299,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "fused-locate"
+  ],
+  "pitch": null,
+  "rhythm": null,
+  "latency": 2.51,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no06__21_fast",
+  "status": "scored",
+  "start": 19,
+  "cost": 0.248,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 99,
+  "rhythm": 83,
+  "latency": 0.63,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no07__22_s0_slow",
+  "status": "scored",
+  "start": 8,
+  "cost": 0.039,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 28,
+  "rhythm": 66,
+  "latency": 0.24,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no07__22_s1_full",
+  "status": "scored",
+  "start": 10,
+  "cost": 0.037,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 35,
+  "rhythm": null,
+  "latency": 0.24,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no07__22_s2_fast",
+  "status": "scored",
+  "start": 13,
+  "cost": 0.108,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 82,
+  "latency": 0.25,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no10__23_slow",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 2.34,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no14__24_slow",
+  "status": "scored",
+  "start": 26,
+  "cost": 0.709,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "bp-locate"
+  ],
+  "pitch": null,
+  "rhythm": 4,
+  "latency": 2.62,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_noop120_7__25_fast",
+  "status": "skipped"
+ },
+ {
+  "id": "dotzauer_b1_no25__26_s0_fast",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 6.19,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no25__26_s1_slow",
+  "status": "scored",
+  "start": 8,
+  "cost": 0.78,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": null,
+  "rhythm": 74,
+  "latency": 0.83,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no32__27_s0_fast",
+  "status": "scored",
+  "start": 22,
+  "cost": 0.384,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "bp-locate"
+  ],
+  "pitch": null,
+  "rhythm": 83,
+  "latency": 3.44,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no32__27_s1_slow",
+  "status": "scored",
+  "start": 7,
+  "cost": 0.503,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": null,
+  "rhythm": null,
+  "latency": 0.38,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no12__28_fast",
+  "status": "scored",
+  "start": 28,
+  "cost": 0.156,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 97,
+  "rhythm": 85,
+  "latency": 0.44,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no16__29_slow",
+  "status": "scored",
+  "start": 13,
+  "cost": 0.458,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 65,
+  "latency": 0.34,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no19__30_fast",
+  "status": "incompatible",
+  "error": "反复/跳房子须先展开为顺序谱"
+ },
+ {
+  "id": "dotzauer_b1_no21__31_s0_fast",
+  "status": "scored",
+  "start": 16,
+  "cost": 0.117,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 88,
+  "latency": 0.55,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no21__31_s1_slow",
+  "status": "scored",
+  "start": 11,
+  "cost": 0.17,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 19,
+  "rhythm": null,
+  "latency": 0.37,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no27__32_s0_fast",
+  "status": "scored",
+  "start": 26,
+  "cost": 0.171,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "bp-locate"
+  ],
+  "pitch": 92,
+  "rhythm": 32,
+  "latency": 3.57,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no27__32_s1_slow",
+  "status": "scored",
+  "start": 15,
+  "cost": 0.082,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "bp-locate"
+  ],
+  "pitch": 100,
+  "rhythm": 88,
+  "latency": 3.22,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no28__33_s0_fast",
+  "status": "failed",
+  "error": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+  "latency": 4.52,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no28__33_s1_slow",
+  "status": "scored",
+  "start": 8,
+  "cost": 0.257,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 100,
+  "rhythm": 76,
+  "latency": 0.7,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no29__34_s0_fast",
+  "status": "scored",
+  "start": 36,
+  "cost": 0.34,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 97,
+  "rhythm": 90,
+  "latency": 1.15,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no29__34_s1_slow",
+  "status": "scored",
+  "start": 13,
+  "cost": 0.168,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": null,
+  "rhythm": null,
+  "latency": 0.58,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no08__35_slow",
+  "status": "incompatible",
+  "error": "Incomplete fixed excerpt"
+ },
+ {
+  "id": "dotzauer_b1_no04__36_s0_fast",
+  "status": "scored",
+  "start": 20,
+  "cost": 0.458,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": 92,
+  "rhythm": 78,
+  "latency": 0.74,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no04__36_s1_slow",
+  "status": "scored",
+  "start": 14,
+  "cost": 0.109,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset"
+  ],
+  "pitch": null,
+  "rhythm": null,
+  "latency": 0.45,
+  "leg": "pyin"
+ },
+ {
+  "id": "dotzauer_b1_no23__37_s0_fast",
+  "status": "scored",
+  "start": 33,
+  "cost": 0.169,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "bp-locate"
+  ],
+  "pitch": null,
+  "rhythm": null,
+  "latency": 3.49,
+  "leg": "bp-fallback"
+ },
+ {
+  "id": "dotzauer_b1_no23__37_s1_slow",
+  "status": "scored",
+  "start": 13,
+  "cost": 0.191,
+  "sensors": [
+   "fused-pitch",
+   "qm-onset",
+   "fused-locate"
+  ],
+  "pitch": 24,
+  "rhythm": null,
+  "latency": 1.01,
+  "leg": "pyin"
+ }
+]
