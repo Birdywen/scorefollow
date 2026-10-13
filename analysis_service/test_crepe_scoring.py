@@ -1,8 +1,10 @@
-"""CREPE second opinion for scoring (string-mono-0.14).
+"""CREPE second opinion for scoring (string-mono-0.14, lazy + crop).
 
-Gap-fill only: a missing pYIN reading takes the CREPE median, an existing
-pYIN reading is always kept and crepeCents is recorded for audit.
-Probe basis: CREPE err 1-6c vs BP bend 23-60c on detuned sines.
+Gap-fill only, and only where pYIN missed: full pYIN coverage means zero
+CREPE calls. A missing pYIN reading takes the CREPE median over its merged
+crop window; an existing pYIN reading is always kept. Probe basis: full
+model err 1-6c vs BP bend 23-60c on detuned sines (tiny 17x faster but
+blind at A4-30c with 16c err, so crops stay on full).
 """
 import os
 import subprocess
@@ -129,32 +131,57 @@ class CrepeWorkerTests(unittest.TestCase):
 
 
 class CrepeEndToEndTests(unittest.TestCase):
-    def test_detuned_keeps_pyin_score_with_crepe_audit(self):
-        if not os.path.exists(CREPE_PYTHON):
-            self.skipTest("crepevenv not installed")
+    def test_detuned_pyin_unchanged_and_crepe_never_runs(self):
         E._CREPE_CACHE.clear()
         self.addCleanup(E._CREPE_CACHE.clear)
         fix = build_detuned()
-        with patch.dict(os.environ, {"SCOREFOLLOW_CREPE_PYTHON": CREPE_PYTHON}):
+        with patch.dict(os.environ, {"SCOREFOLLOW_CREPE_PYTHON": CREPE_PYTHON}), \
+                patch.object(E, "_crepe_track",
+                             side_effect=AssertionError("lazy: no gaps, no run")):
             result = analyze(fix["wav"], fix["xml"], fix["bpm"], fix["instrument"])
         target = next(n for n in result["notes"] if n["id"] == "n3")
         self.assertAlmostEqual(target["pitchErrorCents"], 60.0, delta=PITCH_CENTS_TOL)
-        self.assertIsNotNone(target["crepeCents"])
-        self.assertAlmostEqual(target["crepeCents"], 60.0, delta=CREPE_AUDIT_TOL)
+        self.assertTrue(all(n["crepeCents"] is None for n in result["notes"]))
         self.assertEqual(target["pitchStatus"], "sharp")
 
-    def test_clean_audit_agrees_with_pyin(self):
-        if not os.path.exists(CREPE_PYTHON):
-            self.skipTest("crepevenv not installed")
+    def test_silenced_note_gap_filled_from_crop(self):
+        import io as _io
+        import wave as _wave
+        from .golden_fixtures import (FIXTURE_PITCHES, NOMINAL_FIRST_ONSET_SEC,
+                                      NOTE_LENGTH_SEC, NOTE_SPACING_SEC,
+                                      SAMPLE_RATE, _encode_wav)
         E._CREPE_CACHE.clear()
         self.addCleanup(E._CREPE_CACHE.clear)
-        fix = build_clean()
-        with patch.dict(os.environ, {"SCOREFOLLOW_CREPE_PYTHON": CREPE_PYTHON}):
-            result = analyze(fix["wav"], fix["xml"], fix["bpm"], fix["instrument"])
-        for note in result["notes"]:
-            if note["pitchErrorCents"] is not None:
-                self.assertIsNotNone(note["crepeCents"])
-                self.assertAlmostEqual(note["crepeCents"], note["pitchErrorCents"], delta=CREPE_AUDIT_TOL)
+        fix = build_detuned()
+        with _wave.open(_io.BytesIO(fix["wav"]), "rb") as handle:
+            pcm = (np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
+                   .astype(np.float32) / 32767.0)
+        gap_index = 2
+        start = int((NOMINAL_FIRST_ONSET_SEC + gap_index * NOTE_SPACING_SEC) * SAMPLE_RATE)
+        pcm[start:start + int(NOTE_LENGTH_SEC * SAMPLE_RATE)] = 0.0
+        silenced = _encode_wav(pcm)
+        calls = []
+
+        def fake_crepe_track(signal, rate):
+            calls.append(len(signal))
+            n = max(8, int(len(signal) / rate * 172.0))
+            times = np.arange(n, dtype=np.float64) / 172.0
+            return (times, np.full(n, FIXTURE_PITCHES[gap_index] + 0.6),
+                    np.full(n, 0.9))
+
+        with patch.dict(os.environ, {"SCOREFOLLOW_CREPE_PYTHON": CREPE_PYTHON}), \
+                patch.object(E, "_crepe_track", side_effect=fake_crepe_track):
+            result = analyze(silenced, fix["xml"], fix["bpm"], fix["instrument"])
+        self.assertEqual(len(calls), 1)
+        self.assertLess(calls[0], len(pcm))
+        target = next(n for n in result["notes"] if n["id"] == "n3")
+        self.assertAlmostEqual(target["pitchErrorCents"], 60.0, delta=PITCH_CENTS_TOL)
+        self.assertAlmostEqual(target["crepeCents"], 60.0, delta=PITCH_CENTS_TOL)
+        self.assertEqual(target["matchStatus"], "matched")
+        self.assertEqual(target["pitchStatus"], "sharp")
+        others = [n for n in result["notes"] if n["id"] != "n3"]
+        self.assertTrue(all(n["crepeCents"] is None for n in others))
+        self.assertTrue(all(abs(n["pitchErrorCents"]) <= PITCH_CENTS_TOL for n in others))
 
     def test_no_env_is_013_parity(self):
         E._CREPE_CACHE.clear()
