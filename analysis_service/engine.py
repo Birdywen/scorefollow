@@ -943,6 +943,84 @@ def _bp_locate_events(signal, rate):
     return events
 
 
+CREPE_TIMEOUT_SEC = 240
+CREPE_VOICING_MIN = 0.5
+CREPE_MIN_FRAMES = 4
+_CREPE_CACHE_CAP = 16
+_CREPE_CACHE: OrderedDict = OrderedDict()
+
+
+def _crepe_track(signal, rate):
+    """Optional TorchCREPE f0 track for scoring second opinion. None unless
+    SCOREFOLLOW_CREPE_PYTHON names a venv interpreter with torchcrepe; any
+    failure or timeout -> None, so scoring falls back to pYIN exactly as in
+    0.13. Returns (times, midi, voicing) float arrays or None."""
+    import os
+    python = os.environ.get('SCOREFOLLOW_CREPE_PYTHON', '').strip()
+    if not python:
+        return None
+    import hashlib
+    import json
+    import subprocess
+    import tempfile
+    x = np.ascontiguousarray(signal, dtype=np.float32)
+    key = (hashlib.blake2b(x.tobytes(), digest_size=16).digest(), int(rate))
+    if key in _CREPE_CACHE:
+        _CREPE_CACHE.move_to_end(key)
+        return _CREPE_CACHE[key]
+    track = None
+    try:
+        worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'crepe_worker.py')
+        with tempfile.TemporaryDirectory(prefix='sf-crepe-') as tmp:
+            wav_path = os.path.join(tmp, 'in.wav')
+            out_path = os.path.join(tmp, 'out.json')
+            pcm = (np.clip(x, -1.0, 1.0) * 32767).astype('<i2').tobytes()
+            with wave.open(wav_path, 'wb') as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(int(rate))
+                handle.writeframes(pcm)
+            subprocess.run([python, '-I', '-B', worker, wav_path, out_path], cwd=tmp,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=CREPE_TIMEOUT_SEC, check=True)
+            with open(out_path, encoding='utf-8') as handle:
+                raw = json.load(handle)
+        times = np.asarray(raw.get('times'), dtype=np.float64)
+        midi = np.asarray(raw.get('midi'), dtype=np.float64)
+        voicing = np.asarray(raw.get('voicing'), dtype=np.float64)
+        if times.ndim == 1 and midi.shape == times.shape and voicing.shape == times.shape and len(times) >= 8:
+            track = (times, midi, voicing)
+    except Exception:
+        track = None
+    _CREPE_CACHE[key] = track
+    while len(_CREPE_CACHE) > _CREPE_CACHE_CAP:
+        _CREPE_CACHE.popitem(last=False)
+    return track
+
+
+def _apply_crepe_opinion(cents, detected, quality, pitch_midi, window, crepe_track):
+    """CREPE second opinion for one scored note. window is (lo, hi) seconds or
+    (None, None). Returns (cents, detected, quality, crepe_cents).
+    v1 policy: gap-fill only -- a missing pYIN reading takes the CREPE median
+    (>= 4 voiced frames); an existing pYIN reading is always kept and
+    crepe_cents is recorded for audit. Probes: CREPE err 1-6c vs BP bend
+    23-60c on detuned sines, so CREPE is the trustworthy filler."""
+    crepe_cents = None
+    crepe_median = None
+    crepe_quality = 0.0
+    if crepe_track is not None and window[0] is not None and window[1] is not None:
+        times, midi, voicing = crepe_track
+        lo, hi = window
+        sel = (times >= lo) & (times <= hi) & np.isfinite(midi) & (voicing >= CREPE_VOICING_MIN)
+        if int(np.count_nonzero(sel)) >= CREPE_MIN_FRAMES:
+            crepe_median = float(np.median(midi[sel]))
+            crepe_cents = round((crepe_median - pitch_midi) * 100, 1)
+            crepe_quality = round(float(np.median(voicing[sel])), 2)
+    if cents is None and crepe_cents is not None:
+        cents, detected, quality = crepe_cents, crepe_median, crepe_quality
+    return cents, detected, quality, crepe_cents
+
+
 def _fused_locate_events(signal, rate):
     """Optional onset+pitch-track events for the locate fallback; None without vamp."""
     from .vamp_features import extract_fused_events
@@ -1243,6 +1321,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     drift_obs: list[tuple[float, float]] = []
     last_onset = -1.0
     prev_duration: float | None = None
+    # CREPE 二诊: 缺测音符 gap-fill + 全音符 audit, env 未设时为 None 零开销。
+    crepe_track = _crepe_track(signal, rate)
 
     def predicted_drift(at: float) -> float:
         if beat_time is not None or not drift_obs:
@@ -1308,6 +1388,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             nxt = min((t for t in onsets if t > onset + 0.05), default=None)
             if nxt is not None:
                 hi_edge = min(hi_edge, nxt - 0.03)
+        crepe_lo, crepe_hi = None, None
         mask = (times >= ref + skip) & (times <= hi_edge)
         valid = mask & np.isfinite(pitches) & (confidence >= 0.7)
         if beat_time is not None and pitch_notes:
@@ -1336,17 +1417,21 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 if shifted:
                     lo = max(lo, expected + duration * 0.35)
                 hi = min(hi, note_end)
+                crepe_lo, crepe_hi = lo, hi
                 svalid = (times >= lo) & (times <= hi) & np.isfinite(pitches) & (confidence >= 0.7)
                 if np.count_nonzero(svalid) >= 4:
                     detected = float(np.median(pitches[svalid]))
                     cents = round((detected - note["pitchMidi"]) * 100, 1)
                     quality = round(float(np.median(confidence[svalid])), 2)
         else:
+            crepe_lo, crepe_hi = ref + skip, hi_edge
             detected = float(np.median(pitches[valid])) if np.count_nonzero(valid) >= 4 else None
             cents = round((detected - note["pitchMidi"]) * 100, 1) if detected is not None else None
             quality = round(float(np.median(confidence[valid])), 2) if cents is not None else 0.0
         # 节奏优先归因: 本窗超差但邻音 (±4 音/±6 拍) 匹配时, 音准按邻音判对,
         # 错位由计时误差在节奏侧扣分 (小节错位是节奏错, 不是音准错)。
+        cents, detected, quality, crepe_cents = _apply_crepe_opinion(
+            cents, detected, quality, note["pitchMidi"], (crepe_lo, crepe_hi), crepe_track)
         raw_cents, displaced, displaced_from = None, False, None
         if cents is not None and detected is not None and abs(cents) > pitch_tolerance_cents:
             # 起音落在本音自己的位置 (偏差 <= max(80 ms, 25% 时值)) 时音高窗测的就是本音:
@@ -1379,7 +1464,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             "timing_uncertain" if timing_eligible and delta is None else timing_status if timing_status in ("late", "early") else "correct"
         aligned.append({**note, "expectedSec": round(expected, 3), "performedSec": round(onset, 3) if onset is not None else None,
                         "expectedEndSec": round(expected + duration, 3),
-                        "pitchErrorCents": cents, "timingErrorMs": delta if timing_eligible else None,
+                        "pitchErrorCents": cents, "crepeCents": crepe_cents, "timingErrorMs": delta if timing_eligible else None,
                         "confidence": quality, "pitchStatus": pitch_status, "timingStatus": timing_status,
                         "rawPitchErrorCents": raw_cents, "pitchDisplaced": displaced,
                         "displacedFromMeasure": displaced_from,
