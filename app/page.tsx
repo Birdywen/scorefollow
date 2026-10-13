@@ -10,6 +10,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 // 静态部署 basePath（next.config.ts 保持同步；root 构建时由 NEXT_PUBLIC_SF_BASE="" 覆盖）
 const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
+// 分析跟随光标提前量(秒): 小节起点来自检波器事件，实测理想起音下
+// pYIN 约晚 35ms、Basic Pitch 约晚 12ms，叠加约 1 帧渲染延迟；
+// 分析数据跟随载入时整体提前，影子不再慢半拍。
+// 只用于分析数据跟随(TAP/手动同步点/整态恢复不走这里)。
+const FOLLOW_LEAD_SEC = 0.035;
 import {
   analyzePage,
   clearPageCache,
@@ -4109,7 +4114,7 @@ export default function ScoreFollowPage() {
             if (!w.measures.length) return lang === "zh" ? "谱面尚未分析出小节" : "Score measures not analyzed yet";
             const entries = (starts ?? [])
               .filter((s) => Number.isInteger(s.measure) && s.measure >= 1 && Number.isFinite(s.startSec) && s.startSec >= 0)
-              .map((s) => ({ t: Math.round(s.startSec * 1000) / 1000, mix: s.measure - 1 }))
+              .map((s) => ({ t: Math.max(0, Math.round((s.startSec - FOLLOW_LEAD_SEC) * 1000) / 1000), mix: s.measure - 1 }))
               .filter((e) => e.mix < w.measures.length);
             if (entries.length < 2) return lang === "zh" ? "可用小节起点不足" : "Not enough usable measure starts";
             for (let i = 1; i < entries.length; i++) {
