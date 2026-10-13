@@ -17,7 +17,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.11"
+VERSION = "string-mono-0.12"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -864,6 +864,82 @@ def _select_grid_phase(beats: np.ndarray, med: float, anchor: int, notes: list,
     return best if agree[best] - runner >= 0.15 else 0.0
 
 
+BP_TIMEOUT_SEC = 30
+_BP_CACHE: dict = {}
+
+
+def bp_monophonic(notes, window: float = 0.05, head: float = 0.05) -> list:
+    """Basic Pitch notes -> monophonic, time-ordered (start, end, midi) events.
+
+    Onsets within `window` of a group's first onset form one group and the lowest
+    pitch wins (upper partials are the usual false extra). Each note ends 1 ms
+    before the next onset, so usable_events sees no overlap. Onsets in the first
+    `head` seconds are dropped: the excerpt cut re-attacks the previous measure's
+    tail there, which located one measure early in the lab."""
+    rows = []
+    for item in notes or []:
+        try:
+            start, end, midi = float(item[0]), float(item[1]), float(item[2])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if (math.isfinite(start) and math.isfinite(end) and math.isfinite(midi)
+                and start >= head and end > start):
+            rows.append((start, end, midi))
+    rows.sort()
+    groups = []
+    for row in rows:
+        if groups and row[0] - groups[-1][0][0] <= window:
+            groups[-1].append(row)
+        else:
+            groups.append([row])
+    out = [list(min(group, key=lambda r: r[2])) for group in groups]
+    for i in range(len(out) - 1):
+        out[i][1] = min(out[i][1], out[i + 1][0] - 0.001)
+    return [tuple(r) for r in out if r[1] > r[0]]
+
+
+def _bp_locate_events(signal, rate):
+    """Optional Basic Pitch events for auto-locate. None unless SCOREFOLLOW_BP_PYTHON
+    names a venv interpreter with basic-pitch[onnx]; any failure or timeout -> None,
+    so locate falls back to pYIN and the fused events exactly as in 0.11."""
+    import os
+    python = os.environ.get('SCOREFOLLOW_BP_PYTHON', '').strip()
+    if not python:
+        return None
+    import hashlib
+    import json
+    import subprocess
+    import tempfile
+    x = np.ascontiguousarray(signal, dtype=np.float32)
+    key = (hashlib.blake2b(x.tobytes(), digest_size=16).digest(), int(rate))
+    if key in _BP_CACHE:
+        return _BP_CACHE[key]
+    events = None
+    try:
+        worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bp_worker.py')
+        with tempfile.TemporaryDirectory(prefix='sf-bp-') as tmp:
+            wav_path = os.path.join(tmp, 'in.wav')
+            out_path = os.path.join(tmp, 'out.json')
+            pcm = (np.clip(x, -1.0, 1.0) * 32767).astype('<i2').tobytes()
+            with wave.open(wav_path, 'wb') as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(int(rate))
+                handle.writeframes(pcm)
+            subprocess.run([python, '-I', '-B', worker, wav_path, out_path], cwd=tmp,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=BP_TIMEOUT_SEC, check=True)
+            with open(out_path, encoding='utf-8') as handle:
+                raw = json.load(handle)
+        events = bp_monophonic(raw.get('notes')) or None
+    except Exception:
+        events = None
+    if len(_BP_CACHE) >= 16:
+        _BP_CACHE.clear()
+    _BP_CACHE[key] = events
+    return events
+
+
 def _fused_locate_events(signal, rate):
     """Optional onset+pitch-track events for the locate fallback; None without vamp."""
     from .vamp_features import extract_fused_events
@@ -947,6 +1023,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     alignment = None
     boundary_conflict = False
     fused_locate = False
+    bp_locate = None
     if auto_located:
         if sync_mode == "metronome" or first_beat_audio_sec is not None:
             raise ValueError("自动定位仅支持未同步的单声部录音")
@@ -963,6 +1040,16 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 raise ValueError("自动定位需要 pYIN 音高传感器；请指定起始小节")
             pitch_events = _ev
         reliable_events = pitch_events
+        # 0.12: Basic Pitch events (when configured) get the first try at both
+        # locate layers; pYIN and the fused retry keep their 0.11 order after it.
+        bp_events = _bp_locate_events(signal, rate)
+        bp_excerpt = None
+        if bp_events:
+            try:
+                bp_excerpt = align_excerpt(score_notes, bp_events,
+                                           beat_map=beat_map if sync_mode == "vamp-beat" else None)
+            except ValueError:
+                bp_excerpt = None
         # Full-excerpt alignment first: start + end + measure time map from
         # audio events and XML alone (panel-tempo independent). Falls back to
         # the legacy start-only location when the excerpt is ambiguous; scoring
@@ -972,6 +1059,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                                     beat_map=beat_map if sync_mode == "vamp-beat" else None)
         except ValueError:
             excerpt = None
+        if bp_excerpt is not None and bp_excerpt.get("confident"):
+            excerpt, reliable_events, bp_locate = bp_excerpt, bp_events, "align"
         boundary_conflict = excerpt is not None and excerpt.get("boundarySupported") is False
         if excerpt is not None and excerpt.get("confident"):
             alignment = excerpt
@@ -979,8 +1068,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             notes = score_notes[alignment["start"]: alignment["end"] + 1]
         else:
             locate_beats = beat_map if sync_mode == "vamp-beat" else None
+            bp_hit = None
+            if bp_events:
+                try:
+                    bp_hit = locate_excerpt(score_notes, bp_events, beat_map=locate_beats)
+                except ValueError:
+                    bp_hit = None
             try:
-                index, location_cost = locate_excerpt(score_notes, reliable_events, beat_map=locate_beats)
+                index, location_cost = bp_hit if bp_hit is not None else locate_excerpt(
+                    score_notes, reliable_events, beat_map=locate_beats)
             except ValueError as first_error:
                 # pYIN's note tracker merges fast passages (16ths); retry once with
                 # QM-onset segments + pYIN frame pitch under the same gates. The
@@ -993,6 +1089,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 except ValueError:
                     raise first_error from None
                 fused_locate = True
+            if bp_hit is not None:
+                reliable_events, bp_locate = bp_events, "locate"
             notes = score_notes[index:]
         if not notes:
             raise ValueError("录音不足以覆盖所选开始小节")
@@ -1351,6 +1449,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     sensors = (["fused-pitch"] if pitch_notes else []) + (["qm-onset"] if onset_hint else []) or ["builtin"]
     if fused_locate:
         sensors.append("fused-locate")
+    if bp_locate:
+        sensors.append("bp-locate")
     # Optional-plugin degradation is explicit in the payload (not logs only),
     # derived from effective detector availability after engine guards
     # (single-note pitch guard, beat_map length/tempo filtering). Beat counts
