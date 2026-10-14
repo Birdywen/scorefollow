@@ -8,7 +8,8 @@ import {
   attachRecordingStart, createSession, deleteTakeBlob, loadTakeBlob, measureAndBeatAt,
   saveTakeBlob, validateTakeSync, type PracticeSession,
 } from "@/lib/practice-sync";
-import VisualReport, { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
+import { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
+import ReportDashboard from "./ReportDashboard";
 import { isValidAnalysisResult, isValidJobEnvelope } from "@/lib/analysis-guard";
 import MeasureSyncEditor, { validateMarkers, type MeasureMarker, type SyncedAudio } from "./MeasureSyncEditor";
 import { useAnalysisJob } from "./hooks/useAnalysisJob";
@@ -993,12 +994,31 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       <button className={styles.omrButton} onClick={() => setShowDemo((v) => !v)}>
         {showDemo ? (zh ? "收起预览" : "Hide preview") : (zh ? "看模拟效果图" : "Show sample charts")}</button>
       {showDemo && <div style={{ marginTop: 12 }}>
-        <VisualReport notes={mockNotes} onMeasureClick={(m) => onJump(m)} />
+        <ReportDashboard zh={zh} notes={mockNotes} scores={{ overall: 88, pitch: 90, rhythm: 86 }} meta={{ title: zh ? "示例曲目（模拟数据）" : "Sample piece (mock data)", instrument: "violin", bpm: 80, durationSec: 42 }} onMeasureClick={(m) => onJump(m)} />
         <TakeCompare takes={mockTakes} />
       </div>}
     </section>}
     {result && <section className={styles.report} aria-label={zh ? "分析报告" : "Analysis report"}>
       <h2><span className={styles.stepNum} aria-hidden="true">4</span> {zh ? "演奏报告" : "Performance report"}</h2>
+      <ReportDashboard
+        zh={zh}
+        notes={result.notes}
+        scores={result.quality?.outcome === "score_audio_mismatch"
+          ? { overall: null, pitch: null, rhythm: null }
+          : { overall: result.quality?.overallScore ?? null, pitch: result.summary.pitchScore, rhythm: result.summary.rhythmScore }}
+        meta={{ title: (pdfName || "").replace(/[.]pdf$/i, ""), date: selected?.createdAt, instrument: result.instrument ?? instrument, bpm: selected?.bpm ?? bpm, durationSec: selected?.durationSec, version: result.version }}
+        notices={[
+          result.quality?.outcome === "score_audio_mismatch" ? (zh ? "录音和谱面好像对不上（可能不是同一首或同一段），这次的分数先别当真。" : "The recording may not match the score; scores are not reliable.") : "",
+          result.summary.tempoMismatch ? (zh ? `录音的速度约 ${result.summary.detectedBpm ?? "—"} BPM，和设定的 ${selected?.bpm ?? bpm} BPM 差得比较多，节奏分仅供参考。` : `Detected tempo ≈ ${result.summary.detectedBpm ?? "—"} BPM differs from the set tempo; rhythm score is indicative only.`) : "",
+          result.summary.takeBeyondScoreAfterSec != null ? (zh ? "录音比谱面长，多出来的部分没有打分。" : "The recording runs past the score; the extra part is not scored.") : "",
+          result.summary.syncAdvice ? (zh ? "自动对齐小节没有成功，原因见下方“技术细节”，也可以手动同步小节。" : "Automatic bar alignment failed; see Technical details or sync bars manually.") : "",
+        ].filter(Boolean)}
+        scoreMeasureCount={scoreMeasures || undefined}
+        onNoteClick={(dn) => { const full = result.notes.find((n) => n.id === dn.id); if (full) replay(full); }}
+        onMeasureClick={replayMeasure}
+      />
+      <details className={styles.fold}>
+        <summary>{zh ? "技术细节（给老师和开发者看）" : "Technical details"}</summary>
       <AnalysisQuality summary={result.summary} quality={result.quality} diagnostics={result.diagnostics} version={result.version} zh={zh} />
       {result.instrument !== "piano" && result.summary.pitchToleranceCents == null && <p role="status" className={styles.hint}>{zh ? "这是旧评分规则的报告。图表已按 ±15 音分显示；请更新分析服务并重新分析，刷新分数与错音数量。" : "This report uses the old scoring rules. Charts now use ±15 cents; update the analysis service and reanalyze to refresh the score and wrong-note totals."}</p>}
       <div className={styles.scores}><div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.pitchScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.pitchScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "音准" : "Pitch"}</div>
@@ -1015,13 +1035,6 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         {zh ? `节奏结构 · ${result.rhythm.source === "vamp-beat" ? "实测拍点" : "固定速度网格"} · 拍 ${result.rhythm.beats?.length ?? 0} · 每乐句 ${result.rhythm.phraseMeasures ?? "—"} 小节 · 乐句 ${result.rhythm.phrases?.length ?? 0}`
           : `Structure · ${result.rhythm.source === "vamp-beat" ? "detected beats" : "fixed-tempo grid"} · beats ${result.rhythm.beats?.length ?? 0} · ${result.rhythm.phraseMeasures ?? "—"} bars/phrase · ${result.rhythm.phrases?.length ?? 0} phrases`}
       </p>}
-      <VisualReport
-        zh={zh}
-        notes={result.notes}
-        scoreMeasureCount={scoreMeasures || undefined}
-        onNoteClick={(vn) => { const full = result.notes.find((n) => n.id === vn.id); if (full) replay(full); }}
-        onMeasureClick={replayMeasure}
-      />
       <p className={styles.hint}>{zh ? "可计分音高" : "Scored pitches"} {result.summary.scoredPitchNotes ?? "—"} · {zh ? "疑似异常（不扣音高分）" : "Suspected outliers (no pitch penalty)"} {result.summary.outlierNotes ?? "—"}. {zh ? "超过八度的偏差视为疑似跟踪异常；空心点不计音高分。" : "Deviations beyond an octave are treated as suspect tracking. Hollow points do not affect pitch scores."}</p>
       <p className={styles.hint}>{zh ? "可判音符" : "Voiced"} {result.summary.voicedNotes}/{result.summary.noteCount} ·
         {zh ? "可判起音" : "Timed"} {result.summary.timedNotes}/{result.summary.timingCandidateNotes ?? Math.max(0, result.summary.noteCount - 1)} ·
@@ -1049,6 +1062,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       {result.instrument === "piano" && <p className={styles.hint}>{result.summary.pitchScoreMethod === "note-f1"
         ? (zh ? `钢琴音符匹配分（F1）· 漏音 ${result.summary.missedNotes ?? "—"} · 多音 ${result.summary.extraNotes ?? "—"}；两者均影响分数。录音内静音仍计入覆盖范围。` : `Piano note F1 · Missed ${result.summary.missedNotes ?? "—"} · Extra ${result.summary.extraNotes ?? "—"}; both affect the score. Recorded silence remains in scope.`)
         : (zh ? "旧版钢琴音高分仅评价已匹配音符，不含漏音、多音扣分；请更新服务后重新分析。" : "Older piano scores evaluate matched notes only, without missed/extra penalties; update the service and reanalyze.")}</p>}
+      </details>
       {pdfMeasures > 0 && !canJump && <p className={styles.error}>{zh ? `谱面有 ${pdfMeasures} 小节、MusicXML 有 ${scoreMeasures} 小节；请核对后再映射到 PDF。` : `PDF has ${pdfMeasures} measures; MusicXML has ${scoreMeasures}. Verify alignment before mapping.`}</p>}
       {(result.suggestedMeasureSync?.length ?? 0) > 0 && canJump && onApplyMeasureSync && <div>
         <button className={styles.omrButton} onClick={() => {
