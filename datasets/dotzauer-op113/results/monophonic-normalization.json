@@ -298,10 +298,10 @@
       "timeline_elements_removed": 0,
       "removed_orphan_tie_stops": [],
       "etude": 11,
-      "source_sha256": "f2457925039d95e8d6f3a3cf4fb521612c21e0b1600c47ff0b9d9c29547265e9",
-      "output_sha256": "a4e4947637f61b45e281c54873f6b3c5dd88cdfa5906ee2ef47f21d083c614e6",
+      "source_sha256": "274602e14e47562bca756e15d4a23105e08de1c5bb927747a8bc9206aaa35d24",
+      "output_sha256": "6219069f3ebd343c94841bf3801822aecfffed1424922323fb6e5023c21df861",
       "compatible": true,
-      "note_count": 97
+      "note_count": 271
     },
     {
       "policy": "dominant-part-voice-base-chord-v1",

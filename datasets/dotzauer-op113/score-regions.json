@@ -3120,16 +3120,17 @@
       "title": "11. Moderato",
       "regions": [
         {
-          "page": 9,
+          "page": 1,
           "top": 0.0,
-          "bottom": 0.48730684326710816,
+          "bottom": 1.0,
           "top_seam": null,
-          "bottom_seam": null
+          "bottom_seam": null,
+          "note": "user-supplied pre-cut CD Sheet Music single-etude page; not derived from source/op.113.pdf"
         }
       ],
       "file": "Dotzauer_Op113_Book1_No11.pdf",
       "output_pages": 1,
-      "sha256": "a12c8f43b30b7afec5388cf024fde10dc7dc5a03b429580e56b1cd24b1621020"
+      "sha256": "7e9f71ab83bbc3e4e297dc545be6a5e0e79fd35d72cb2b5a74b51ee9d044c7e3"
     },
     {
       "etude": 12,

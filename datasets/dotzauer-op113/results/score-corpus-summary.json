@@ -1,7 +1,7 @@
 {
   "counts": {
-    "scored": 45,
-    "failed": 11,
+    "scored": 46,
+    "failed": 10,
     "incompatible": 7,
     "skipped": 1
   },
@@ -253,7 +253,7 @@
       "audio_sha256": "3e35f0e8943ba3b9e7163594a0dd7f1fcde1631fa454869cf16a6d0f74f855e1",
       "ground_truth_verified": false,
       "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No11.musicxml",
-      "xml_sha256": "a4e4947637f61b45e281c54873f6b3c5dd88cdfa5906ee2ef47f21d083c614e6",
+      "xml_sha256": "6219069f3ebd343c94841bf3801822aecfffed1424922323fb6e5023c21df861",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -273,7 +273,7 @@
       "audio_sha256": "30ce4f8d732964bb9ba5154aa729e2b17023f4c73586c4c644e28adc5069b878",
       "ground_truth_verified": false,
       "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No11.musicxml",
-      "xml_sha256": "a4e4947637f61b45e281c54873f6b3c5dd88cdfa5906ee2ef47f21d083c614e6",
+      "xml_sha256": "6219069f3ebd343c94841bf3801822aecfffed1424922323fb6e5023c21df861",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -291,7 +291,7 @@
       "audio_sha256": "6162f9d059e36fb81d7eb85d29ca55f24bebe0c50ef3012f5bbd52cb5da2bcb7",
       "ground_truth_verified": false,
       "score_path": "musicxml-monophonic/Dotzauer_Op113_Book1_No11.musicxml",
-      "xml_sha256": "a4e4947637f61b45e281c54873f6b3c5dd88cdfa5906ee2ef47f21d083c614e6",
+      "xml_sha256": "6219069f3ebd343c94841bf3801822aecfffed1424922323fb6e5023c21df861",
       "params": {
         "start_sec": 42,
         "duration_sec": 18,
@@ -301,9 +301,7 @@
         "start_measure": 0,
         "sync_mode": "vamp-beat"
       },
-      "status": "failed",
-      "error_type": "ValueError",
-      "reason": "录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节"
+      "status": "scored"
     },
     {
       "id": "dotzauer_b1_no15__11_s0_fast",

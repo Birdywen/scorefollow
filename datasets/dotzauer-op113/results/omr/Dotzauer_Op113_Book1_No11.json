@@ -1,14 +1,15 @@
 {
   "etude": 11,
-  "pdf_sha256": "a12c8f43b30b7afec5388cf024fde10dc7dc5a03b429580e56b1cd24b1621020",
+  "pdf_sha256": "7e9f71ab83bbc3e4e297dc545be6a5e0e79fd35d72cb2b5a74b51ee9d044c7e3",
   "source": "analysis-service /omr/jobs",
   "reviewed_ground_truth": false,
-  "job_id": "f420236c83ae48f79ee8b9ba4484ac25",
+  "validation": "audio-closed-loop: 3 excerpts vs ref (fast@bar26 57/73 pitch-ok, slow@bar8 18/18, full@bar11 28/36); acceptance 5-rule minus title-word",
+  "job_id": "f7531ed98be5451a93ff1f3e3a0c806f",
   "status": "completed",
   "compatible": true,
   "reason": null,
-  "note_count": 97,
-  "measure_count": 17,
+  "note_count": 271,
+  "measure_count": 46,
   "musicxml": "musicxml/Dotzauer_Op113_Book1_No11.musicxml",
-  "xml_sha256": "f2457925039d95e8d6f3a3cf4fb521612c21e0b1600c47ff0b9d9c29547265e9"
+  "xml_sha256": "274602e14e47562bca756e15d4a23105e08de1c5bb927747a8bc9206aaa35d24"
 }
