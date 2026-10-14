@@ -7,7 +7,8 @@ All pairs are processed in ONE process (torch + full model load once, then
 one inference per pair), so a job with N CREPE verdicts pays the ~10s load
 once instead of N times. Per-pair audio/params are identical to the old
 single-pair mode; raw frames carry CREPE CPU run-to-run jitter either way,
-and verdict medians are stable to ~0.05c (far below the 25c/1000c gates).
+and verdict medians move only a few cents on real audio (far below the
+1000c override gate and inside the 25c correct band).
 Writes per out.json {"times": [...], "midi": [...], "voicing": [...]} at
 hop 128 (~172 fps): midi is float MIDI pitch, voicing is CREPE periodicity
 0..1. Engine gates on voicing >= 0.5 and needs >= 4 frames per note window.

@@ -1007,7 +1007,7 @@ def _crepe_tracks(signals, rate):
     load once, then one inference per signal), so N verdict spans cost one
     startup instead of N. Each signal takes the exact same bytes as the old
     single-pair _crepe_track path and results share its cache keys; verdict
-    medians are stable to ~0.05c across runs either way (below the 25c/1000c
+    medians move only a few cents across runs either way (below the 25c/1000c
     gates), so verdicts are equivalent -- only the startup cost is gone. Returns a list
     aligned with `signals` (None per failure, fail-closed)."""
     import os
