@@ -3799,8 +3799,6 @@ export default function ScoreFollowPage() {
         <span className={styles.tbSpacer} />
         <span className={styles.tbMenuWrap}>
           <button className={styles.tbBtn} aria-label={tx("tuner")} onClick={() => setTunerOpen(true)} title={tx("tuner")}>🎚</button>
-          <button className={styles.tbBtn} aria-label={lang === "zh" ? "夜间模式" : "Night mode"} aria-pressed={darkTheme} onClick={() => setDarkTheme((value) => !value)} title={lang === "zh" ? "切换昼夜主题" : "Switch day/night theme"}>{darkTheme ? "☀" : "☾"}</button>
-          <button className={styles.tbBtn} onClick={toggleLang} title="语言 / Language">{lang === "zh" ? "En" : "中"}</button>
            <button className={styles.tbBtn} onClick={() => { setMenuOpen((v) => !v); setOpenMenu(false); }} aria-expanded={menuOpen} aria-controls="sf-settings" title={tx("settings")}>⚙ {tx("settings")}</button>
            {menuOpen && <div className={styles.tbMenu} id="sf-settings" role="region" aria-label={tx("settings")}>
             <div className={styles.tbMenuRow}>
@@ -3822,6 +3820,7 @@ export default function ScoreFollowPage() {
               <button className={styles.tbBtn} onClick={() => { setMenuOpen(false); setHelpOpen(true); }} title="Keyboard shortcuts and help">? help</button>
               <button className={styles.tbBtn} onClick={toggleFullScreen} title="Toggle fullscreen (F)">{fullScreen ? "exit full" : "full screen"}</button>
               <button className={styles.tbBtn} onClick={() => setDarkTheme((v) => !v)} title="Toggle light/dark theme">{darkTheme ? "light" : "dark"}</button>
+              <button className={styles.tbBtn} onClick={toggleLang} title="语言 / Language">{lang === "zh" ? "English" : "中文"}</button>
               <button className={styles.tbBtn} onClick={() => { setMenuOpen(false); setChromeOpen(false); }} title="Hide toolbar (T)">hide UI</button>
             </div>
           </div>}
@@ -3916,16 +3915,22 @@ export default function ScoreFollowPage() {
             <input type="range" min={0.1} max={4} step={0.05} value={speed} aria-label={tx("speed")} aria-valuetext={`${speed.toFixed(2)}×`} onChange={(e) => setSpeed(Number(e.target.value))} />
            <b>{speed.toFixed(2)}×</b>
          </label>
+           <span className={styles.practiceDivider} />
            <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} aria-pressed={correctMode} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } else { setAdjustMode(false); setBarPop(null); } setCorrectMode(!correctMode); }}>
              {correctMode ? tx("correcting") : tx("correct")}
            </button>
            <button className={`${styles.practiceBtn} ${adjustMode ? styles.practiceBtnActive : ""}`} aria-pressed={adjustMode} onClick={() => { if (adjustMode) { setSelectedBar(null); setBarPop(null); } else { setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); } setAdjustMode(!adjustMode); }} title="Bar adjust mode (J)">
              {adjustMode ? tx("adjusting") : tx("adjust")}
            </button>
-           <button className={styles.practiceBtn} onClick={() => { setReportOpen(true); setReportMsg(""); }} title={tx("reportTitle")}>{tx("reportIssue")}</button>
-           <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} aria-pressed={cleanView} onClick={toggleCleanView}>{tx("cleanView")}</button>
-           <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} aria-expanded={advOpen} aria-controls="sf-control-panel" onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>
            <button className={`${styles.practiceBtn} ${performanceOpen ? styles.practiceBtnActive : ""}`} aria-expanded={performanceOpen} onClick={() => { setPerformanceOpen((v) => !v); setAdvOpen(false); }}>{lang === "zh" ? "演奏分析" : "Analyze"}</button>
+           <details className={styles.moreWrap}>
+             <summary className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} title={lang === "zh" ? "更多" : "More"} aria-label={lang === "zh" ? "更多" : "More"}>⋯</summary>
+             <div className={styles.moreMenu} onClick={(e) => { if ((e.target as HTMLElement).closest("button")) { const d = e.currentTarget.parentElement as HTMLDetailsElement | null; if (d) d.open = false; } }}>
+               <button className={styles.practiceBtn} onClick={() => { setReportOpen(true); setReportMsg(""); }} title={tx("reportTitle")}>{tx("reportIssue")}</button>
+               <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} aria-pressed={cleanView} onClick={toggleCleanView}>{tx("cleanView")}</button>
+               <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} aria-expanded={advOpen} aria-controls="sf-control-panel" onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>
+             </div>
+           </details>
           <span className={styles.practiceHint}>{analysis ? `${analysis.systems.length} ${tx("sysUnit")} · ${barsTotal} ${tx("barUnit")}${lowConfSystems ? ` · ${lowConfSystems}${tx("lowConf")}` : ""}` : tx("waiting")}</span>
         </nav>}
 

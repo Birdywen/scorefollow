@@ -584,3 +584,35 @@ a.secondary {
 .tbBtn:not(.tbBtnOn):hover:not(:disabled), .pfileBtn:hover:not(:disabled), .practiceBtn:not(.practicePlay):not(.practiceBtnActive):hover:not(:disabled) { background: var(--sf-elevated); border-color: transparent; }
 .pcard, .page[data-theme="dark"] .pcard { border-color: transparent; background: var(--sf-elevated); border-radius: var(--sf-radius-lg); padding: 14px; }
 .pcardTitle .stepNum { display: none; }
+
+/* 简洁明朗层 v2 (2026-10-14): 练习栏更多菜单 */
+.moreWrap { position: relative; flex: none; }
+.moreWrap > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.moreWrap > summary::-webkit-details-marker { display: none; }
+.moreMenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 180px; padding: 6px; display: grid; gap: 2px; background: var(--sf-surface); border: 1px solid var(--sf-border); border-radius: var(--sf-radius, 12px); box-shadow: var(--sf-shadow); }
+.moreMenu > button { width: 100%; justify-content: flex-start; text-align: left; white-space: nowrap; }
+
+/* 简洁明朗层 v2b (2026-10-14): 窄屏练习栏 overflow-x:auto 会裁掉更多菜单, 改为视口固定浮层 */
+@media (max-width: 680px) {
+  .moreMenu { position: fixed; top: auto; right: 10px; left: auto; bottom: calc(104px + env(safe-area-inset-bottom, 0px)); z-index: 90; min-width: 200px; max-height: 50vh; overflow-y: auto; }
+  .moreMenu > button { min-height: 44px; }
+}
+
+/* 简洁明朗层 v3 (2026-10-14): 控制面板分组标题 + 弹窗统一 */
+.pcardHead { font-size: 15px; font-weight: 700; padding-bottom: 12px; margin-bottom: 12px; }
+.pcard + .pcard { margin-top: 10px; }
+.pcardTitle { font-size: 12px; font-weight: 700; color: var(--sf-muted); letter-spacing: .04em; margin-bottom: 10px; }
+summary.pcardTitle { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; margin-bottom: 0; }
+summary.pcardTitle::-webkit-details-marker { display: none; }
+summary.pcardTitle::after { content: '›'; margin-left: auto; font-size: 16px; line-height: 1; transition: transform .15s; }
+details[open] > summary.pcardTitle { margin-bottom: 10px; color: var(--sf-ink); }
+details[open] > summary.pcardTitle::after { transform: rotate(90deg); }
+.modalBackdrop { background: rgba(14, 24, 39, .42); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.helpDialog, .exportDialog { border: 0; border-radius: 20px; box-shadow: 0 24px 64px rgba(16, 24, 40, .22); }
+.helpHero { background: var(--sf-primary); background: linear-gradient(135deg, var(--sf-primary), color-mix(in srgb, var(--sf-primary) 72%, #6d4fd8)); }
+.helpCard { border-color: transparent; background: var(--sf-elevated); }
+.helpCardAccent { border-color: transparent; background: var(--sf-accent-soft); }
+.helpCardIcon { color: var(--sf-accent); background: var(--sf-accent-soft); }
+.helpCardAccent .helpCardIcon { background: var(--sf-surface); }
+.helpDialog :is(button, summary):focus-visible { outline-color: var(--sf-focus); }
+.helpHero .helpClose:focus-visible { outline-color: #fff; }
