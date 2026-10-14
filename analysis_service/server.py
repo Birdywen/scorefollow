@@ -286,7 +286,8 @@ class Handler(BaseHTTPRequestHandler):
                                   "finishedAt": time.time(), "error": "任务未能入队，请稍后重新提交。"})
             self.respond(503, {"error": "任务服务暂不可用，请稍后重新提交。"})
             return
-        self.respond(202, {"id": job_id, "status": jobs[job_id]["status"]})
+        self.respond(202, {"id": job_id, "status": jobs[job_id]["status"],
+                          "cached": not created})
 
     def do_GET(self) -> None:
         if not self.cors():
