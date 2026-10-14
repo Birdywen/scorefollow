@@ -1,0 +1,224 @@
+{
+ "clips": 45,
+ "audited": 45,
+ "failed": [],
+ "notes_with_both": 1596,
+ "agree_med": 8.1,
+ "agree_p90": 216.3,
+ "agree_p95": 799.4,
+ "frac_within_15c": 0.6961,
+ "frac_within_50c": 0.7882,
+ "n_disputes_gt50c": 338,
+ "disputes": [
+  {
+   "clip": "dotzauer_b1_no31__19_s1_slow",
+   "note": "n98",
+   "pyinCents": 4990.2,
+   "crepeCents": 0.4,
+   "diff": 4989.8
+  },
+  {
+   "clip": "dotzauer_b1_no11__10_s1_slow",
+   "note": "n54",
+   "pyinCents": 4990.2,
+   "crepeCents": 5.7,
+   "diff": 4984.5
+  },
+  {
+   "clip": "dotzauer_b1_no27__32_s1_slow",
+   "note": "n125",
+   "pyinCents": 4690.2,
+   "crepeCents": 7.2,
+   "diff": 4683.0
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s0_fast",
+   "note": "n305",
+   "pyinCents": 4890.2,
+   "crepeCents": 302.1,
+   "diff": 4588.1
+  },
+  {
+   "clip": "dotzauer_b1_no06__21_fast",
+   "note": "n198",
+   "pyinCents": 4490.2,
+   "crepeCents": -0.4,
+   "diff": 4490.6
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s0_fast",
+   "note": "n224",
+   "pyinCents": 4390.2,
+   "crepeCents": 37.4,
+   "diff": 4352.8
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s3_full",
+   "note": "n151",
+   "pyinCents": 4690.2,
+   "crepeCents": 502.3,
+   "diff": 4187.9
+  },
+  {
+   "clip": "dotzauer_b1_no28__33_s1_slow",
+   "note": "n132",
+   "pyinCents": -2773.0,
+   "crepeCents": 6.2,
+   "diff": 2779.2
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s0_fast",
+   "note": "n287",
+   "pyinCents": 12.7,
+   "crepeCents": -2403.7,
+   "diff": 2416.4
+  },
+  {
+   "clip": "dotzauer_b1_no32__27_s0_fast",
+   "note": "n305",
+   "pyinCents": 2705.3,
+   "crepeCents": 405.3,
+   "diff": 2300.0
+  },
+  {
+   "clip": "dotzauer_b1_no32__27_s0_fast",
+   "note": "n241",
+   "pyinCents": 2650.9,
+   "crepeCents": 417.9,
+   "diff": 2233.0
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s3_full",
+   "note": "n111",
+   "pyinCents": -1908.3,
+   "crepeCents": 7.9,
+   "diff": 1916.2
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s3_full",
+   "note": "n112",
+   "pyinCents": -1919.0,
+   "crepeCents": -8.4,
+   "diff": 1910.6
+  },
+  {
+   "clip": "dotzauer_b1_no28__33_s1_slow",
+   "note": "n164",
+   "pyinCents": -2391.6,
+   "crepeCents": -483.1,
+   "diff": 1908.5
+  },
+  {
+   "clip": "dotzauer_b1_no31__19_s0_fast",
+   "note": "n233",
+   "pyinCents": -1203.8,
+   "crepeCents": 704.7,
+   "diff": 1908.5
+  },
+  {
+   "clip": "dotzauer_b1_no05__07_fast",
+   "note": "n238",
+   "pyinCents": -2398.1,
+   "crepeCents": -492.8,
+   "diff": 1905.3
+  },
+  {
+   "clip": "dotzauer_b1_no16__17_s0_fast",
+   "note": "n55",
+   "pyinCents": -897.4,
+   "crepeCents": 1005.0,
+   "diff": 1902.4
+  },
+  {
+   "clip": "dotzauer_b1_no27__32_s1_slow",
+   "note": "n122",
+   "pyinCents": -2389.4,
+   "crepeCents": -492.0,
+   "diff": 1897.4
+  },
+  {
+   "clip": "dotzauer_b1_no14__24_slow",
+   "note": "n50",
+   "pyinCents": -1886.7,
+   "crepeCents": 3.7,
+   "diff": 1890.4
+  },
+  {
+   "clip": "dotzauer_b1_no27__32_s0_fast",
+   "note": "n253",
+   "pyinCents": -1835.9,
+   "crepeCents": -2.6,
+   "diff": 1833.3
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s3_full",
+   "note": "n156",
+   "pyinCents": -1220.9,
+   "crepeCents": 576.3,
+   "diff": 1797.2
+  },
+  {
+   "clip": "dotzauer_b1_no13__16_fast",
+   "note": "n245",
+   "pyinCents": -1896.1,
+   "crepeCents": -182.7,
+   "diff": 1713.4
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s0_fast",
+   "note": "n272",
+   "pyinCents": -8.3,
+   "crepeCents": 1590.9,
+   "diff": 1599.2
+  },
+  {
+   "clip": "dotzauer_b1_no33__20_s0_fast",
+   "note": "n282",
+   "pyinCents": -4.1,
+   "crepeCents": 1583.4,
+   "diff": 1587.5
+  },
+  {
+   "clip": "dotzauer_b1_no32__27_s1_slow",
+   "note": "n71",
+   "pyinCents": 11.4,
+   "crepeCents": 1407.8,
+   "diff": 1396.4
+  },
+  {
+   "clip": "dotzauer_b1_no13__16_fast",
+   "note": "n228",
+   "pyinCents": 87.7,
+   "crepeCents": 1482.7,
+   "diff": 1395.0
+  },
+  {
+   "clip": "dotzauer_b1_no32__27_s1_slow",
+   "note": "n79",
+   "pyinCents": 18.7,
+   "crepeCents": -1295.8,
+   "diff": 1314.5
+  },
+  {
+   "clip": "dotzauer_b1_no23__37_s0_fast",
+   "note": "n279",
+   "pyinCents": -807.3,
+   "crepeCents": -2071.6,
+   "diff": 1264.3
+  },
+  {
+   "clip": "dotzauer_b1_no27__32_s0_fast",
+   "note": "n254",
+   "pyinCents": -1201.0,
+   "crepeCents": 10.9,
+   "diff": 1211.9
+  },
+  {
+   "clip": "dotzauer_b1_no03__00_s0_fast",
+   "note": "n115",
+   "pyinCents": 1224.8,
+   "crepeCents": 14.7,
+   "diff": 1210.1
+  }
+ ]
+}
