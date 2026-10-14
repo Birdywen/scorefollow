@@ -571,3 +571,16 @@ a.secondary {
   .tbBtn, .page[data-theme="dark"] .tbBtn { min-height: 40px; }
   :global(html[data-sf-metro-panel="open"] #sga-panel) { left: 10px !important; right: 10px !important; top: auto !important; min-width: 0 !important; }
 }
+
+/* 简洁明朗层 v1 (2026-10-14): 统一令牌 + 降低视觉密度; 放在最后以覆盖前几层, 现有底色/文字/强调色不变 */
+.page { --sf-primary: #215dd4; --sf-on-primary: #fff; --sf-ok: #2e7d32; --sf-ok-soft: #eef8f1; --sf-warn-bg: #fff7e6; --sf-warn-ink: #7a4a00; --sf-radius: 12px; --sf-radius-lg: 16px; --sf-card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 6px 18px rgba(16, 24, 40, .05); }
+.page[data-theme="dark"] { --sf-primary: #3d6fe0; --sf-on-primary: #fff; --sf-ok: #4caf6e; --sf-ok-soft: #16302a; --sf-warn-bg: #3a2f17; --sf-warn-ink: #f3d08a; --sf-card-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+.topbar, .page[data-theme="dark"] .topbar { box-shadow: none; }
+.practicebar, .page[data-theme="dark"] .practicebar { background: var(--sf-surface); border-bottom: 1px solid var(--sf-border); }
+.practicePlay { box-shadow: none; }
+.tbBtn:not(.tbBtnOn), .page[data-theme="dark"] .tbBtn:not(.tbBtnOn),
+.pfileBtn, .page[data-theme="dark"] .pfileBtn,
+.practiceBtn:not(.practicePlay):not(.practiceBtnActive), .page[data-theme="dark"] .practiceBtn:not(.practicePlay):not(.practiceBtnActive) { background: transparent; border-color: transparent; box-shadow: none; }
+.tbBtn:not(.tbBtnOn):hover:not(:disabled), .pfileBtn:hover:not(:disabled), .practiceBtn:not(.practicePlay):not(.practiceBtnActive):hover:not(:disabled) { background: var(--sf-elevated); border-color: transparent; }
+.pcard, .page[data-theme="dark"] .pcard { border-color: transparent; background: var(--sf-elevated); border-radius: var(--sf-radius-lg); padding: 14px; }
+.pcardTitle .stepNum { display: none; }

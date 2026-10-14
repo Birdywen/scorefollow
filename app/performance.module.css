@@ -9,7 +9,7 @@
 .actions button, .upload { display: inline-flex; align-items: center; min-height: 37px; padding: 6px 10px; border: 1px solid var(--sf-border); border-radius: 8px; background: var(--sf-elevated); color: var(--sf-ink); font: inherit; cursor: pointer; }
 .preview { display: grid; gap: 8px; overflow-wrap: anywhere; }
 .preview audio { width: 100%; }
-.primary { width: 100%; min-height: 42px; margin: 16px 0 4px; border: 0; border-radius: 9px; background: #215dd4; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.primary { width: 100%; min-height: 42px; margin: 16px 0 4px; border: 0; border-radius: 9px; background: var(--sf-primary, #215dd4); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .primary:disabled { opacity: .5; cursor: not-allowed; }
 .error { padding: 10px 12px; border-radius: 10px; background: var(--sf-error-bg, #fff2e8); color: var(--sf-error-ink, #7b3618); line-height: 1.6; overflow-wrap: anywhere; }
 /* 引擎降级提示: 与 .error 同构但用警告色，title  tooltip 解释完整插件缺失 */
@@ -60,7 +60,7 @@
 .stepNav li[aria-current="step"] { color: var(--sf-ink); font-weight: 700; }
 .stepNav li[aria-current="step"] .stepNum { background: var(--sf-accent, #215dd4); color: #fff; border-color: transparent; }
 .stepNav li.isDone { color: var(--sf-ink); }
-.stepNav li.isDone .stepNum { background: #2e7d32; color: #fff; border-color: transparent; }
+.stepNav li.isDone .stepNum { background: var(--sf-ok, #2e7d32); color: #fff; border-color: transparent; }
 .omr h2 .stepNum, .report h2 .stepNum { margin-right: 8px; vertical-align: 1px; background: var(--sf-accent, #215dd4); color: #fff; border-color: transparent; }
 .stepTag { display: flex; align-items: center; gap: 8px; margin: 18px 0 4px; font-size: 13px; font-weight: 700; }
 .stepTag .stepNum { background: var(--sf-accent, #215dd4); color: #fff; border-color: transparent; }
@@ -71,11 +71,11 @@
 /* take 状态徽标 */
 .chip { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid var(--sf-border); background: var(--sf-elevated); color: var(--sf-ink); }
 .chipBusy { border-color: var(--sf-accent, #215dd4); color: var(--sf-accent, #215dd4); }
-.chipOk { border-color: #2e7d32; color: #2e7d32; }
+.chipOk { border-color: var(--sf-ok, #2e7d32); color: var(--sf-ok, #2e7d32); }
 .chipFail { border-color: var(--sf-error-ink, #7b3618); color: var(--sf-error-ink, #7b3618); }
 .chipMute { color: var(--sf-muted); }
 /* 主分析按钮强调 */
-.analyzeBtn { background: #215dd4; border-color: #215dd4; color: #fff; font-weight: 700; }
+.analyzeBtn { background: var(--sf-primary, #215dd4); border-color: var(--sf-primary, #215dd4); color: #fff; font-weight: 700; }
 /* 折叠区块（OMR 高级选项 / 局限说明 / 服务设置） */
 .fold { margin: 12px 0; padding: 10px 12px; border: 1px dashed var(--sf-border); border-radius: 10px; }
 .fold summary { cursor: pointer; font-size: 12px; font-weight: 700; }
@@ -83,3 +83,19 @@
 /* OSMD 识别乐谱预览：白纸卡片（深色主题下黑色符头需托底），限高滚动 */
 .osmdPreview { background: #fff; border-radius: 10px; padding: 8px; margin-top: 8px; max-height: 460px; overflow: auto; }
 .osmdPreview svg { width: 100%; height: auto; }
+
+/* 简洁明朗层 v1 (2026-10-14): 去边框、多留白、折叠区降噪; 放在最后覆盖前两层 */
+.panel { padding: 20px 18px; }
+.omr { border: 0; background: var(--sf-elevated); border-radius: var(--sf-radius-lg, 16px); padding: 16px; margin: 16px 0; }
+.omr h2, .report h2 { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.report { margin-top: 20px; padding-top: 0; border-top: 0; }
+.quality { border: 0; }
+.take { border-color: transparent; background: var(--sf-surface); box-shadow: var(--sf-card-shadow); }
+.omrButton, .actions button, .upload { border-radius: 10px; }
+.scores div { background: var(--sf-elevated); border: 0; }
+.issues button { border-color: transparent; }
+.stepTag { margin-top: 22px; }
+.fold { border: 0; background: transparent; padding: 6px 2px; margin: 10px 0; }
+.fold summary { color: var(--sf-muted); font-weight: 600; }
+.fold[open] { background: var(--sf-elevated); padding: 10px 12px; border-radius: 12px; }
+.fold[open] > summary { color: var(--sf-ink); margin-bottom: 6px; }
