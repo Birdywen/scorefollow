@@ -62,7 +62,7 @@ type Take = {
   jobId?: string; jobStatus?: string; result?: Result; error?: string;
 };
 type OmrResult = { musicXml: string; compatible: boolean; reason?: string | null; noteCount: number; measureCount: number; restoredFirstRest: boolean };
-type OmrJob = { id: string; status: string; progress?: number; error?: string; result?: OmrResult };
+type OmrJob = { id: string; status: string; progress?: number; error?: string; cached?: boolean; result?: OmrResult };
 type AnalysisJob = { id: string; status: string; error?: string; result?: Result };
 
 const LOCAL_API = "http://127.0.0.1:8765";
@@ -640,6 +640,12 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     }
   }
 
+  function applyOmrResult(data: OmrJob) {
+    if (data.status === "completed" && data.result) {
+      setXmlFile(new File([data.result.musicXml], (pdfName || "score").replace(/\.pdf$/i, "") + ".musicxml", { type: "application/xml" }));
+    }
+  }
+
   async function recognizePdf() {
     if (!api.trim()) {
       setError(zh ? "请先填写上方的分析服务地址；若浏览器就在这台服务器上，可填 http://127.0.0.1:8765" : "Enter the analysis API URL above. On the server itself, use http://127.0.0.1:8765");
@@ -666,7 +672,22 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       const data = await readJsonResponse<OmrJob>(response);
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       if (!isValidJobEnvelope(data)) throw new Error("识别服务返回了无效任务 / OMR service returned an invalid job");
-      if (alive.current) setOmrJob(data);
+      if (alive.current) {
+        setOmrJob(data);
+        let full = data;
+        if (data.status === "completed" && !data.result) {
+          // 缓存命中：202 信封不带 result，取一次存量结果再装配谱面。
+          try {
+            const g = await fetch(`${base}/omr/jobs/${data.id}`);
+            const fetched = await readJsonResponse<OmrJob>(g);
+            if (!g.ok) throw new Error(fetched.error || `HTTP ${g.status}`);
+            if (!isValidJobEnvelope(fetched)) throw new Error("识别服务返回了无效任务 / OMR service returned an invalid job");
+            full = { ...fetched, cached: data.cached };
+            if (alive.current) setOmrJob(full);
+          } catch (exc) { if (alive.current) setError(exc instanceof Error ? exc.message : String(exc)); }
+        }
+        if (alive.current) applyOmrResult(full);
+      }
     } catch (exc) { if (alive.current) setError(exc instanceof Error ? exc.message : String(exc)); }
     finally { if (alive.current) setOmrBusy(false); }
   }
@@ -682,9 +703,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         if (!isValidJobEnvelope(data)) throw new Error("识别服务返回了无效任务 / OMR service returned an invalid job");
         if (!alive.current) return;
         setOmrJob(data);
-        if (data.status === "completed" && data.result) {
-          setXmlFile(new File([data.result.musicXml], (pdfName || "score").replace(/\.pdf$/i, "") + ".musicxml", { type: "application/xml" }));
-        }
+        applyOmrResult(data);
       } catch (exc) { if (!controller.signal.aborted && alive.current) setError(exc instanceof Error ? exc.message : String(exc)); }
     }, 1500);
     return () => { clearInterval(timer); controller.abort(); };
@@ -794,7 +813,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           <input type="number" min={1} max={16} step={1} value={removedBeats} onChange={(e) => { setRemovedBeats(Number(e.target.value)); setOmrJob(null); setXmlFile(null); }} /></label>}
         <button className={styles.omrButton} disabled={omrActive || recording || busyTakeId != null || (!omrPdf && !pdfName)} onClick={() => void recognizePdf()}>
           {omrBusy ? (zh ? "准备 PDF…" : "Preparing PDF…") : (zh ? "识别 PDF" : "Recognize PDF")}</button>
-        {omrJob && <p role="status" className={styles.hint}>OMR {omrJob.status}{omrJob.progress != null ? ` · ${omrJob.progress}%` : ""}</p>}
+        {omrJob && <p role="status" className={styles.hint}>OMR {omrJob.status}{omrJob.cached ? (zh ? " · 缓存结果" : " · cached") : ""}{omrJob.progress != null ? ` · ${omrJob.progress}%` : ""}</p>}
         {omrJob?.error && <p className={styles.error} role="alert">{omrJob.error}</p>}
         {omrJob?.result && <div className={styles.omrResult}>
           <p className={styles.hint}>{zh ? `已得到 ${omrJob.result.noteCount} 个可分析音符 · ${omrJob.result.measureCount} 小节` : `${omrJob.result.noteCount} analyzable notes · ${omrJob.result.measureCount} measures`}</p>
