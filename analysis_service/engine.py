@@ -18,7 +18,32 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.17"
+VERSION = "string-mono-0.18"
+
+# string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
+# metronome the time axis is anchored on the first detected onset (often late on
+# bowed strings), so a constant offset up to ~30 ms is not the player's fault.
+# Only spread/offset beyond these allowances costs points (corpus median 82 -> 95,
+# clearly unsteady takes stay low).
+RHYTHM_SPREAD_FLOOR_MS = 15
+RHYTHM_OFFSET_TOLERANCE_MS = 30
+
+
+def _rhythm_scores(spread_ms, offset_ms):
+    """(rhythmStabilityScore, rhythmScore) from detrended spread and median offset."""
+    excess_spread = max(0.0, float(spread_ms) - RHYTHM_SPREAD_FLOOR_MS)
+    excess_offset = max(0.0, abs(float(offset_ms)) - RHYTHM_OFFSET_TOLERANCE_MS)
+    stability = round(max(0, 100 - excess_spread * .55))
+    rhythm = round(max(0, 100 - excess_spread * .45 - excess_offset * .3))
+    return stability, rhythm
+
+
+def _legacy_rhythm_gate(spread_ms, offset_ms):
+    """The strict 0.17 rhythm formula, used only to decide whether rigid-grid
+    alignment failed (_needs_rescue_check). The displayed score forgives the
+    detector floor; the rescue gate must not, or wrong-tempo takes stop being
+    rescued. Rescue behaviour is identical to 0.17."""
+    return round(max(0, 100 - float(spread_ms) * .45 - abs(float(offset_ms)) * .3))
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -1680,6 +1705,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         in_tune = [abs(float(n["pitchErrorCents"])) for n in aligned if n["pitchStatus"] == "correct"]
         intonation_score = 100 if in_tune else None
     rhythm_score = None
+    rhythm_gate_score = None
     timing_accuracy_score = None
     rhythm_stability_score = None
     rhythm_spread = None
@@ -1695,11 +1721,12 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             residual = np.array(timing_errors, dtype=float) - fit
             residual -= np.median(residual)
         rhythm_spread = round(float(np.median(np.abs(residual))))
-        rhythm_stability_score = round(max(0, 100 - rhythm_spread * .55))
+        rhythm_stability_score = _rhythm_scores(rhythm_spread, timing_offset)[0]
         # 截断均值而非中位数 (#9): 中位数会掩盖少数严重偏差 (1/4 音 +400 ms 仍得 90)。
         # 单音误差截断在 250 ms, 一个离群点有上限, 与 pitchScore 的截断均值同一思路。
         timing_accuracy_score = round(max(0, 100 - float(np.mean(np.minimum(np.abs(timing_errors), 250))) * .4))
-        rhythm_score = round(max(0, 100 - rhythm_spread * .45 - abs(timing_offset) * .3))
+        rhythm_score = _rhythm_scores(rhythm_spread, timing_offset)[1]
+        rhythm_gate_score = _legacy_rhythm_gate(rhythm_spread, timing_offset)
     duration_sec = round(float(len(signal) / rate), 3)
     boundaries = measure_start_beats(xml, include_end=True)
     def audio_time(beat):
@@ -1819,7 +1846,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     # An already supported excerpt may begin mid-measure (a cropped take).
     # Preserve that note-level range instead of replacing it with whole measures.
     if sync_mode == "legacy" and alignment is None and \
-            _needs_rescue_check(pitch_score, rhythm_score,
+            _needs_rescue_check(pitch_score, rhythm_gate_score,
                                 "medium" if voiced_count / len(notes) >= .8 else "low"):
         _plan = _auto_measure_sync(xml=xml, notes=rescue_notes, times=times, pitches=pitches,
                                    energy=energy, sec_per_beat=sec_per_beat,

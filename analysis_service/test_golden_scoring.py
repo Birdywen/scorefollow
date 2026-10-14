@@ -176,7 +176,11 @@ class GoldenScoringTests(unittest.TestCase):
             clean["summary"]["timingAccuracyScore"] - late["summary"]["timingAccuracyScore"],
             LATE_ACCURACY_DROP_MIN,
         )
-        self.assertGreater(clean["summary"]["rhythmScore"], late["summary"]["rhythmScore"])
+        # 0.18: spread within the ~15 ms detector floor is not penalised, so a
+        # slightly scattered take may tie on rhythmScore; the raw spread must
+        # still rank clean strictly better.
+        self.assertGreaterEqual(clean["summary"]["rhythmScore"], late["summary"]["rhythmScore"])
+        self.assertLess(clean["summary"]["timingSpreadMs"], late["summary"]["timingSpreadMs"])
 
     def test_long_fixture_extract_all_sensors_fire(self):
         _require_vamp_plugins(self)

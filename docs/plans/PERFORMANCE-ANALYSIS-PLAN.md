@@ -172,3 +172,12 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 | refused | 96 | 82 | 173 | 2.35 | 46.48 | fused-pitch,qm-onset |
 | offline | 96 | 82 | 173 | 2.36 | 46.46 | fused-pitch,qm-onset |
 
+
+
+## 节奏分容差 (string-mono-0.18, 2026-10-14)
+- rhythmScore = 100 - 0.45*max(0, spread-15) - 0.3*max(0, |offset|-30); rhythmStabilityScore 同用 15 ms 底数; timingAccuracyScore 不变
+- 理由: 起音检测自身约 15 ms 误差; 非节拍器模式以首个检出起音为零点, 弓弦首音常偏晚, 30 ms 内的整体偏移不算演奏者
+- Dotzauer 38 段: 中位 82 -> 95, p25 76 -> 90, p10 58 -> 74; 明显不稳段仍低 (no14 20, no27 48, no17 58)
+- 候选 3x3 (底数 10/15/20, 容差 20/30/40): 20/40 时 p75 已满分失去区分, 选 15/30
+- 补救门槛 _needs_rescue_check 仍用 0.17 严格公式 (_legacy_rhythm_gate): 错速度面板 spread 151/offset 130 旧分 0 触发补救, 新分 9 不能让补救失效; 补救行为与 0.17 完全一致
+- golden late 变体 spread 16/offset 6 (旧 91) 落在检测底数内, 新分与 clean 同为 100; 断言改为 rhythmScore >= 且 timingSpreadMs 严格更小, 准确度降幅断言不变
