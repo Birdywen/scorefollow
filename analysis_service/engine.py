@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.14"
+VERSION = "string-mono-0.15"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -946,6 +946,10 @@ def _bp_locate_events(signal, rate):
 CREPE_TIMEOUT_SEC = 240
 CREPE_VOICING_MIN = 0.5
 CREPE_MIN_FRAMES = 4
+# 有界接管门限: |pYIN|>1000c 是拉住的单音物理上不可能的位置 (实测崩溃案
+# 例 no31 n98 报 +4990c, 三全音串音原型复现同值), 只在这种荒谬值上才允许
+# CREPE 接管; 看似合理的 pYIN 读数永远不动。
+CREPE_OVERRIDE_ABSURD_CENTS = 1000.0
 _CREPE_CACHE_CAP = 16
 _CREPE_CACHE: OrderedDict = OrderedDict()
 
@@ -1046,6 +1050,86 @@ def _apply_crepe_opinion(cents, detected, quality, pitch_midi, window, crepe_tra
     if cents is None and crepe_cents is not None:
         cents, detected, quality = crepe_cents, crepe_median, crepe_quality
     return cents, detected, quality, crepe_cents
+
+
+def _restatus_crepe_entry(entry, cents, detected, tolerance):
+    """CREPE 补/接管后的定性: 与主循环同规则 (classify + timing 组合)。
+    不走 displaced 归因 (起音证据已在主循环消耗)。"""
+    ps = classify_pitch(cents, detected, tolerance)
+    entry["pitchStatus"] = ps
+    ts = entry["timingStatus"]
+    if ps in ("sharp", "flat"):
+        entry["status"] = "wrong_pitch"
+    elif ps == "octave":
+        entry["status"] = "octave_uncertain"
+    elif ps == "outlier":
+        entry["status"] = "outlier"
+    elif ts in ("late", "early"):
+        entry["status"] = ts
+    elif ts == "unscored":
+        entry["status"] = "correct"
+    else:
+        entry["status"] = "timing_uncertain"
+
+
+def _run_crepe_verdicts(aligned, items, signal, rate, tolerance):
+    """主循环后的 lazy CREPE 裁决, 返回补齐数 (计入 measured 的增量)。
+    gap (pYIN 缺测) 取 CREPE 中位数; suspect (|pYIN|>1000c, 拉住的单音物理
+    不可能) 且 CREPE 窗内有声 (>=4 帧) 时由 CREPE 接管并记 crepeOverride,
+    同时清掉 stale 的 displaced 归因。pYIN 看似合理时永远不动。"""
+    delta = 0
+    if not items or not _crepe_enabled():
+        return delta
+    spans = _merge_spans([(g["lo"], g["hi"]) for g in items],
+                         pad=0.25, limit=len(signal) / rate)
+    done = set()
+    for slo, shi in spans:
+        seg = signal[int(slo * rate):int(shi * rate)]
+        if len(seg) < 8:
+            continue
+        track = _crepe_track(seg, rate)
+        if track is None:
+            continue
+        t3 = (track[0] + slo, track[1], track[2])
+        for g in items:
+            if g["index"] in done:
+                continue
+            if not (slo <= g["lo"] and g["hi"] <= shi):
+                continue
+            entry = aligned[g["index"]]
+            if g["kind"] == "gap":
+                fc, fd, fq, fcc = _apply_crepe_opinion(
+                    None, None, 0.0, g["pitchMidi"], (g["lo"], g["hi"]), t3)
+                if fc is None:
+                    continue
+                entry["pitchErrorCents"] = fc
+                entry["confidence"] = fq
+                entry["crepeCents"] = fcc
+                entry["matchStatus"] = "matched"
+                _restatus_crepe_entry(entry, fc, fd, tolerance)
+                delta += 1
+            else:
+                if entry["pitchErrorCents"] is None:
+                    continue
+                if abs(entry["pitchErrorCents"]) <= CREPE_OVERRIDE_ABSURD_CENTS:
+                    done.add(g["index"])
+                    continue
+                _, fd, fq, fcc = _apply_crepe_opinion(
+                    entry["pitchErrorCents"], None, 0.0, g["pitchMidi"],
+                    (g["lo"], g["hi"]), t3)
+                if fcc is None:
+                    continue
+                entry["pitchErrorCents"] = fcc
+                entry["confidence"] = fq
+                entry["crepeCents"] = fcc
+                entry["crepeOverride"] = True
+                entry["matchStatus"] = "matched"
+                entry["rawPitchErrorCents"] = None
+                entry["pitchDisplaced"] = False
+                entry["displacedFromMeasure"] = None
+                _restatus_crepe_entry(entry, fcc, fd, tolerance)
+            done.add(g["index"])
+    return delta
 
 
 def _fused_locate_events(signal, rate):
@@ -1349,9 +1433,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     last_onset = -1.0
     prev_duration: float | None = None
     # CREPE 二诊 v2 (lazy + crop): 整轨 full 模型 CPU 推理约 4s/s 音频, 不能
-    # 每个请求跑。本轮先登记缺测窗 (crepe_gaps), 循环后只对合并窗跑 crop;
-    # pYIN 全覆盖时 CREPE 零调用、零开销。全量审计是离线任务, 不在请求路径做。
-    crepe_gaps: list = []
+    # 每个请求跑。本轮先登记缺测窗 (gap) 与荒谬值窗 (suspect), 循环后只对
+    # 合并窗跑 crop; 无窗时 CREPE 零调用、零开销。全量审计是离线任务,
+    # 不在请求路径做。
+    crepe_items: list = []
 
     def predicted_drift(at: float) -> float:
         if beat_time is not None or not drift_obs:
@@ -1464,8 +1549,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # lazy gap 登记: 主循环结束后再对缺测窗跑 crop 推理。veto (窗内多半是
         # 邻音) 之后才变 None 的音不登记, 避免把邻音音高算到本音头上。
         if cents is None and crepe_lo is not None and crepe_hi is not None and crepe_hi > crepe_lo:
-            crepe_gaps.append({"index": len(aligned), "lo": float(crepe_lo),
-                               "hi": float(crepe_hi), "pitchMidi": note["pitchMidi"]})
+            crepe_items.append({"index": len(aligned), "lo": float(crepe_lo),
+                                "hi": float(crepe_hi), "pitchMidi": note["pitchMidi"],
+                                "kind": "gap"})
         raw_cents, displaced, displaced_from = None, False, None
         if cents is not None and detected is not None and abs(cents) > pitch_tolerance_cents:
             # 起音落在本音自己的位置 (偏差 <= max(80 ms, 25% 时值)) 时音高窗测的就是本音:
@@ -1484,6 +1570,13 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         if onset is None and duration < 0.25 and cents is not None and abs(cents) > 200:
             cents = None
             quality = 0.0
+        # absurd suspect 登记 (post-veto): veto 之后仍有值且荒谬才登记,
+        # veto 掉的不进, 避免把邻音窗算进来。
+        if cents is not None and abs(cents) > CREPE_OVERRIDE_ABSURD_CENTS \
+                and crepe_lo is not None and crepe_hi is not None and crepe_hi > crepe_lo:
+            crepe_items.append({"index": len(aligned), "lo": float(crepe_lo),
+                                "hi": float(crepe_hi), "pitchMidi": note["pitchMidi"],
+                                "kind": "suspect"})
         pitch_status = classify_pitch(cents, detected, pitch_tolerance_cents)
         # 只挡有滑格证据的起音 (判错音/邻音归因) 进速度趋势; uncertain 照常喂, 抢快时趋势才追得上。
         if onset is not None and beat_time is None and not wide_hit and not displaced and pitch_status not in ("sharp", "flat"):
@@ -1498,59 +1591,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             "timing_uncertain" if timing_eligible and delta is None else timing_status if timing_status in ("late", "early") else "correct"
         aligned.append({**note, "expectedSec": round(expected, 3), "performedSec": round(onset, 3) if onset is not None else None,
                         "expectedEndSec": round(expected + duration, 3),
-                        "pitchErrorCents": cents, "crepeCents": crepe_cents, "timingErrorMs": delta if timing_eligible else None,
+                        "pitchErrorCents": cents, "crepeCents": crepe_cents, "crepeOverride": False, "timingErrorMs": delta if timing_eligible else None,
                         "confidence": quality, "pitchStatus": pitch_status, "timingStatus": timing_status,
                         "rawPitchErrorCents": raw_cents, "pitchDisplaced": displaced,
                         "displacedFromMeasure": displaced_from,
                         "matchStatus": "matched" if cents is not None else "uncertain", "status": status})
-    # CREPE gap-fill (lazy + crop): 只对本轮缺测窗跑推理。合并加窗 (pad
-    # 0.25s, 钳制到录音), 每段一次 _crepe_track, 时间戳回偏后逐音补。补上
-    # 的音直接按 classify_pitch 定性, 不走 displaced 归因 (起音证据已在主
-    # 循环消耗); veto 音不在 crepe_gaps 里, 不会把邻音音高算进来。
-    if crepe_gaps and _crepe_enabled():
-        _spans = _merge_spans([(g["lo"], g["hi"]) for g in crepe_gaps],
-                              pad=0.25, limit=len(signal) / rate)
-        _filled = set()
-        for _slo, _shi in _spans:
-            _seg = signal[int(_slo * rate):int(_shi * rate)]
-            if len(_seg) < 8:
-                continue
-            _track = _crepe_track(_seg, rate)
-            if _track is None:
-                continue
-            _tt = _track[0] + _slo
-            for _g in crepe_gaps:
-                if _g["index"] in _filled:
-                    continue
-                if not (_slo <= _g["lo"] and _g["hi"] <= _shi):
-                    continue
-                _fc, _fd, _fq, _fcc = _apply_crepe_opinion(
-                    None, None, 0.0, _g["pitchMidi"], (_g["lo"], _g["hi"]),
-                    (_tt, _track[1], _track[2]))
-                if _fc is None:
-                    continue
-                _filled.add(_g["index"])
-                _entry = aligned[_g["index"]]
-                _entry["pitchErrorCents"] = _fc
-                _entry["confidence"] = _fq
-                _entry["crepeCents"] = _fcc
-                _entry["matchStatus"] = "matched"
-                _ps = classify_pitch(_fc, _fd, pitch_tolerance_cents)
-                _entry["pitchStatus"] = _ps
-                _ts = _entry["timingStatus"]
-                if _ps in ("sharp", "flat"):
-                    _entry["status"] = "wrong_pitch"
-                elif _ps == "octave":
-                    _entry["status"] = "octave_uncertain"
-                elif _ps == "outlier":
-                    _entry["status"] = "outlier"
-                elif _ts in ("late", "early"):
-                    _entry["status"] = _ts
-                elif _ts == "unscored":
-                    _entry["status"] = "correct"
-                else:
-                    _entry["status"] = "timing_uncertain"
-                measured_count += 1
+    # CREPE verdicts (lazy + crop): 缺测补齐 + 荒谬值接管, 详见 _run_crepe_verdicts。
+    # 无窗时零调用、零开销; 看似合理的 pYIN 读数永远不动。
+    measured_count += _run_crepe_verdicts(
+        aligned, crepe_items, signal, rate, pitch_tolerance_cents)
     # 动态剔除极端音 (门控见 _drop_player_outliers); 音准分按剔除后重建,
     # dropped/octave/outlier 一律不计入。
     trim_active = _drop_player_outliers(aligned, pitch_tolerance_cents)
