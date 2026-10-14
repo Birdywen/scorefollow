@@ -1,4 +1,4 @@
-"""CREPE second opinion for scoring (string-mono-0.15, lazy + crop + bounded override).
+"""CREPE second opinion for scoring (string-mono-0.16, lazy + crop + bounded override + batched verdicts).
 
 Gap-fill where pYIN missed; bounded override where pYIN is absurd
 (|cents|>1000, physically impossible for a held monophonic note) and CREPE
@@ -129,6 +129,32 @@ class CrepeWorkerTests(unittest.TestCase):
         med = float(np.median(np.asarray(raw["midi"])[mid]))
         self.assertAlmostEqual(med, 69.0, delta=0.25)
 
+    def test_worker_batch_pairs_single_process(self):
+        if not os.path.exists(CREPE_PYTHON):
+            self.skipTest("crepevenv not installed")
+        import json
+        with tempfile.TemporaryDirectory(prefix="sf-crepe-test-") as tmp:
+            args = []
+            outs = []
+            for k, (freq, want) in enumerate(((440.0, 69.0), (493.88, 71.0))):
+                wav_path = os.path.join(tmp, "in%d.wav" % k)
+                out_path = os.path.join(tmp, "out%d.json" % k)
+                _sine_wav(wav_path, freq=freq)
+                args += [wav_path, out_path]
+                outs.append((out_path, want))
+            worker = os.path.join(os.path.dirname(E.__file__), "crepe_worker.py")
+            subprocess.run([CREPE_PYTHON, "-I", "-B", worker] + args,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=300, check=True)
+            for out_path, want in outs:
+                with open(out_path, encoding="utf-8") as handle:
+                    raw = json.load(handle)
+                self.assertEqual(len(raw["times"]), len(raw["midi"]))
+                self.assertEqual(len(raw["times"]), len(raw["voicing"]))
+                mid = slice(len(raw["midi"]) // 4, 3 * len(raw["midi"]) // 4)
+                med = float(np.median(np.asarray(raw["midi"])[mid]))
+                self.assertAlmostEqual(med, want, delta=0.25)
+
 
 class CrepeEndToEndTests(unittest.TestCase):
     def test_detuned_pyin_unchanged_and_crepe_never_runs(self):
@@ -136,7 +162,7 @@ class CrepeEndToEndTests(unittest.TestCase):
         self.addCleanup(E._CREPE_CACHE.clear)
         fix = build_detuned()
         with patch.dict(os.environ, {"SCOREFOLLOW_CREPE_PYTHON": CREPE_PYTHON}), \
-                patch.object(E, "_crepe_track",
+                patch.object(E, "_crepe_tracks",
                              side_effect=AssertionError("lazy: no gaps, no run")):
             result = analyze(fix["wav"], fix["xml"], fix["bpm"], fix["instrument"])
         target = next(n for n in result["notes"] if n["id"] == "n3")
@@ -162,15 +188,18 @@ class CrepeEndToEndTests(unittest.TestCase):
         silenced = _encode_wav(pcm)
         calls = []
 
-        def fake_crepe_track(signal, rate):
-            calls.append(len(signal))
-            n = max(8, int(len(signal) / rate * 172.0))
-            times = np.arange(n, dtype=np.float64) / 172.0
-            return (times, np.full(n, FIXTURE_PITCHES[gap_index] + 0.6),
-                    np.full(n, 0.9))
+        def fake_crepe_track(signals, rate):
+            calls.append(sum(len(s) for s in signals))
+            out = []
+            for signal in signals:
+                n = max(8, int(len(signal) / rate * 172.0))
+                times = np.arange(n, dtype=np.float64) / 172.0
+                out.append((times, np.full(n, FIXTURE_PITCHES[gap_index] + 0.6),
+                            np.full(n, 0.9)))
+            return out
 
         with patch.dict(os.environ, {"SCOREFOLLOW_CREPE_PYTHON": CREPE_PYTHON}), \
-                patch.object(E, "_crepe_track", side_effect=fake_crepe_track):
+                patch.object(E, "_crepe_tracks", side_effect=fake_crepe_track):
             result = analyze(silenced, fix["xml"], fix["bpm"], fix["instrument"])
         self.assertEqual(len(calls), 1)
         self.assertLess(calls[0], len(pcm))
@@ -194,12 +223,12 @@ class CrepeEndToEndTests(unittest.TestCase):
         self.assertGreater(abs(target["pitchErrorCents"]), E.CREPE_OVERRIDE_ABSURD_CENTS)
         calls = []
 
-        def fake(signal, rate):
+        def fake(signals, rate):
             calls.append(1)
-            return _fake_voiced(72.0)(signal, rate)
+            return [_fake_voiced(72.0)(s, rate) for s in signals]
 
         with patch.dict(os.environ, {"SCOREFOLLOW_CREPE_PYTHON": CREPE_PYTHON}), \
-                patch.object(E, "_crepe_track", side_effect=fake):
+                patch.object(E, "_crepe_tracks", side_effect=fake):
             result = analyze(fix["wav"], fix["xml"], fix["bpm"], fix["instrument"])
         self.assertEqual(len(calls), 1)
         target = next(n for n in result["notes"] if n["id"] == "n3")
@@ -273,7 +302,8 @@ class CrepeVerdictTests(unittest.TestCase):
                 os.environ["SCOREFOLLOW_CREPE_PYTHON"] = CREPE_PYTHON
             else:
                 os.environ.pop("SCOREFOLLOW_CREPE_PYTHON", None)
-            with patch.object(E, "_crepe_track", side_effect=track_fn):
+            with patch.object(E, "_crepe_tracks",
+                               side_effect=lambda signals, rate: [track_fn(s, rate) for s in signals]):
                 return _run_crepe_verdicts(entries, items, signal, 22050, 25.0)
 
     def _item(self, kind, cents):
@@ -329,6 +359,29 @@ class CrepeVerdictTests(unittest.TestCase):
                               _fake_voiced(72.0, voicing=0.1))
         self.assertEqual(suspect[0]["pitchErrorCents"], 4990.2)
         self.assertFalse(suspect[0]["crepeOverride"])
+
+    def test_two_spans_one_batch_call(self):
+        E._CREPE_CACHE.clear()
+        self.addCleanup(E._CREPE_CACHE.clear)
+        signal = np.zeros(4 * 22050, dtype=np.float32)
+        entries = [_verdict_entry(None), _verdict_entry(4990.2)]
+        items = [{"index": 0, "lo": 1.0, "hi": 1.2, "pitchMidi": 72.0, "kind": "gap"},
+                 {"index": 1, "lo": 2.5, "hi": 2.7, "pitchMidi": 72.0, "kind": "suspect"}]
+        calls = []
+
+        def batch(signals, rate):
+            calls.append(len(signals))
+            return [_fake_voiced(72.05 if i == 0 else 72.0)(s, rate)
+                    for i, s in enumerate(signals)]
+
+        with patch.dict(os.environ, {"SCOREFOLLOW_CREPE_PYTHON": CREPE_PYTHON}), \
+                patch.object(E, "_crepe_tracks", side_effect=batch):
+            delta = _run_crepe_verdicts(entries, items, signal, 22050, 25.0)
+        self.assertEqual(calls, [2])
+        self.assertEqual(delta, 1)
+        self.assertEqual(entries[0]["pitchErrorCents"], 5.0)
+        self.assertTrue(entries[1]["crepeOverride"])
+        self.assertEqual(entries[1]["pitchErrorCents"], 0.0)
 
     def test_disabled_env_or_empty_items_no_calls(self):
         def boom(signal, rate):

@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.15"
+VERSION = "string-mono-0.16"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -980,52 +980,85 @@ def _merge_spans(windows, pad=0.25, limit=None):
     return [(a, b) for a, b in merged]
 
 
+def _write_crepe_wav(x, wav_path, rate):
+    pcm = (np.clip(x, -1.0, 1.0) * 32767).astype('<i2').tobytes()
+    with wave.open(wav_path, 'wb') as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(int(rate))
+        handle.writeframes(pcm)
+
+
+def _read_crepe_out(out_path):
+    import json
+    with open(out_path, encoding='utf-8') as handle:
+        raw = json.load(handle)
+    times = np.asarray(raw.get('times'), dtype=np.float64)
+    midi = np.asarray(raw.get('midi'), dtype=np.float64)
+    voicing = np.asarray(raw.get('voicing'), dtype=np.float64)
+    if times.ndim == 1 and midi.shape == times.shape and voicing.shape == times.shape and len(times) >= 8:
+        return (times, midi, voicing)
+    return None
+
+
+def _crepe_tracks(signals, rate):
+    """Batch CREPE tracks for a list of signals (string-mono-0.16).
+    One worker process handles every uncached signal (torch + full model
+    load once, then one inference per signal), so N verdict spans cost one
+    startup instead of N. Each signal takes the exact same bytes as the old
+    single-pair _crepe_track path and results share its cache keys; verdict
+    medians are stable to ~0.05c across runs either way (below the 25c/1000c
+    gates), so verdicts are equivalent -- only the startup cost is gone. Returns a list
+    aligned with `signals` (None per failure, fail-closed)."""
+    import os
+    out = [None] * len(signals)
+    python = os.environ.get('SCOREFOLLOW_CREPE_PYTHON', '').strip()
+    if not python or not signals:
+        return out
+    import hashlib
+    import subprocess
+    import tempfile
+    pending = []
+    for i, signal in enumerate(signals):
+        x = np.ascontiguousarray(signal, dtype=np.float32)
+        key = (hashlib.blake2b(x.tobytes(), digest_size=16).digest(), int(rate))
+        if key in _CREPE_CACHE:
+            _CREPE_CACHE.move_to_end(key)
+            out[i] = _CREPE_CACHE[key]
+        else:
+            pending.append((i, key, x))
+    if pending:
+        try:
+            worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'crepe_worker.py')
+            with tempfile.TemporaryDirectory(prefix='sf-crepe-') as tmp:
+                args = []
+                for j, (_i, _key, x) in enumerate(pending):
+                    wav_path = os.path.join(tmp, 'in%d.wav' % j)
+                    out_path = os.path.join(tmp, 'out%d.json' % j)
+                    _write_crepe_wav(x, wav_path, rate)
+                    args += [wav_path, out_path]
+                subprocess.run([python, '-I', '-B', worker] + args, cwd=tmp,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL,
+                               timeout=CREPE_TIMEOUT_SEC + 60 * (len(pending) - 1), check=True)
+                for j, (i, key, _x) in enumerate(pending):
+                    track = _read_crepe_out(os.path.join(tmp, 'out%d.json' % j))
+                    _CREPE_CACHE[key] = track
+                    while len(_CREPE_CACHE) > _CREPE_CACHE_CAP:
+                        _CREPE_CACHE.popitem(last=False)
+                    out[i] = track
+        except Exception:
+            pass
+    return out
+
+
 def _crepe_track(signal, rate):
     """Optional TorchCREPE f0 track for scoring second opinion. None unless
     SCOREFOLLOW_CREPE_PYTHON names a venv interpreter with torchcrepe; any
     failure or timeout -> None, so scoring falls back to pYIN exactly as in
-    0.13. Returns (times, midi, voicing) float arrays or None."""
-    import os
-    python = os.environ.get('SCOREFOLLOW_CREPE_PYTHON', '').strip()
-    if not python:
-        return None
-    import hashlib
-    import json
-    import subprocess
-    import tempfile
-    x = np.ascontiguousarray(signal, dtype=np.float32)
-    key = (hashlib.blake2b(x.tobytes(), digest_size=16).digest(), int(rate))
-    if key in _CREPE_CACHE:
-        _CREPE_CACHE.move_to_end(key)
-        return _CREPE_CACHE[key]
-    track = None
-    try:
-        worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'crepe_worker.py')
-        with tempfile.TemporaryDirectory(prefix='sf-crepe-') as tmp:
-            wav_path = os.path.join(tmp, 'in.wav')
-            out_path = os.path.join(tmp, 'out.json')
-            pcm = (np.clip(x, -1.0, 1.0) * 32767).astype('<i2').tobytes()
-            with wave.open(wav_path, 'wb') as handle:
-                handle.setnchannels(1)
-                handle.setsampwidth(2)
-                handle.setframerate(int(rate))
-                handle.writeframes(pcm)
-            subprocess.run([python, '-I', '-B', worker, wav_path, out_path], cwd=tmp,
-                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, timeout=CREPE_TIMEOUT_SEC, check=True)
-            with open(out_path, encoding='utf-8') as handle:
-                raw = json.load(handle)
-        times = np.asarray(raw.get('times'), dtype=np.float64)
-        midi = np.asarray(raw.get('midi'), dtype=np.float64)
-        voicing = np.asarray(raw.get('voicing'), dtype=np.float64)
-        if times.ndim == 1 and midi.shape == times.shape and voicing.shape == times.shape and len(times) >= 8:
-            track = (times, midi, voicing)
-    except Exception:
-        track = None
-    _CREPE_CACHE[key] = track
-    while len(_CREPE_CACHE) > _CREPE_CACHE_CAP:
-        _CREPE_CACHE.popitem(last=False)
-    return track
+    0.13. Returns (times, midi, voicing) float arrays or None.
+    Single-signal path shares the batch implementation (one pair per call)."""
+    return _crepe_tracks([signal], rate)[0]
 
 
 def _apply_crepe_opinion(cents, detected, quality, pitch_midi, window, crepe_track):
@@ -1080,14 +1113,18 @@ def _run_crepe_verdicts(aligned, items, signal, rate, tolerance):
     delta = 0
     if not items or not _crepe_enabled():
         return delta
-    spans = _merge_spans([(g["lo"], g["hi"]) for g in items],
-                         pad=0.25, limit=len(signal) / rate)
     done = set()
-    for slo, shi in spans:
+    jobs = []
+    for slo, shi in _merge_spans([(g["lo"], g["hi"]) for g in items],
+                                 pad=0.25, limit=len(signal) / rate):
         seg = signal[int(slo * rate):int(shi * rate)]
         if len(seg) < 8:
             continue
-        track = _crepe_track(seg, rate)
+        jobs.append((slo, shi, seg))
+    # One worker process for all spans (model loads once); verdicts are
+    # equivalent to per-span calls (median-stable, see _crepe_tracks).
+    tracks = _crepe_tracks([seg for _slo, _shi, seg in jobs], rate)
+    for (slo, shi, _seg), track in zip(jobs, tracks):
         if track is None:
             continue
         t3 = (track[0] + slo, track[1], track[2])
