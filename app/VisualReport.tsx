@@ -200,11 +200,13 @@ export default function VisualReport({
   notes,
   onNoteClick,
   onMeasureClick,
+  scoreMeasureCount,
   zh = true,
 }: {
   notes: VisualNote[];
   onNoteClick?: (note: VisualNote) => void;
   onMeasureClick?: (measure: number) => void;
+  scoreMeasureCount?: number;
   zh?: boolean;
 }) {
   if (!notes.length) return null;
@@ -359,24 +361,28 @@ export default function VisualReport({
       })}
       <h3 style={{ fontSize: 13, margin: "14px 0 8px" }}>{zh ? "哪段要练（点击只回听该小节）" : "Measures to practice — click to play only that measure"}</h3>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {measures.map((m) => (
+        {(scoreMeasureCount != null && scoreMeasureCount >= 1
+          ? Array.from({ length: scoreMeasureCount }, (_, i) => i + 1)
+          : measures).map((m) => (
           <button
             key={m}
             title={barText(m)}
             aria-label={barText(m)}
+            disabled={!stats.has(m)}
             onClick={() => onMeasureClick?.(m)}
             style={{
               minWidth: 52,
               padding: "6px 8px",
               borderRadius: 8,
               border: "1px solid var(--sf-border)",
-              background: barColor(m),
-              color: "#fff",
-              cursor: onMeasureClick ? "pointer" : "default",
+              background: stats.has(m) ? barColor(m) : "#e8eaed",
+              color: stats.has(m) ? "#fff" : "var(--sf-muted)",
+              cursor: stats.has(m) && onMeasureClick ? "pointer" : "default",
+              opacity: stats.has(m) ? 1 : 0.55,
             }}
           >
-            <span style={{ display: "block", fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>{m}</span>
-            <span style={{ display: "block", fontSize: 11, fontWeight: 600, lineHeight: 1.4, opacity: 0.95 }}>{barSub(m)}</span>
+            <span style={{ display: "block", fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: stats.has(m) ? undefined : "var(--sf-muted)" }}>{m}</span>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, lineHeight: 1.4, opacity: 0.95 }}>{stats.has(m) ? barSub(m) : (zh ? "未录到" : "—")}</span>
           </button>
         ))}
       </div>

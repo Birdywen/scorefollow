@@ -1018,6 +1018,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       <VisualReport
         zh={zh}
         notes={result.notes}
+        scoreMeasureCount={scoreMeasures || undefined}
         onNoteClick={(vn) => { const full = result.notes.find((n) => n.id === vn.id); if (full) replay(full); }}
         onMeasureClick={replayMeasure}
       />
