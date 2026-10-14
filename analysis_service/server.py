@@ -21,7 +21,7 @@ from . import vamp_features
 from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score, read_wav, validate_measure_sync
 from .omr import MAX_PDF, recognize
 from .quality import assess_quality
-from .engine import VERSION as STRING_VERSION
+from .engine import VERSION as STRING_VERSION, crepe_backend
 from .job_store import JobStore, QueueFull, TERMINAL
 
 MAX_BODY = 16_000_000
@@ -295,7 +295,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/health":
             self.respond(200, {"status": "ok", "stringAlgorithmVersion": STRING_VERSION,
-                               "qualityVersion": "evidence-1"})
+                               "qualityVersion": "evidence-1", "crepeBackend": crepe_backend()})
             return
         if not self.authorized():
             self.respond(401, {"error": "未授权"})

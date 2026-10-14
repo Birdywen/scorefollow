@@ -156,3 +156,19 @@ OMR 适配层 `analysis_service/omr.py` 服务端完成：预签名地址 → S3
 - 验证：test_rescue_attempts.py（先失败后通过）、全量 `python3 -B -m unittest discover -s analysis_service -t .`（注意必须带 -t .，否则相对导入全部 _FailedTest）。
 - 环境备注：oracle 仓库 .git/hooks 有 LFS hook（10-12 21:03 安装），git-lfs 仅在 /tmp/opencode/git-lfs-tool，非交互 ssh 不在 PATH，会拦 worktree/checkout；本次 worktree/commit/push 仅对单条命令用 `-c core.hooksPath=/dev/null`（提交不含 LFS 文件），未改 hook 配置。
 - 部署（birdy 授权）：research/vamp-plugins rebase 到 8942131 后推入 main（全量 238 tests OK，tsc/analysis-guard 通过；LFS 对象远端齐全）。分析服务改由独立部署目录运行：/home/ubuntu/n/scorefollow-deploy（只跟 main 的 worktree，GIT_LFS_SKIP_SMUDGE=1，不含数据集音频），systemd drop-in /etc/systemd/system/scorefollow-analysis.service.d/deploy-dir.conf 覆盖 WorkingDirectory；health string-mono-0.9。回滚：删 drop-in → daemon-reload → restart。~/n/scorefollow 留作研究工作区，切分支不再影响线上；以后构建/重启在部署目录内进行。
+
+## 远程 GPU CREPE 上线 (string-mono-0.17, 2026-10-14)
+
+- 推理端: Windows RTX 5090 (tailscale junpeng 100.111.0.118:28763), 计划任务 ScoreFollow-CREPE-GPU, Bearer 密钥, 协议 crepe-full-fp32-v1
+- 启用: env SCOREFOLLOW_CREPE_URL + SCOREFOLLOW_CREPE_TOKEN_FILE (~/.config/scorefollow-crepe.token, 600); 回滚=删这两行并重启
+- 远程失败不回退本机 CPU CREPE, 只用 pYIN 打分 (不缓存失败); 请求超时 20s, 请求/响应上限 20MB
+- 上线前线上 0.16 真实任务耗时 11.5s / 180s / 305s (CPU CREPE 为主要耗时)
+- Suzuki 录音 (80 BPM, violin, vamp-beat, 与 server.py 同路径: extract_all 后 analyze) 对照, 小节音高分差异 0 处:
+
+| 模式 | 音高 | 节奏 | 计分音 | 特征秒 | 总秒 | sensors |
+|---|---|---|---|---|---|---|
+| cpu | 96 | 82 | 180 | 2.59 | 385.59 | fused-pitch,qm-onset |
+| gpu | 96 | 82 | 180 | 2.37 | 10.42 | fused-pitch,qm-onset |
+| refused | 96 | 82 | 173 | 2.35 | 46.48 | fused-pitch,qm-onset |
+| offline | 96 | 82 | 173 | 2.36 | 46.46 | fused-pitch,qm-onset |
+

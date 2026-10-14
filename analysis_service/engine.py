@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.16"
+VERSION = "string-mono-0.17"
 MAX_SECONDS = 300
 MAX_FIRST_BEAT_SECONDS = 20
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -954,10 +954,20 @@ _CREPE_CACHE_CAP = 16
 _CREPE_CACHE: OrderedDict = OrderedDict()
 
 
+def crepe_backend() -> str:
+    """Which CREPE transport is configured: 'remote' (resident GPU worker) wins
+    over 'cpu' (local subprocess); 'none' disables CREPE second opinions."""
+    import os
+    if os.environ.get('SCOREFOLLOW_CREPE_URL', '').strip():
+        return 'remote'
+    if os.environ.get('SCOREFOLLOW_CREPE_PYTHON', '').strip():
+        return 'cpu'
+    return 'none'
+
+
 def _crepe_enabled():
     """CREPE worker env 是否就绪。请求路径只在有缺测窗时才调 _crepe_track。"""
-    import os
-    return bool(os.environ.get('SCOREFOLLOW_CREPE_PYTHON', '').strip())
+    return crepe_backend() != 'none'
 
 
 def _merge_spans(windows, pad=0.25, limit=None):
@@ -1002,18 +1012,16 @@ def _read_crepe_out(out_path):
 
 
 def _crepe_tracks(signals, rate):
-    """Batch CREPE tracks for a list of signals (string-mono-0.16).
-    One worker process handles every uncached signal (torch + full model
-    load once, then one inference per signal), so N verdict spans cost one
-    startup instead of N. Each signal takes the exact same bytes as the old
-    single-pair _crepe_track path and results share its cache keys; verdict
-    medians move only a few cents across runs either way (below the 25c/1000c
-    gates), so verdicts are equivalent -- only the startup cost is gone. Returns a list
-    aligned with `signals` (None per failure, fail-closed)."""
+    """Batch tracks via resident GPU when configured, otherwise local worker.
+    Both use full CREPE and PCM16 input; decoder dithering can shift readings
+    near scoring boundaries either way. Remote failure degrades to pYIN-only
+    (fail-closed) and never falls through to the slow CPU worker.
+    """
     import os
     out = [None] * len(signals)
     python = os.environ.get('SCOREFOLLOW_CREPE_PYTHON', '').strip()
-    if not python or not signals:
+    remote = os.environ.get('SCOREFOLLOW_CREPE_URL', '').strip()
+    if not (python or remote) or not signals:
         return out
     import hashlib
     import subprocess
@@ -1022,12 +1030,26 @@ def _crepe_tracks(signals, rate):
     for i, signal in enumerate(signals):
         x = np.ascontiguousarray(signal, dtype=np.float32)
         key = (hashlib.blake2b(x.tobytes(), digest_size=16).digest(), int(rate))
+        if remote:
+            key = (*key, remote)
         if key in _CREPE_CACHE:
             _CREPE_CACHE.move_to_end(key)
             out[i] = _CREPE_CACHE[key]
         else:
             pending.append((i, key, x))
     if pending:
+        if remote:
+            from .crepe_remote import remote_tracks
+            try:
+                tracks = remote_tracks([x for _i, _key, x in pending], rate, remote)
+            except Exception:
+                return out  # fail-closed to pYIN; never the CPU subprocess
+            for (i, key, _x), track in zip(pending, tracks):
+                _CREPE_CACHE[key] = track
+                while len(_CREPE_CACHE) > _CREPE_CACHE_CAP:
+                    _CREPE_CACHE.popitem(last=False)
+                out[i] = track
+            return out
         try:
             worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'crepe_worker.py')
             with tempfile.TemporaryDirectory(prefix='sf-crepe-') as tmp:
