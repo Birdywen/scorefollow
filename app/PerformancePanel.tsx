@@ -2,6 +2,7 @@
 
 import { describeFailure, type FailureInfo } from "@/lib/analysis-failure";
 import { useEffect, useRef, useState } from "react";
+import ScoreOsmdPreview from "./ScoreOsmdPreview";
 import styles from "./performance.module.css";
 import {
   attachRecordingStart, createSession, deleteTakeBlob, loadTakeBlob, measureAndBeatAt,
@@ -214,6 +215,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const [removedFirstRest, setRemovedFirstRest] = useState(false);
   const [removedBeats, setRemovedBeats] = useState(4);
   const [omrJob, setOmrJob] = useState<OmrJob | null>(null);
+  const [showOsmd, setShowOsmd] = useState(false);
+  useEffect(() => { setShowOsmd(false); }, [omrJob?.id]);
   const [omrBusy, setOmrBusy] = useState(false);
   const [instrument, setInstrument] = useState("violin");
   const [bpm, setBpm] = useState(80);
@@ -819,6 +822,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           <p className={styles.hint}>{zh ? `已得到 ${omrJob.result.noteCount} 个可分析音符 · ${omrJob.result.measureCount} 小节` : `${omrJob.result.noteCount} analyzable notes · ${omrJob.result.measureCount} measures`}</p>
           {omrJob.result.compatible && <p className={styles.hint}>{zh ? "已自动作为演奏分析的目标谱；选择起始小节并录音即可。" : "Automatically selected as the target score. Choose a starting measure and record."}</p>}
           {!omrJob.result.compatible && <p className={styles.error}>{zh ? "识别已完成，但当前单声部分析器暂不支持此 MusicXML：" : "Recognition completed, but this MusicXML is not supported by the monophonic analyzer: "}{omrJob.result.reason}</p>}
+          <button className={styles.omrButton} onClick={() => setShowOsmd((v) => !v)}>{showOsmd ? (zh ? "收起乐谱预览" : "Hide score preview") : (zh ? "预览识别乐谱" : "Preview recognized score")}</button>
+          {showOsmd && <ScoreOsmdPreview musicXml={omrJob.result.musicXml} zh={zh} />}
           <button className={styles.omrButton} onClick={downloadMusicXml}>{zh ? "下载 MusicXML（可选）" : "Download MusicXML (optional)"}</button>
         </div>}
       </details>

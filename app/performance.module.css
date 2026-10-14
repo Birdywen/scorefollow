@@ -80,3 +80,6 @@
 .fold { margin: 12px 0; padding: 10px 12px; border: 1px dashed var(--sf-border); border-radius: 10px; }
 .fold summary { cursor: pointer; font-size: 12px; font-weight: 700; }
 .fold .field { margin: 8px 0 0; }
+/* OSMD 识别乐谱预览：白纸卡片（深色主题下黑色符头需托底），限高滚动 */
+.osmdPreview { background: #fff; border-radius: 10px; padding: 8px; margin-top: 8px; max-height: 460px; overflow: auto; }
+.osmdPreview svg { width: 100%; height: auto; }
