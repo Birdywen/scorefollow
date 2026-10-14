@@ -292,6 +292,17 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     setError("");
     updateTake(ctx.takeId, { result: hookResult, jobStatus: "completed", error: undefined });
     setBusyTakeId(null);
+    // Auto-locate the score view to the measure range the engine actually
+    // covered. A vamp-beat take whose recording begins mid-score (soft start
+    // with no pitched notes in the first measures) legitimately reports
+    // startMeasure > 1; showing the full score from measure 1 renders those
+    // empty measures and makes playback appear to jump. Jump to the covered
+    // start once the result lands.
+    const covered = (hookResult as { summary?: Result["summary"] }).summary?.startMeasure;
+    if (covered && Number.isInteger(covered) && covered >= 1 && covered !== startMeasure && onJump) {
+      lastJumpMeasure.current = covered;
+      onJump(covered);
+    }
   }
   function handleAnalysisError(message: string, phase: string, jobId: string | null, info?: FailureInfo) {
     const ctx = jobTakeRef.current;
@@ -775,6 +786,18 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     }
     if (take.result?.summary.autoLocated) {
       if (!pdfMeasures || pdfMeasures !== take.result.summary.measureCount) return;
+      const note = [...take.result.notes].reverse().find((n) => n.expectedSec <= sec);
+      if (note && note.measure !== lastJumpMeasure.current) {
+        lastJumpMeasure.current = note.measure;
+        onJump(note.measure);
+      }
+      return;
+    }
+    // Vamp-beat take (no metronome anchor, not auto-located): the engine already
+    // resolved the covered measure range (rescue may set startMeasure > 1 for a
+    // recording beginning mid-score). Follow the score via note measures so the
+    // cursor lands on covered measures instead of lingering on the empty ones.
+    if (take.result?.notes?.length) {
       const note = [...take.result.notes].reverse().find((n) => n.expectedSec <= sec);
       if (note && note.measure !== lastJumpMeasure.current) {
         lastJumpMeasure.current = note.measure;
