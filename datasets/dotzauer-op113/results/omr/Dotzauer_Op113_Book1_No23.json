@@ -10,5 +10,11 @@
   "note_count": 373,
   "measure_count": 49,
   "musicxml": "musicxml/Dotzauer_Op113_Book1_No23.musicxml",
-  "xml_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75"
+  "xml_sha256": "b7c402d94803e4e55b2dc5ea75e7fe6aafb80858d267c3a6d9fca4c5d1526528",
+  "manual_replacement": {
+    "date": "2026-10-15",
+    "by": "user",
+    "note": "MusicXML replaced by user re-OCR; job_id/compatible/reason/note_count/measure_count describe the original OCR job",
+    "previous_xml_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75"
+  }
 }

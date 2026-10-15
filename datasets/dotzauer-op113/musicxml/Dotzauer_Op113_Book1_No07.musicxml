@@ -6,7 +6,7 @@
   <identification>
     <encoding>
       <software>Halbestunde</software>
-      <encoding-date>2026-10-12</encoding-date>
+      <encoding-date>2026-10-15</encoding-date>
     </encoding>
   </identification>
   <part-list>
@@ -43,6 +43,11 @@
           </dynamics>
         </direction-type>
         <sound dynamics="106.67" />
+      </direction>
+      <direction>
+        <direction-type>
+          <words>WB</words>
+        </direction-type>
       </direction>
       <note>
         <pitch>
@@ -108,25 +113,6 @@
           </articulations>
         </notations>
       </note>
-      <backup>
-        <duration>4</duration>
-      </backup>
-      <note>
-        <pitch>
-          <step>F</step>
-          <octave>3</octave>
-        </pitch>
-        <duration>3</duration>
-        <voice>2</voice>
-        <type>half</type>
-        <dot />
-        <stem>up</stem>
-        <notehead>normal</notehead>
-        <staff>1</staff>
-        <notations>
-          <slur type="start" number="1" />
-        </notations>
-      </note>
     </measure>
     <measure number="2">
       <note>
@@ -137,7 +123,7 @@
         <duration>1</duration>
         <voice>1</voice>
         <type>quarter</type>
-        <stem>up</stem>
+        <stem>down</stem>
         <staff>1</staff>
         <notations>
           <articulations>
@@ -1589,7 +1575,7 @@
         <duration>1</duration>
         <voice>1</voice>
         <type>quarter</type>
-        <stem>up</stem>
+        <stem>down</stem>
         <staff>1</staff>
         <notations>
           <articulations>
@@ -2063,16 +2049,6 @@
       </note>
     </measure>
     <measure number="31">
-      <direction>
-        <direction-type>
-          <words>rit.</words>
-        </direction-type>
-      </direction>
-      <direction>
-        <direction-type>
-          <wedge type="diminuendo" number="1" />
-        </direction-type>
-      </direction>
       <note>
         <pitch>
           <step>E</step>
@@ -2157,12 +2133,7 @@
       </note>
       <direction>
         <direction-type>
-          <wedge type="stop" number="1" />
-        </direction-type>
-      </direction>
-      <direction>
-        <direction-type>
-          <words>rall.</words>
+          <words>mZ</words>
         </direction-type>
       </direction>
       <note>
@@ -2230,6 +2201,17 @@
         <notations>
           <fermata type="upright" />
         </notations>
+      </note>
+      <note>
+        <chord />
+        <pitch>
+          <step>G</step>
+          <octave>3</octave>
+        </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        <staff>1</staff>
       </note>
       <barline location="right">
         <bar-style>light-heavy</bar-style>

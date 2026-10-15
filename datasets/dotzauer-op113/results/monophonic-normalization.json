@@ -130,17 +130,17 @@
       "removed_parts": 0,
       "removed_notes": [
         {
-          "measure": 1,
-          "reason": "auxiliary-voice",
-          "pitch": "<pitch>\n          <step>F</step>\n          <octave>3</octave>\n        </pitch>\n        "
+          "measure": 33,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>G</step>\n          <octave>3</octave>\n        </pitch>\n        "
         }
       ],
       "inserted_rests": [],
-      "timeline_elements_removed": 1,
+      "timeline_elements_removed": 0,
       "removed_orphan_tie_stops": [],
       "etude": 7,
-      "source_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f",
-      "output_sha256": "86d419a614171960d3b1d7c1126eeff6008fd55a0643924495adfafdc7605b7b",
+      "source_sha256": "6e0d16c4735011d7d70a0b6a119a96b7666d45f01d9b27e7777120c46e662a14",
+      "output_sha256": "a3045e3e65172fffbe4b93ab5bdfdb48a3a7627445d4ea450f80575c975495c4",
       "compatible": true,
       "note_count": 129
     },
@@ -311,13 +311,24 @@
         "1"
       ],
       "removed_parts": 0,
-      "removed_notes": [],
+      "removed_notes": [
+        {
+          "measure": 38,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>C</step>\n          <octave>3</octave>\n        </pitch>\n        "
+        },
+        {
+          "measure": 38,
+          "reason": "chord-tone",
+          "pitch": "<pitch>\n          <step>D</step>\n          <octave>4</octave>\n        </pitch>\n        "
+        }
+      ],
       "inserted_rests": [],
       "timeline_elements_removed": 0,
       "removed_orphan_tie_stops": [],
       "etude": 12,
-      "source_sha256": "f09a70c3242a346fb57a3af86a466f350406223a5955dd825f3e2d673771609d",
-      "output_sha256": "f592755aa308251871791f2c2402b3a8871d2e3e51e74cc4b21b4ff56bf3705f",
+      "source_sha256": "47ebf91032941b028d0551a8248e3ac2f835a72f9588c4cd3e871c38d76fa39e",
+      "output_sha256": "1892c75221d6935dcc4f1a451e37c29d7f37ac0231b5611cd88db3330ff840f8",
       "compatible": true,
       "note_count": 223
     },
@@ -897,10 +908,27 @@
       "removed_notes": [],
       "inserted_rests": [],
       "timeline_elements_removed": 0,
-      "removed_orphan_tie_stops": [],
+      "removed_orphan_tie_stops": [
+        {
+          "measure": 13,
+          "pitch": [
+            "G",
+            "0",
+            "2"
+          ]
+        },
+        {
+          "measure": 43,
+          "pitch": [
+            "D",
+            "0",
+            "4"
+          ]
+        }
+      ],
       "etude": 23,
-      "source_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75",
-      "output_sha256": "5e1af6523cd8e5dca220c2f2b655f7c26f981f5ff55f613de2b2279c6b25ad67",
+      "source_sha256": "b7c402d94803e4e55b2dc5ea75e7fe6aafb80858d267c3a6d9fca4c5d1526528",
+      "output_sha256": "905d9c1f0369a889a10bfbd842dd56c9d82571a943cbba58b4403f161ccee03f",
       "compatible": true,
       "note_count": 373
     },

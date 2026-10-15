@@ -61,6 +61,15 @@ def run(args):
         recs = recs[:args.limit]
     print('ENGINE', eng.VERSION, 'CREPE', eng.crepe_backend(), 'CLIPS', len(recs), flush=True)
     rows = []
+    if getattr(args, 'corpus', None):
+        keep = {c for e in json.load(open(args.corpus, encoding='utf-8'))['etudes'] for c in e['clips']}
+        recs = [r for r in recs if r.get('id') in keep]
+        if not args.limit:
+            assert len(recs) == len(keep), 'corpus clips %d, matched %d' % (len(keep), len(recs))
+        import hashlib
+        for e in json.load(open(args.corpus, encoding='utf-8'))['etudes']:
+            xp = data / 'musicxml-monophonic' / ('Dotzauer_Op113_Book1_No%02d.musicxml' % e['etude'])
+            assert hashlib.sha256(xp.read_bytes()).hexdigest() == e['monophonic_xml_sha256'], 'stale score XML %s; --data must hold the corpus XML' % xp
     for r in recs:
         p = r.get('params') or {}
         row = {'id': r['id']}
@@ -133,6 +142,7 @@ def main():
     ap.add_argument('--data', default=str(Path.home() / 'n/scorefollow/datasets/dotzauer-op113'))
     ap.add_argument('--baseline')
     ap.add_argument('--limit', type=int, default=0)
+    ap.add_argument('--corpus', help='whitelist JSON (benchmarks/clean-corpus.json): score only its clips')
     ap.add_argument('--median-drop', type=float, default=2.0)
     ap.add_argument('--clip-drop', type=float, default=10.0)
     args = ap.parse_args()

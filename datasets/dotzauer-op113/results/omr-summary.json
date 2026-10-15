@@ -88,7 +88,13 @@
       "note_count": 0,
       "measure_count": 33,
       "musicxml": "musicxml/Dotzauer_Op113_Book1_No07.musicxml",
-      "xml_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f"
+      "xml_sha256": "6e0d16c4735011d7d70a0b6a119a96b7666d45f01d9b27e7777120c46e662a14",
+      "manual_replacement": {
+        "date": "2026-10-15",
+        "by": "user",
+        "note": "MusicXML replaced by user re-OCR; job_id/compatible/reason/note_count/measure_count describe the original OCR job",
+        "previous_xml_sha256": "d87e6c6f8d9be3fb9273e13f4fd65dc6ec26373f0a5aaef189721fc7a8a6001f"
+      }
     },
     {
       "etude": 8,
@@ -159,7 +165,13 @@
       "note_count": 223,
       "measure_count": 38,
       "musicxml": "musicxml/Dotzauer_Op113_Book1_No12.musicxml",
-      "xml_sha256": "f09a70c3242a346fb57a3af86a466f350406223a5955dd825f3e2d673771609d"
+      "xml_sha256": "47ebf91032941b028d0551a8248e3ac2f835a72f9588c4cd3e871c38d76fa39e",
+      "manual_replacement": {
+        "date": "2026-10-15",
+        "by": "user",
+        "note": "MusicXML replaced by user re-OCR; job_id/compatible/reason/note_count/measure_count describe the original OCR job",
+        "previous_xml_sha256": "f09a70c3242a346fb57a3af86a466f350406223a5955dd825f3e2d673771609d"
+      }
     },
     {
       "etude": 13,
@@ -313,7 +325,13 @@
       "note_count": 373,
       "measure_count": 49,
       "musicxml": "musicxml/Dotzauer_Op113_Book1_No23.musicxml",
-      "xml_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75"
+      "xml_sha256": "b7c402d94803e4e55b2dc5ea75e7fe6aafb80858d267c3a6d9fca4c5d1526528",
+      "manual_replacement": {
+        "date": "2026-10-15",
+        "by": "user",
+        "note": "MusicXML replaced by user re-OCR; job_id/compatible/reason/note_count/measure_count describe the original OCR job",
+        "previous_xml_sha256": "0c1c76860b8f46392f403a1291bc96c41dbd41b34187c0b5b6e8f85921448b75"
+      }
     },
     {
       "etude": 24,

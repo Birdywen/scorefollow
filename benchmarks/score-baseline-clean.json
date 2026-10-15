@@ -1,0 +1,305 @@
+{
+ "engine": "string-mono-0.20",
+ "crepe": "none",
+ "generatedAt": "2026-10-15T13:59:28Z",
+ "clips": 25,
+ "scored": 20,
+ "pitch": {
+  "n": 18,
+  "median": 97.0,
+  "p25": 68.5,
+  "p10": 39.2
+ },
+ "rhythm": {
+  "n": 17,
+  "median": 95.0,
+  "p25": 86.0,
+  "p10": 74.6
+ },
+ "rows": [
+  {
+   "id": "dotzauer_b1_no03__00_s0_fast",
+   "status": "scored",
+   "pitch": 94,
+   "rhythm": 95,
+   "measures": "13-21",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "complete",
+   "sec": 1.28
+  },
+  {
+   "id": "dotzauer_b1_no03__00_s1_slow",
+   "status": "scored",
+   "pitch": 100,
+   "rhythm": 95,
+   "measures": "6-9",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 0.79
+  },
+  {
+   "id": "dotzauer_b1_no09__01_slow",
+   "status": "scored",
+   "pitch": 100,
+   "rhythm": 98,
+   "measures": "14-20",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 0.89
+  },
+  {
+   "id": "dotzauer_b1_no17__02_slow",
+   "status": "scored",
+   "pitch": 94,
+   "rhythm": 58,
+   "measures": "22-31",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "complete",
+   "sec": 0.78
+  },
+  {
+   "id": "dotzauer_b1_no03__04_slow",
+   "status": "scored",
+   "pitch": 95,
+   "rhythm": 86,
+   "measures": "24-34",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "partial",
+   "sec": 2.1
+  },
+  {
+   "id": "dotzauer_b1_no17__05_s0_fast",
+   "status": "scored",
+   "pitch": 100,
+   "rhythm": 96,
+   "measures": "14-23",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "complete",
+   "sec": 0.77
+  },
+  {
+   "id": "dotzauer_b1_no17__05_s1_slow",
+   "status": "scored",
+   "pitch": 35,
+   "rhythm": 90,
+   "measures": "12-18",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "complete",
+   "sec": 0.75
+  },
+  {
+   "id": "dotzauer_b1_no05__07_fast",
+   "status": "scored",
+   "pitch": 97,
+   "rhythm": 96,
+   "measures": "30-42",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 1.09
+  },
+  {
+   "id": "dotzauer_b1_no20__12_fast",
+   "status": "failed",
+   "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+   "sec": 2.33
+  },
+  {
+   "id": "dotzauer_b1_no12__15_s0_slow",
+   "status": "scored",
+   "pitch": 100,
+   "rhythm": 74,
+   "measures": "9-13",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 0.71
+  },
+  {
+   "id": "dotzauer_b1_no12__15_s1_full",
+   "status": "scored",
+   "pitch": 97,
+   "rhythm": 96,
+   "measures": "11-17",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 0.73
+  },
+  {
+   "id": "dotzauer_b1_no12__15_s2_fast",
+   "status": "scored",
+   "pitch": null,
+   "rhythm": 92,
+   "measures": "16-23",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "score_audio_mismatch",
+   "sec": 0.83
+  },
+  {
+   "id": "dotzauer_b1_no31__19_s0_fast",
+   "status": "failed",
+   "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+   "sec": 2.74
+  },
+  {
+   "id": "dotzauer_b1_no31__19_s1_slow",
+   "status": "scored",
+   "pitch": null,
+   "rhythm": 75,
+   "measures": "11-17",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "partial",
+   "sec": 0.92
+  },
+  {
+   "id": "dotzauer_b1_no06__21_fast",
+   "status": "scored",
+   "pitch": 99,
+   "rhythm": 98,
+   "measures": "19-26",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "partial",
+   "sec": 1.06
+  },
+  {
+   "id": "dotzauer_b1_no07__22_s0_slow",
+   "status": "scored",
+   "pitch": 60,
+   "rhythm": 82,
+   "measures": "8-11",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "partial",
+   "sec": 0.69
+  },
+  {
+   "id": "dotzauer_b1_no07__22_s1_full",
+   "status": "scored",
+   "pitch": 44,
+   "rhythm": null,
+   "measures": "10-14",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "partial",
+   "sec": 0.7
+  },
+  {
+   "id": "dotzauer_b1_no07__22_s2_fast",
+   "status": "scored",
+   "pitch": 100,
+   "rhythm": 96,
+   "measures": "13-19",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 0.7
+  },
+  {
+   "id": "dotzauer_b1_no12__28_fast",
+   "status": "scored",
+   "pitch": 97,
+   "rhythm": 100,
+   "measures": "28-37",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 0.9
+  },
+  {
+   "id": "dotzauer_b1_no21__31_s0_fast",
+   "status": "scored",
+   "pitch": 100,
+   "rhythm": 100,
+   "measures": "16-23",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "complete",
+   "sec": 1.0
+  },
+  {
+   "id": "dotzauer_b1_no21__31_s1_slow",
+   "status": "scored",
+   "pitch": 35,
+   "rhythm": null,
+   "measures": "11-15",
+   "rescue": [],
+   "degraded": [],
+   "outcome": "partial",
+   "sec": 0.81
+  },
+  {
+   "id": "dotzauer_b1_no27__32_s0_fast",
+   "status": "failed",
+   "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+   "sec": 1.43
+  },
+  {
+   "id": "dotzauer_b1_no27__32_s1_slow",
+   "status": "failed",
+   "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+   "sec": 1.42
+  },
+  {
+   "id": "dotzauer_b1_no23__37_s0_fast",
+   "status": "failed",
+   "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+   "sec": 1.76
+  },
+  {
+   "id": "dotzauer_b1_no23__37_s1_slow",
+   "status": "scored",
+   "pitch": 41,
+   "rhythm": null,
+   "measures": "13-21",
+   "rescue": [],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "score_audio_mismatch",
+   "sec": 1.45
+  }
+ ]
+}

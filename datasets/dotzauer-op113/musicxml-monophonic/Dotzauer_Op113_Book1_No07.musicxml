@@ -5,7 +5,7 @@
   <identification>
     <encoding>
       <software>Halbestunde</software>
-      <encoding-date>2026-10-12</encoding-date>
+      <encoding-date>2026-10-15</encoding-date>
     </encoding>
   </identification>
   <part-list>
@@ -42,6 +42,11 @@
           </dynamics>
         </direction-type>
         <sound dynamics="106.67" />
+      </direction>
+      <direction>
+        <direction-type>
+          <words>WB</words>
+        </direction-type>
       </direction>
       <note>
         <pitch>
@@ -99,7 +104,7 @@
           </articulations>
         </notations>
       </note>
-      </measure>
+    </measure>
     <measure number="2">
       <note>
         <pitch>
@@ -108,7 +113,7 @@
         </pitch>
         <duration>1</duration>
         <type>quarter</type>
-        <stem>up</stem>
+        <stem>down</stem>
         <notations>
           <articulations>
             <staccato />
@@ -1386,7 +1391,7 @@
         </pitch>
         <duration>1</duration>
         <type>quarter</type>
-        <stem>up</stem>
+        <stem>down</stem>
         <notations>
           <articulations>
             <staccato />
@@ -1803,16 +1808,6 @@
       </note>
     </measure>
     <measure number="31">
-      <direction>
-        <direction-type>
-          <words>rit.</words>
-        </direction-type>
-      </direction>
-      <direction>
-        <direction-type>
-          <wedge type="diminuendo" number="1" />
-        </direction-type>
-      </direction>
       <note>
         <pitch>
           <step>E</step>
@@ -1873,12 +1868,7 @@
     <measure number="32">
       <direction>
         <direction-type>
-          <wedge type="stop" number="1" />
-        </direction-type>
-      </direction>
-      <direction>
-        <direction-type>
-          <words>rall.</words>
+          <words>mZ</words>
         </direction-type>
       </direction>
       <note>

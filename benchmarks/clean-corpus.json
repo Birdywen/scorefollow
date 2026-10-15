@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "date": "2026-10-15",
+  "decided_by": "user",
+  "purpose": "Accuracy benchmark limited to beginner/intermediate single-line etudes with correct MusicXML; chord etudes wait for algorithm upgrade (Basic Pitch)",
+  "criteria": [
+    "OCR compatible single part, single voice",
+    "no chords except a final-measure chord removed by monophonic projection",
+    "no repeats/endings",
+    "no runs of empty measures",
+    "every inner measure duration matches time signature"
+  ],
+  "known_blind_spot": "structural audit cannot detect a whole missing system; verify measure count against PDF",
+  "etudes": [
+    {
+      "etude": 3,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "dcccf6c1365037ca9af9690eba404f71f5128d5bb3a167953150eadfcaccbfdd",
+      "clips": [
+        "dotzauer_b1_no03__00_s0_fast",
+        "dotzauer_b1_no03__00_s1_slow",
+        "dotzauer_b1_no03__04_slow"
+      ]
+    },
+    {
+      "etude": 5,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "d3cb740a5c57ae111d93621e4ab54d14d33a05d7aec2d4de9b4626a61ae3b2de",
+      "clips": [
+        "dotzauer_b1_no05__07_fast"
+      ]
+    },
+    {
+      "etude": 6,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "48e334adadeadaaaa0fb6f518dd1eedf82027fb4d11bb64cebb850906663c935",
+      "clips": [
+        "dotzauer_b1_no06__21_fast"
+      ]
+    },
+    {
+      "etude": 7,
+      "tier": "B",
+      "note": "chord only in final measure; removed by monophonic projection",
+      "monophonic_xml_sha256": "a3045e3e65172fffbe4b93ab5bdfdb48a3a7627445d4ea450f80575c975495c4",
+      "clips": [
+        "dotzauer_b1_no07__22_s0_slow",
+        "dotzauer_b1_no07__22_s1_full",
+        "dotzauer_b1_no07__22_s2_fast"
+      ]
+    },
+    {
+      "etude": 8,
+      "tier": "B",
+      "note": "chord only in final measure; removed by monophonic projection",
+      "monophonic_xml_sha256": "d743aa77f3a0d2a839eb9a1dc1e43b8604c71384367deef704b692e45dfddac9",
+      "clips": []
+    },
+    {
+      "etude": 9,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "89c90fd43469be330ea6832ed5555ba40808b53988ba7f79a293806f89b6ba49",
+      "clips": [
+        "dotzauer_b1_no09__01_slow"
+      ]
+    },
+    {
+      "etude": 12,
+      "tier": "B",
+      "note": "chord only in final measure; removed by monophonic projection",
+      "monophonic_xml_sha256": "1892c75221d6935dcc4f1a451e37c29d7f37ac0231b5611cd88db3330ff840f8",
+      "clips": [
+        "dotzauer_b1_no12__15_s0_slow",
+        "dotzauer_b1_no12__15_s1_full",
+        "dotzauer_b1_no12__15_s2_fast",
+        "dotzauer_b1_no12__28_fast"
+      ]
+    },
+    {
+      "etude": 17,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "60676b4fa98c3349c22bf2e6e8a18aea1ba58bf0a5d637f713fc45834fc0d2b7",
+      "clips": [
+        "dotzauer_b1_no17__02_slow",
+        "dotzauer_b1_no17__05_s0_fast",
+        "dotzauer_b1_no17__05_s1_slow"
+      ]
+    },
+    {
+      "etude": 20,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "48cfbe598c9f2012608bed6f4f442f7dc51949b50fa0436b997a1ada2567d2e1",
+      "clips": [
+        "dotzauer_b1_no20__12_fast"
+      ]
+    },
+    {
+      "etude": 21,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "73efa6a387d28732bf843b9cc2acd8a2a2de5e328f8096e3313b55fcc3a4d526",
+      "clips": [
+        "dotzauer_b1_no21__31_s0_fast",
+        "dotzauer_b1_no21__31_s1_slow"
+      ]
+    },
+    {
+      "etude": 23,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "905d9c1f0369a889a10bfbd842dd56c9d82571a943cbba58b4403f161ccee03f",
+      "clips": [
+        "dotzauer_b1_no23__37_s0_fast",
+        "dotzauer_b1_no23__37_s1_slow"
+      ]
+    },
+    {
+      "etude": 27,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "39df2e6db3e02520c6c20ecc386c422c4b87da2bda34b5aa69af9148eb99873c",
+      "clips": [
+        "dotzauer_b1_no27__32_s0_fast",
+        "dotzauer_b1_no27__32_s1_slow"
+      ]
+    },
+    {
+      "etude": 31,
+      "tier": "A",
+      "note": "clean OCR",
+      "monophonic_xml_sha256": "0f049c7ef393401450b75b6ae5fa9d833bfd39ab08de59d0231c017f9d1d3063",
+      "clips": [
+        "dotzauer_b1_no31__19_s0_fast",
+        "dotzauer_b1_no31__19_s1_slow"
+      ]
+    }
+  ],
+  "clip_count": 25,
+  "pending": {
+    "11": "clean structure but measure count unverified vs PDF (XML 46 measures; 2026-10-13 note: missing measures suspected)"
+  },
+  "clean_without_audio": [
+    18
+  ],
+  "excluded": {
+    "1": "chord mid-piece (m1)",
+    "2": "OCR rhythm error m87-109 (23 measures)",
+    "4": "chord m12 + rhythm error m12",
+    "10": "OCR lost 22 empty measures from m32; chords",
+    "13": "multi-voice",
+    "14": "chords (26) + multi-voice",
+    "15": "OCR triplet error m47 (fixable)",
+    "16": "hidden bass note C2 m49 (fixable)",
+    "19": "repeats/endings need unfolding",
+    "22": "chord m12 + missing note m29, m34",
+    "24": "multiple instrument parts",
+    "25": "OCR rhythm error 65 measures; 73 vs 47 measure dispute",
+    "26": "chords (170)",
+    "28": "chords",
+    "29": "chord mid-piece (m29)",
+    "30": "repeats/endings need unfolding",
+    "32": "chords (18)",
+    "33": "second voice + rhythm error 5 measures",
+    "34": "repeats/endings need unfolding"
+  },
+  "excluded_clips": {
+    "dotzauer_b1_no08__35_slow": "outside fixed evaluation set (score-corpus status=failed, reason=Incomplete fixed excerpt)"
+  }
+}

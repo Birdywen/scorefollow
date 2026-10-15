@@ -5,7 +5,7 @@
   <identification>
     <encoding>
       <software>Halbestunde</software>
-      <encoding-date>2026-10-12</encoding-date>
+      <encoding-date>2026-10-15</encoding-date>
     </encoding>
   </identification>
   <part-list>
@@ -32,16 +32,16 @@
       </attributes>
       <direction>
         <direction-type>
-          <words>Allegro</words>
-        </direction-type>
-      </direction>
-      <direction>
-        <direction-type>
           <dynamics>
             <p />
           </dynamics>
         </direction-type>
         <sound dynamics="54.44" />
+      </direction>
+      <direction>
+        <direction-type>
+          <words>Allegro</words>
+        </direction-type>
       </direction>
       <direction>
         <direction-type>
@@ -58,9 +58,6 @@
         <stem>up</stem>
         <beam number="1">begin</beam>
         <notations>
-          <ornaments>
-            <trill-mark />
-          </ornaments>
           <articulations>
             <staccato />
           </articulations>
@@ -772,17 +769,7 @@
     <measure number="8">
       <direction>
         <direction-type>
-          <wedge type="diminuendo" number="2" />
-        </direction-type>
-      </direction>
-      <direction>
-        <direction-type>
           <wedge type="stop" number="1" />
-        </direction-type>
-      </direction>
-      <direction>
-        <direction-type>
-          <wedge type="stop" number="2" />
         </direction-type>
       </direction>
     <note>
@@ -1091,7 +1078,7 @@
       </direction>
       <direction>
         <direction-type>
-          <wedge type="crescendo" number="1" />
+          <wedge type="diminuendo" number="1" />
         </direction-type>
       </direction>
       <note>
@@ -1298,6 +1285,11 @@
           </dynamics>
         </direction-type>
         <sound dynamics="54.44" />
+      </direction>
+      <direction>
+        <direction-type>
+          <words>cresc.</words>
+        </direction-type>
       </direction>
       <note>
         <pitch>
@@ -1693,11 +1685,6 @@
       </note>
     </measure>
     <measure number="17">
-      <direction>
-        <direction-type>
-          <words>cresc.</words>
-        </direction-type>
-      </direction>
       <note>
         <pitch>
           <step>D</step>
@@ -2273,6 +2260,11 @@
       </note>
     </measure>
     <measure number="23">
+      <direction>
+        <direction-type>
+          <words>cresc.</words>
+        </direction-type>
+      </direction>
       <note>
         <pitch>
           <step>B</step>
@@ -3042,6 +3034,16 @@
       </note>
     </measure>
     <measure number="31">
+      <direction>
+        <direction-type>
+          <words>L.H.</words>
+        </direction-type>
+      </direction>
+      <direction>
+        <direction-type>
+          <words>cresc.</words>
+        </direction-type>
+      </direction>
       <note>
         <pitch>
           <step>F</step>
@@ -3136,7 +3138,7 @@
     <measure number="32">
       <direction>
         <direction-type>
-          <words>Rit.</words>
+          <words>rit.</words>
         </direction-type>
       </direction>
       <note>
@@ -3457,10 +3459,6 @@
             <staccato />
           </articulations>
         </notations>
-        <lyric number="1">
-          <syllabic>single</syllabic>
-          <text>teno</text>
-        </lyric>
       </note>
       <note>
         <pitch>
@@ -3548,6 +3546,11 @@
       <direction>
         <direction-type>
           <bracket type="stop" number="1" line-end="none" />
+        </direction-type>
+      </direction>
+      <direction>
+        <direction-type>
+          <words>dim. e</words>
         </direction-type>
       </direction>
       <note>
@@ -3642,11 +3645,6 @@
       </note>
     </measure>
     <measure number="37">
-      <direction>
-        <direction-type>
-          <words>UH.</words>
-        </direction-type>
-      </direction>
       <note>
         <pitch>
           <step>D</step>
@@ -3716,11 +3714,6 @@
         <type>eighth</type>
         <stem>down</stem>
         <beam number="1">continue</beam>
-        <notations>
-          <articulations>
-            <staccato />
-          </articulations>
-        </notations>
       </note>
       <note>
         <pitch>
@@ -3731,11 +3724,6 @@
         <type>eighth</type>
         <stem>down</stem>
         <beam number="1">end</beam>
-        <notations>
-          <articulations>
-            <staccato />
-          </articulations>
-        </notations>
       </note>
     </measure>
     <measure number="38">
@@ -3752,18 +3740,16 @@
       </barline>
     <note>
         <pitch>
-          <step>D</step>
-          <octave>4</octave>
+          <step>B</step>
+          <alter>-1.0</alter>
+          <octave>2</octave>
         </pitch>
         <duration>6</duration>
         <type>half</type>
         <dot />
-        <stem>down</stem>
+        <stem>up</stem>
         <notations>
-          <articulations>
-            <tenuto />
-            <accent />
-          </articulations>
+          <fermata type="upright" />
         </notations>
       </note>
       </measure>
