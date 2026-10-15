@@ -8,6 +8,7 @@ export type DashNote = {
   id: string;
   measure: number;
   pitchErrorCents?: number | null;
+  pitchExcluded?: boolean;
   timingErrorMs?: number | null;
   status?: string;
   timingStatus?: string;
@@ -186,7 +187,7 @@ function PitchScatter({ notes, zh, onNoteClick }: { notes: DashNote[]; zh: boole
     <text x={L + 6} y={H - 6}>{zh ? '↓ 偏低' : '↓ flat'}</text>
     {notes.map((note, i) => {
       const c = note.pitchErrorCents;
-      const g = pitchGrade(c);
+      const g = note.pitchExcluded ? 'none' : pitchGrade(c);
       const x = L + dx * (i + 0.5);
       const y = g === 'none' || c == null ? mid : yFor(c);
       const tip = `${zh ? '小节' : 'Bar'} ${note.measure} · ${g === 'none' || c == null ? gl('none', zh) : `${c > 0 ? '+' : ''}${Math.round(c)} ${zh ? '音分' : 'cents'}`}`;
@@ -255,7 +256,7 @@ export default function ReportDashboard({ zh = true, notes, scores, meta, notice
     let early = 0;
     let late = 0;
     for (const note of notes) {
-      const g = pitchGrade(note.pitchErrorCents);
+      const g = note.pitchExcluded ? 'none' : pitchGrade(note.pitchErrorCents);
       const tg = timingGrade(note.timingErrorMs);
       counts[g] += 1;
       if (tg !== 'none') {

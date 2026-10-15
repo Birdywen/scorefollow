@@ -367,7 +367,7 @@ export function useAnalysisJob(config: UseAnalysisJobConfig) {
           }
           return;
         }
-        dispatch({ type: "POLL_RESPONSE", jobId, status: job.status, progress: job.progress ?? null });
+        dispatch({ type: "POLL_RESPONSE", jobId, status: job.status === "analyzing" && job.stage ? job.stage : job.status, progress: job.progress ?? null });
       } catch (exc) {
         if (!mountedRef.current) return;
         const latest = stateRef.current;

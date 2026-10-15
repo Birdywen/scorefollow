@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.18"
+VERSION = "string-mono-0.19"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -268,6 +268,11 @@ def _hint_track(signal: np.ndarray, rate: int,
     return times, pitches, energy, conf
 
 
+# 0.19: 打分时剔除偏差 >600 音分的音 (判定/漂移/补救/匹配率仍按 0.18 口径)。
+# 实测 600-1120 成片同向, 是测量/对位问题不是演奏; 标 pitchExcluded 供前端灰显。
+PITCH_SCORE_EXCLUDE_CENTS = 600.0
+
+
 def classify_pitch(cents: float | None, detected_midi: float | None, tolerance: float = 25.0) -> str:
     """Cents 判音: 物理不可能 Verdict uncertain, 差整八度单列 octave,
     ±tolerance 音分内 correct, 之外 sharp/flat。MIDI 只做存储, 判定全是 cents
@@ -352,6 +357,7 @@ def _measure_scores(aligned: list, tolerance: float) -> list:
             if not edge:
                 continue
             pool.append((edge[-1] if nb < m else edge[0], 0.5))
+        pool = [(n, w) for n, w in pool if not n.get("pitchExcluded")]
         if not pool:
             out.append({"measure": m, "pitchScore": None, "noteCount": len(by_measure[m]),
                         "scoredNotes": 0})
@@ -1689,8 +1695,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     trim_active = _drop_player_outliers(aligned, pitch_tolerance_cents)
     pitch_errors = [abs(float(n["pitchErrorCents"])) for n in aligned
                     if n.get("pitchStatus") in ("sharp", "flat", "correct")]
+    # 0.19: 偏差 >PITCH_SCORE_EXCLUDE_CENTS 的音不计音准分; 覆盖率/补救门槛/匹配率仍用全部可判音。
+    for n in aligned:
+        if n.get("pitchStatus") in ("sharp", "flat", "correct") and abs(float(n["pitchErrorCents"])) > PITCH_SCORE_EXCLUDE_CENTS:
+            n["pitchExcluded"] = True
+    score_errors = [e for e in pitch_errors if e <= PITCH_SCORE_EXCLUDE_CENTS]
     # 不将不可判断的音符作为正确或错误；节奏得分只在至少三个起音可匹配时给出。
     pitch_score = None
+    pitch_gate_score = None
     intonation_score = None
     correct_pitch_notes = sum(n["pitchStatus"] == "correct" for n in aligned)
     wrong_pitch_notes = sum(n["pitchStatus"] in ("sharp", "flat") for n in aligned)
@@ -1701,7 +1713,11 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # hide a substantial minority of clearly wrong notes.
         # Within the accepted tolerance band there is no pitch penalty.
         penalties = np.maximum(np.asarray(pitch_errors) - pitch_tolerance_cents, 0)
-        pitch_score = round(max(0, 100 - float(np.mean(np.minimum(penalties, 100))) * 1.2))
+        # 补救门槛沿用 0.18 口径 (含剔除音), 与 rhythm_gate_score 同理, 控制流不变。
+        pitch_gate_score = round(max(0, 100 - float(np.mean(np.minimum(penalties, 100))) * 1.2))
+        if score_errors:
+            kept = np.maximum(np.asarray(score_errors) - pitch_tolerance_cents, 0)
+            pitch_score = round(max(0, 100 - float(np.mean(np.minimum(kept, 100))) * 1.2))
         in_tune = [abs(float(n["pitchErrorCents"])) for n in aligned if n["pitchStatus"] == "correct"]
         intonation_score = 100 if in_tune else None
     rhythm_score = None
@@ -1804,7 +1820,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "pitchToleranceCents": pitch_tolerance_cents,
                         "timingCandidateNotes": timing_candidates,
                         "timingReference": "within-manually-synced-measures" if manual_boundaries else "automatic",
-                        "outlierNotes": sum(n["pitchStatus"] == "outlier" for n in aligned),
+                        "outlierNotes": sum(n["pitchStatus"] == "outlier" for n in aligned), "excludedPitchNotes": sum(bool(n.get("pitchExcluded")) for n in aligned),
                         "droppedOutlierNotes": sum(n.get("pitchStatus") == "dropped" for n in aligned),
                         "outlierTrimActive": trim_active,
                         "displacedPitchNotes": sum(bool(n.get("pitchDisplaced")) for n in aligned),
@@ -1846,7 +1862,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     # An already supported excerpt may begin mid-measure (a cropped take).
     # Preserve that note-level range instead of replacing it with whole measures.
     if sync_mode == "legacy" and alignment is None and \
-            _needs_rescue_check(pitch_score, rhythm_gate_score,
+            _needs_rescue_check(pitch_gate_score, rhythm_gate_score,
                                 "medium" if voiced_count / len(notes) >= .8 else "low"):
         _plan = _auto_measure_sync(xml=xml, notes=rescue_notes, times=times, pitches=pitches,
                                    energy=energy, sec_per_beat=sec_per_beat,

@@ -72,6 +72,7 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
                              sync_mode, measure_sync, pitch_tolerance_cents], sort_keys=True)
     fingerprint = hashlib.sha256(audio + xml.encode("utf-8") + parameters.encode()).hexdigest()
     stage = "preparing"
+    stage_ms = {}
     try:
         update_job(job_id, {"status": "analyzing", "stage": stage, "startedAt": time.time(), "inputHash": fingerprint})
         log_event("started", job_id, inputHash=fingerprint)
@@ -89,12 +90,16 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
             stage = "extracting_features"
             update_job(job_id, {"stage": stage})
             # 有 Vamp 插件就用 pYIN+QM 当耳朵, 没有则引擎退回自研检测(前端无感)
+            t_stage = time.monotonic()
             pitch_notes, onset_hint, beat_map = vamp_features.extract_all(audio)
+            stage_ms["features"] = round((time.monotonic() - t_stage) * 1000)
             stage = "aligning_and_scoring"
             update_job(job_id, {"stage": stage})
+            t_stage = time.monotonic()
             result = analyze(audio, xml, bpm, instrument, start_measure, first_beat_audio_sec, sync_mode,
                              pitch_notes=pitch_notes, onset_hint=onset_hint, beat_map=beat_map, 
                              measure_sync=measure_sync, pitch_tolerance_cents=pitch_tolerance_cents)
+            stage_ms["align"] = round((time.monotonic() - t_stage) * 1000)
             # Defensive overlay: engine already sets summary.degraded from
             # effective availability; keep it, only fill if missing so the
             # job payload always exposes degradation (not logs only).
@@ -107,19 +112,21 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
         result["quality"] = assess_quality(result)
         elapsed = round((time.monotonic() - started) * 1000)
         result["diagnostics"] = {"analysisId": job_id, "algorithmVersion": result["version"],
-                                 "inputHash": fingerprint, "elapsedMs": elapsed}
+                                 "inputHash": fingerprint, "elapsedMs": elapsed, "stageMs": stage_ms}
         update = {"status": "completed", "stage": "completed", "result": result,
                   "finishedAt": time.time(), "elapsedMs": elapsed}
         stage = "persisting_result"
         update_job(job_id, update)
         log_event("completed", job_id, algorithmVersion=result["version"], elapsedMs=elapsed,
-                  outcome=result["quality"]["outcome"], rescueReasons=summary.get("rescueReasons", []))
+                  outcome=result["quality"]["outcome"], rescueReasons=summary.get("rescueReasons", []),
+                  degraded=bool(summary.get("degraded")), degradedReasons=summary.get("degradedReasons") or [],
+                  issues=result["quality"].get("issues", []), instrument=instrument, stageMs=stage_ms)
     except Exception as exc:
         elapsed = round((time.monotonic() - started) * 1000)
         update = {"status": "failed", "stage": stage, "errorClass": type(exc).__name__,
                   "finishedAt": time.time(), "elapsedMs": elapsed,
                   "error": str(exc) if isinstance(exc, ValueError) else "分析失败，请检查音频和谱面"}
-        log_event("failed", job_id, stage=stage, errorClass=type(exc).__name__, elapsedMs=elapsed)
+        log_event("failed", job_id, stage=stage, errorClass=type(exc).__name__, elapsedMs=elapsed, stageMs=stage_ms)
         fail_job(job_id, update)
 
 

@@ -4,6 +4,8 @@ import math
 
 # Default weights; returned with every result so they can be recalibrated.
 OVERALL_WEIGHTS = {"pitch": 0.5, "rhythm": 0.5}
+# 0.19: 八度+极端+打分剔除音占已测音的比例达到此值, 音准证据不可靠 (partial, 不出综合分)。
+PITCH_UNRELIABLE_RATIO = 0.2
 
 
 def assess_quality(result: dict) -> dict:
@@ -31,6 +33,10 @@ def assess_quality(result: dict) -> dict:
         issues.append("tempo_mismatch")
     if summary.get("takeBeyondScoreAfterSec") is not None:
         issues.append("take_beyond_score")
+    measured = summary.get("voicedNotes") or 0
+    unreliable = sum(summary.get(k) or 0 for k in ("outlierNotes", "octaveUncertainNotes", "excludedPitchNotes"))
+    if measured and unreliable / measured >= PITCH_UNRELIABLE_RATIO:
+        issues.append("pitch_tracking_unreliable")
     # Score/take mismatch: most scorable notes miss the score pitch AND the
     # timeline is unverified and was not rescued. A verified timeline with many
     # wrong notes is a poor performance and stays scored. Thresholds from
@@ -47,6 +53,7 @@ def assess_quality(result: dict) -> dict:
     elif mismatch:
         outcome = "score_audio_mismatch"
     elif scores < 2 or "alignment_unverified" in issues or "low_coverage" in issues or \
+            "pitch_tracking_unreliable" in issues or \
             "range" in (summary.get("rescueReasons") or []):
         outcome = "partial"
     elif summary.get("autoMeasureSync"):
@@ -65,7 +72,7 @@ def assess_quality(result: dict) -> dict:
     weights = dict(OVERALL_WEIGHTS)
     overall = None
     if pitch is not None and rhythm is not None and "alignment_unverified" not in issues \
-            and "low_coverage" not in issues:
+            and "low_coverage" not in issues and "pitch_tracking_unreliable" not in issues:
         overall = int(math.floor(pitch * weights["pitch"] + rhythm * weights["rhythm"] + .5))
     return {"version": "evidence-1", "outcome": outcome, "overallScore": overall,
             "overallWeights": weights, "pitchMatchRate": match_rate, "issues": issues,

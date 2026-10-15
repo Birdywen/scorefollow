@@ -177,6 +177,11 @@ function jobChip(status: string, zh: boolean): { label: string; tone: "busy" | "
     polling: ["分析中", "Analyzing", "busy"],
     queued: ["排队中", "Queued", "busy"],
     processing: ["分析中", "Analyzing", "busy"],
+    analyzing: ["分析中", "Analyzing", "busy"],
+    transcribing: ["识别音符", "Transcribing", "busy"],
+    extracting_features: ["听音高与起音", "Listening for pitch", "busy"],
+    aligning_and_scoring: ["对齐与打分", "Aligning & scoring", "busy"],
+    persisting_result: ["保存结果", "Saving", "busy"],
     completed: ["已完成", "Done", "ok"],
     failed: ["失败", "Failed", "fail"],
     timed_out: ["超时", "Timed out", "fail"],
@@ -736,7 +741,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
 
   const scoreMeasures = result?.summary.measureCount ?? result?.notes.reduce((max, note) => Math.max(max, note.measure), 0) ?? 0;
   const canJump = pdfMeasures > 0 && pdfMeasures === scoreMeasures;
-  const issues = result?.notes.filter((note) => note.status !== "correct") ?? [];
+  const issues = result?.notes.filter((note) => note.status !== "correct"
+    && !(note.status === "wrong_pitch" && "pitchExcluded" in note && note.pitchExcluded === true)) ?? [];
   const doneTakes = takes.filter((t) => t.result);
   const compareTakes: CompareTake[] = doneTakes.map((t, i) => ({
     name: zh ? `第 ${i + 1} 遍` : `Take ${i + 1}`,
@@ -924,7 +930,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
               }}>{zh ? "删除" : "Delete"}</button>
               {take.jobStatus && (() => { const chip = jobChip(take.jobStatus, zh);
                 const tone = chip.tone === "ok" ? styles.chipOk : chip.tone === "fail" ? styles.chipFail : chip.tone === "mute" ? styles.chipMute : styles.chipBusy;
-                return <span role="status" className={`${styles.chip} ${tone}`}>{chip.label}{busyTakeId === take.id && analysisJob.pollCount > 0 ? ` · poll ${analysisJob.pollCount}` : ""}{busyTakeId === take.id && analysisJob.progress != null ? ` · ${analysisJob.progress}%` : ""}</span>; })()}
+                return <span role="status" className={`${styles.chip} ${tone}`}>{chip.label}{busyTakeId === take.id && analysisJob.pollCount > 0 ? ` · ${zh ? "约 " : "~"}${Math.round(analysisJob.pollCount * 1.5)}${zh ? " 秒" : "s"}` : ""}{busyTakeId === take.id && analysisJob.progress != null ? ` · ${analysisJob.progress}%` : ""}</span>; })()}
               {take.result && <span className={styles.hint}>
                 {take.result.summary.autoLocated && (zh ? `定位第 ${take.result.summary.startMeasure}–${take.result.summary.endMeasure} 小节 · ` : `Located m${take.result.summary.startMeasure}–${take.result.summary.endMeasure} · `)}
                 {take.result.quality?.outcome === "score_audio_mismatch" ? (zh ? "输入可能不匹配" : "Possible score/take mismatch") : <>{zh ? "音准" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</>}</span>}

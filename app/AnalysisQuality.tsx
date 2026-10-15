@@ -22,9 +22,13 @@ export default function AnalysisQuality({ summary: s, quality, diagnostics, vers
     : s.syncAdvice ? "partial"
     : s.pitchScore == null || s.rhythmScore == null || s.confidence === "low" ? "partial"
     : s.autoMeasureSync ? "complete_with_rescue" : "complete");
+  // 只录了一段 (唯一原因是 range) 不等于出了问题: 用中性措辞, 不催用户手动同步
+  const rangeOnly = status === "partial" && s.pitchScore != null && s.rhythmScore != null
+    && !(quality?.issues ?? []).some((i) => i === "alignment_unverified" || i === "low_coverage" || i === "pitch_tracking_unreliable")
+    && !!s.rescueReasons?.includes("range");
   const labels = {
     complete: ["结果可用", "Results available"], complete_with_rescue: ["已自动补救，请核对", "Auto-corrected; review alignment"],
-    partial: ["部分结果，需要核对", "Partial results; review needed"], insufficient_evidence: ["证据不足，未能评分", "Insufficient evidence to score"],
+    partial: rangeOnly ? [`已评第 ${s.startMeasure ?? "—"}–${s.endMeasure ?? "—"} 小节`, `Scored measures ${s.startMeasure ?? "—"}–${s.endMeasure ?? "—"}`] : ["部分结果，需要核对", "Partial results; review needed"], insufficient_evidence: ["证据不足，未能评分", "Insufficient evidence to score"],
     score_audio_mismatch: ["输入可能不匹配", "Score and recording may not match"],
   };
   const reasons: Record<string, [string, string]> = {
@@ -47,7 +51,8 @@ export default function AnalysisQuality({ summary: s, quality, diagnostics, vers
     {s.takeBeyondScoreAfterSec != null && <p>{zh ? `录音超出谱面：${s.takeBeyondScoreAfterSec.toFixed(1)}s 之后的内容未评分（第 ${s.endMeasure ?? "—"} 小节之后），谱面可能缺页。` : `Take runs past the score: audio after ${s.takeBeyondScoreAfterSec.toFixed(1)}s was not graded (after m.${s.endMeasure ?? "—"}); the score may be missing pages.`}</p>}
     {s.detectedBpm != null && <p>{zh ? "实测速度" : "Detected tempo"} ≈ {s.detectedBpm} BPM</p>}
     {s.clipped && <p>{zh ? "录音存在削波，请降低输入音量。" : "Clipping detected; reduce the recording input level."}</p>}
-    <p>{status === "partial" || status === "insufficient_evidence"
+    {(quality?.issues ?? []).includes("pitch_tracking_unreliable") && <p>{zh ? "部分音高没有测准（偏差过大的音已灰显，不计入音准分），建议回听这些小节或重录。" : "Some pitches could not be measured reliably (extreme deviations are greyed out and not scored); replay those measures or record again."}</p>}
+    <p>{(status === "partial" && !rangeOnly) || status === "insufficient_evidence"
       ? (zh ? "请核对谱面、乐器和起始小节；必要时使用下方手动小节同步后重分析。" : "Check the score, instrument and starting measure; use manual measure sync below and analyze again if needed.")
       : (zh ? "分数不代表对齐质量；走谱前请回听首尾小节，确认时间边界。" : "Scores do not prove alignment quality; replay the first and last measures before following the take.")}</p>
     {quality && <p>{quality.followReady ? (zh ? "已有可用走谱时间轴，请先核对。" : "A follow timeline is available; verify it first.") : (zh ? "走谱时间轴尚未可靠确认，请先同步小节。" : "The follow timeline needs confirmation; sync the measures first.")}</p>}
