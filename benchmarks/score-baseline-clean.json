@@ -1,20 +1,20 @@
 {
  "engine": "string-mono-0.20",
  "crepe": "none",
- "generatedAt": "2026-10-15T13:59:28Z",
- "clips": 25,
- "scored": 20,
+ "generatedAt": "2026-10-15T14:06:40Z",
+ "clips": 28,
+ "scored": 22,
  "pitch": {
-  "n": 18,
+  "n": 20,
   "median": 97.0,
-  "p25": 68.5,
-  "p10": 39.2
+  "p25": 85.5,
+  "p10": 40.4
  },
  "rhythm": {
-  "n": 17,
+  "n": 19,
   "median": 95.0,
-  "p25": 86.0,
-  "p10": 74.6
+  "p25": 84.0,
+  "p10": 74.8
  },
  "rows": [
   {
@@ -26,7 +26,7 @@
    "rescue": [],
    "degraded": [],
    "outcome": "complete",
-   "sec": 1.28
+   "sec": 1.29
   },
   {
    "id": "dotzauer_b1_no03__00_s1_slow",
@@ -41,7 +41,7 @@
     "beat:legacy"
    ],
    "outcome": "complete",
-   "sec": 0.79
+   "sec": 0.78
   },
   {
    "id": "dotzauer_b1_no09__01_slow",
@@ -67,7 +67,7 @@
    "rescue": [],
    "degraded": [],
    "outcome": "complete",
-   "sec": 0.78
+   "sec": 0.77
   },
   {
    "id": "dotzauer_b1_no03__04_slow",
@@ -78,7 +78,7 @@
    "rescue": [],
    "degraded": [],
    "outcome": "partial",
-   "sec": 2.1
+   "sec": 2.11
   },
   {
    "id": "dotzauer_b1_no17__05_s0_fast",
@@ -89,7 +89,7 @@
    "rescue": [],
    "degraded": [],
    "outcome": "complete",
-   "sec": 0.77
+   "sec": 0.78
   },
   {
    "id": "dotzauer_b1_no17__05_s1_slow",
@@ -115,7 +115,43 @@
     "beat:legacy"
    ],
    "outcome": "complete",
-   "sec": 1.09
+   "sec": 1.08
+  },
+  {
+   "id": "dotzauer_b1_no11__10_s0_fast",
+   "status": "failed",
+   "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
+   "sec": 1.24
+  },
+  {
+   "id": "dotzauer_b1_no11__10_s1_slow",
+   "status": "scored",
+   "pitch": 100,
+   "rhythm": 78,
+   "measures": "8-11",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 0.77
+  },
+  {
+   "id": "dotzauer_b1_no11__10_s2_full",
+   "status": "scored",
+   "pitch": 99,
+   "rhythm": 91,
+   "measures": "15-22",
+   "rescue": [
+    "tempo"
+   ],
+   "degraded": [
+    "beat:legacy"
+   ],
+   "outcome": "complete",
+   "sec": 0.83
   },
   {
    "id": "dotzauer_b1_no20__12_fast",
@@ -136,7 +172,7 @@
     "beat:legacy"
    ],
    "outcome": "complete",
-   "sec": 0.71
+   "sec": 0.72
   },
   {
    "id": "dotzauer_b1_no12__15_s1_full",
@@ -151,7 +187,7 @@
     "beat:legacy"
    ],
    "outcome": "complete",
-   "sec": 0.73
+   "sec": 0.74
   },
   {
    "id": "dotzauer_b1_no12__15_s2_fast",
@@ -162,13 +198,13 @@
    "rescue": [],
    "degraded": [],
    "outcome": "score_audio_mismatch",
-   "sec": 0.83
+   "sec": 0.84
   },
   {
    "id": "dotzauer_b1_no31__19_s0_fast",
    "status": "failed",
    "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-   "sec": 2.74
+   "sec": 2.76
   },
   {
    "id": "dotzauer_b1_no31__19_s1_slow",
@@ -183,7 +219,7 @@
     "beat:legacy"
    ],
    "outcome": "partial",
-   "sec": 0.92
+   "sec": 0.94
   },
   {
    "id": "dotzauer_b1_no06__21_fast",
@@ -194,7 +230,7 @@
    "rescue": [],
    "degraded": [],
    "outcome": "partial",
-   "sec": 1.06
+   "sec": 1.09
   },
   {
    "id": "dotzauer_b1_no07__22_s0_slow",
@@ -205,7 +241,7 @@
    "rescue": [],
    "degraded": [],
    "outcome": "partial",
-   "sec": 0.69
+   "sec": 0.7
   },
   {
    "id": "dotzauer_b1_no07__22_s1_full",
@@ -231,7 +267,7 @@
     "beat:legacy"
    ],
    "outcome": "complete",
-   "sec": 0.7
+   "sec": 0.69
   },
   {
    "id": "dotzauer_b1_no12__28_fast",
@@ -246,7 +282,7 @@
     "beat:legacy"
    ],
    "outcome": "complete",
-   "sec": 0.9
+   "sec": 0.89
   },
   {
    "id": "dotzauer_b1_no21__31_s0_fast",
@@ -257,7 +293,7 @@
    "rescue": [],
    "degraded": [],
    "outcome": "complete",
-   "sec": 1.0
+   "sec": 1.01
   },
   {
    "id": "dotzauer_b1_no21__31_s1_slow",
@@ -268,19 +304,19 @@
    "rescue": [],
    "degraded": [],
    "outcome": "partial",
-   "sec": 0.81
+   "sec": 0.82
   },
   {
    "id": "dotzauer_b1_no27__32_s0_fast",
    "status": "failed",
    "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-   "sec": 1.43
+   "sec": 1.44
   },
   {
    "id": "dotzauer_b1_no27__32_s1_slow",
    "status": "failed",
    "error": "ValueError: 录音片段与乐谱不吻合或重复乐句无法区分；请指定起始小节",
-   "sec": 1.42
+   "sec": 1.41
   },
   {
    "id": "dotzauer_b1_no23__37_s0_fast",
@@ -299,7 +335,7 @@
     "beat:legacy"
    ],
    "outcome": "score_audio_mismatch",
-   "sec": 1.45
+   "sec": 1.46
   }
  ]
 }

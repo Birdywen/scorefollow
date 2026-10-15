@@ -69,6 +69,17 @@
       ]
     },
     {
+      "etude": 11,
+      "tier": "A",
+      "note": "clean OCR; 46 measures verified against PDF by user 2026-10-15",
+      "monophonic_xml_sha256": "6219069f3ebd343c94841bf3801822aecfffed1424922323fb6e5023c21df861",
+      "clips": [
+        "dotzauer_b1_no11__10_s0_fast",
+        "dotzauer_b1_no11__10_s1_slow",
+        "dotzauer_b1_no11__10_s2_full"
+      ]
+    },
+    {
       "etude": 12,
       "tier": "B",
       "note": "chord only in final measure; removed by monophonic projection",
@@ -141,10 +152,8 @@
       ]
     }
   ],
-  "clip_count": 25,
-  "pending": {
-    "11": "clean structure but measure count unverified vs PDF (XML 46 measures; 2026-10-13 note: missing measures suspected)"
-  },
+  "clip_count": 28,
+  "pending": {},
   "clean_without_audio": [
     18
   ],
