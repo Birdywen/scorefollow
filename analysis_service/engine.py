@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.21"
+VERSION = "string-mono-0.22"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -1296,7 +1296,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if pitch_notes:
         usable_events(pitch_notes)
     sec_per_beat = seconds_per_quarter(xml, bpm)
-    # 面板速度只做第一道粗筛：区间外直接判 mismatch；区间内（[0.8,1.25]）也可能
+    # 面板速度只做第一道粗筛：区间外标 mismatch；区间内（[0.8,1.25]）也可能
     # 是 2x 密网格（八分锁拍且面板≈2x 真速，慢速连奏实测），间隔比值无法区分，
     # 一律再拿音高证据验刻度（含 0.5 八分候选），含糊按 mismatch 退回 legacy。
     beat_quarters = 1.0
@@ -1318,6 +1318,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 tempo_mismatch = True
                 mismatch_bpm = round(60 / interval, 1)
             else:
+                # 自动定位越界：丢网退 legacy（no23 slow 类位对网错需 shootout
+                # 另立项：活网/平滑网事后比优，见下一轮计划）。
                 tempo_mismatch = True
                 mismatch_bpm = round(60 / interval, 1)
                 beat_map = None
@@ -1664,6 +1666,18 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                     detected = float(np.median(pitches[svalid]))
                     cents = round((detected - note["pitchMidi"]) * 100, 1)
                     quality = round(float(np.median(confidence[svalid])), 2)
+            if detected is None:
+                # 活网格下 pYIN 段过短/缺失（快速经过句常见）：退到帧中位数，
+                # 窗口同兜底窗（期望区间内、有效帧≥4），仍无才留给 CREPE。
+                # 只补 None，不碰已有 verdict（no05 fast 实测：66 短段全军）。
+                fb_lo0, fb_hi0 = max(ref + skip, expected), min(hi_edge, note_end)
+                if fb_hi0 - fb_lo0 >= 0.04:
+                    fvalid = ((times >= fb_lo0) & (times <= fb_hi0) & np.isfinite(pitches)
+                              & (confidence >= 0.7))
+                    if np.count_nonzero(fvalid) >= 4:
+                        detected = float(np.median(pitches[fvalid]))
+                        cents = round((detected - note["pitchMidi"]) * 100, 1)
+                        quality = round(float(np.median(confidence[fvalid])), 2)
             if crepe_lo is None:
                 # 0.20: 无可用 pYIN 段 (无重叠或 <0.15s): pYIN 照旧不定音高, 只给 CREPE 登记
                 # 期望区间内的兜底窗; CREPE 读数 >200c 不指控 (见 _run_crepe_verdicts)。
