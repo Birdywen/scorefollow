@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.20"
+VERSION = "string-mono-0.21"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -812,7 +812,8 @@ def _interp_beats(beats: np.ndarray, med: float, anchor: int, rel_beat: float) -
 def _select_grid_scale(beats: np.ndarray, med: float, anchor: int, notes: list,
                        base_beat: float, times, pitches, confidence, scales,
                        anchor_shift: float = 0.0) -> float | None:
-    """用音高证据验网格刻度：候选 1.0=四分脉冲 1:1，1.5=附点脉冲 /1.5。
+    """用音高证据验网格刻度：候选 1.0=四分脉冲 1:1，1.5=附点脉冲 /1.5，
+    0.5=八分密网格（跟踪器锁在八分音符上时下标按 /0.5 折算，多见于慢速连奏）。
     窗内音高中位数与谱面音差 ≤1.5 半音算命中；赢家须 ≥0.6，多候选时还须
     ≥1.4 倍于次名，单候选须 ≥0.7，否则 None。只统计录音覆盖的音符。"""
     if med <= 0 or len(beats) < 2 or not notes:
@@ -860,7 +861,9 @@ def _select_grid_phase(beats: np.ndarray, med: float, anchor: int, notes: list,
     八分音符时 pitchScore 0→100 只差这一项）。
     候选 {0, +0.5, -0.5, +1, -1} 个脉冲：每个音符取期望起音最近的 pYIN 段首
     （一个脉冲内，否则该音弃权），段内音高与谱面差 ≤1.5 半音算命中；
-    赢家须 ≥0.6 且领先次名 ≥0.15，否则 0.0（保持原锚点）。只统计录音覆盖的
+    赢家须 ≥0.6，领先次名 ≥0.15 直接锁；多候选并列（慢速连奏里半脉冲/
+    整脉冲可能同时全中）时按平均残差（段首贴期望起音程度）打破，残差
+    差 <0.03s 才算真含糊、返回 0.0（保持原锚点）。只统计录音覆盖的
     音符；可投票音符 <8 直接弃权，避免短片段误判。返回脉冲数偏移。"""
     if med <= 0 or len(beats) < 2 or not notes or not pitch_notes:
         return 0.0
@@ -877,8 +880,10 @@ def _select_grid_phase(beats: np.ndarray, med: float, anchor: int, notes: list,
         return 0.0
     cands = (0.0, 0.5, -0.5, 1.0, -1.0)
     agree: dict[float, float] = {}
+    mean_resid: dict[float, float] = {}
     for cand in cands:
         hit = total = 0
+        resid = 0.0
         for n in cov:
             rel = n["onsetBeat"] - base_beat
             t0 = _interp_beats(beats, med, anchor, rel / beat_quarters) + base_shift + cand * med
@@ -886,14 +891,23 @@ def _select_grid_phase(beats: np.ndarray, med: float, anchor: int, notes: list,
             if abs(float(seg_starts[j]) - t0) > med:
                 continue
             total += 1
+            resid += abs(float(seg_starts[j]) - t0)
             if abs(float(seg_midis[j]) - n["pitchMidi"]) <= 1.5:
                 hit += 1
         agree[cand] = hit / total if total >= 8 else 0.0
+        mean_resid[cand] = resid / total if total else math.inf
     best = min(cands, key=lambda c: (-agree[c], abs(c)))
     if agree[best] < 0.6:
         return 0.0
-    runner = max((agree[c] for c in cands if c != best), default=0.0)
-    return best if agree[best] - runner >= 0.15 else 0.0
+    contenders = [c for c in cands if agree[c] > agree[best] - 0.15]
+    if len(contenders) == 1:
+        return best
+    # 并列时用平均残差打破：段首越贴期望起音相位越真；残差也分不开
+    # （如全同音重复句）才算真含糊，保持原锚点。
+    ranked = sorted(contenders, key=lambda c: (mean_resid[c], abs(c)))
+    if len(ranked) > 1 and mean_resid[ranked[1]] - mean_resid[ranked[0]] < 0.03:
+        return 0.0
+    return ranked[0]
 
 
 BP_TIMEOUT_SEC = 30
@@ -1282,10 +1296,11 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if pitch_notes:
         usable_events(pitch_notes)
     sec_per_beat = seconds_per_quarter(xml, bpm)
-    # 面板速度只做第一道粗筛：命中 [0.8,1.25] 直接用 1:1；其余（面板未知、
-    # 填错口径）只要不是自动定位，就拿音高证据验网格，验过才锁，验不过
-    # 按 mismatch 退回 legacy。自动定位没有面板可依赖，含糊直接退回。
+    # 面板速度只做第一道粗筛：区间外直接判 mismatch；区间内（[0.8,1.25]）也可能
+    # 是 2x 密网格（八分锁拍且面板≈2x 真速，慢速连奏实测），间隔比值无法区分，
+    # 一律再拿音高证据验刻度（含 0.5 八分候选），含糊按 mismatch 退回 legacy。
     beat_quarters = 1.0
+    grid_voted = False
     needs_vote = False
     tempo_mismatch = False
     mismatch_bpm = None
@@ -1441,17 +1456,32 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             audio_anchor = location_anchor if auto_located else onsets[0]
             anchor = int(np.argmin(np.abs(beats - audio_anchor)))
             anchor_shift = audio_anchor - beats[anchor] if auto_located or repaired_start else 0.0
-            if needs_vote:
-                scales = (1.0, 1.5) if tracker_beat_quarters(xml) == 1.5 else (1.0,)
+            # 网格刻度投票：0.5=八分密网格（跟踪器锁在八分音符上，多见于
+            # 慢速连奏）；内容（窗内音高中位数±1.5半音）说了算，含糊（None）
+            # 按 mismatch 退回 legacy。票不够（覆盖音符<4，短片段投不准）且
+            # 无需投票时沿用粗筛结论，不验不退。
+            span = (float(beats[-1]) - float(beats[0])) / med if med > 0 else 0.0
+            votable = sum(1 for n in notes if n["onsetBeat"] - notes[0]["onsetBeat"] <= span + 2.0) >= 4
+            voted = needs_vote or votable
+            if not voted:
+                picked = 1.0
+            else:
+                scales = (1.0, 1.5, 0.5) if tracker_beat_quarters(xml) == 1.5 else (1.0, 0.5)
                 picked = _select_grid_scale(
                     beats, med, anchor, notes, notes[0]["onsetBeat"],
                     times, pitches, confidence, scales, anchor_shift)
-                if picked is None:
-                    beat_map = None
-                    sync_mode = "legacy"
-                    _beat_rejected = True
-                else:
-                    beat_quarters = picked
+            if picked is None and needs_vote:
+                beat_map = None
+                sync_mode = "legacy"
+                _beat_rejected = True
+            elif picked is None:
+                # 粗筛通过但内容含糊（谱面错/重复句常见）：弃权不断网格，
+                # 沿用 1:1（0.20 行为）；只有本就可疑的网格才退 legacy。
+                beat_quarters = 1.0
+            else:
+                beat_quarters = picked
+                if voted:
+                    grid_voted = True
             if sync_mode == "vamp-beat" and pitch_notes and beat_quarters:
                 # 相位投票：最近拍点锚点在连续八分音符/前导拍点漏检时可能差
                 # 半个或一个脉冲；用 pYIN 段验相位，赢家平移 anchor_shift。
@@ -1459,7 +1489,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 anchor_shift += _select_grid_phase(
                     beats, med, anchor, notes, base_beat,
                     pitch_notes, beat_quarters, anchor_shift) * med
-            if tracker_beat_quarters(xml) == 1.5 and not needs_vote \
+            if tracker_beat_quarters(xml) == 1.5 and not needs_vote and not grid_voted \
                     and detected_bpm is not None:
                 # 直接锁住的复拍子网格：面板按惯例是附点口径，detectedBpm
                 # 折成附点数才跟面板可比。投票锁住的不折（口径未知，报实测）。
