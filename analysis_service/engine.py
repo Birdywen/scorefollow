@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.22"
+VERSION = "string-mono-0.23"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -651,7 +651,8 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
                        pitches: np.ndarray, energy: np.ndarray, sec_per_beat: float,
                        duration_sec: float, requested_start: int, score_last: int,
                        rigid_start: float, onsets: list[float],
-                       pitch_notes: list | None = None) -> dict:
+                       pitch_notes: list | None = None,
+                       signal=None, rate=None) -> dict:
     """刚性网格解释失败时的补救：用音高证据重对齐并返回小节级网格。
 
     (0, -12, +12) 依次试 align_excerpt（不移调优先：移调候选须明显更优才胜出，
@@ -669,25 +670,39 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
     if len(events) < 8:
         plan["advice"] = "可用音高事件不足 8 个，无法自动对齐；可使用手动小节同步逐小节对齐后重分析。"
         return plan
-    failures = []
-    boundary_failure = None
-    cands: list[tuple[float, int, dict]] = []
-    for shift in OCTAVE_SEARCH_SHIFTS:
-        shifted = notes if shift == 0 else [{**n, "pitchMidi": float(n["pitchMidi"]) + shift} for n in notes]
-        try:
-            excerpt = align_excerpt(shifted, events)
-        except ValueError as exc:
-            failures.append(str(exc))
-            plan["attempts"].append({"shift": shift, "reason": "error", "detail": str(exc)})
-            continue
-        if _usable_excerpt(excerpt):
-            cands.append((excerpt["cost"], shift, excerpt))
-            plan["attempts"].append({"shift": shift, "reason": "usable"})
-        elif excerpt.get("boundarySupported") is False:
-            boundary_failure = "谱面与录音首尾的时间证据冲突，不能确认覆盖范围；请检查谱面是否完整"
-            plan["attempts"].append({"shift": shift, "reason": "boundary_unsupported"})
-        else:
-            plan["attempts"].append({"shift": shift, "reason": "unusable"})
+    def _run_shifts(ev, tag):
+        found: list[tuple[float, int, dict]] = []
+        errs: list[str] = []
+        boundary_msg = None
+        for shift in OCTAVE_SEARCH_SHIFTS:
+            shifted = notes if shift == 0 else [{**n, "pitchMidi": float(n["pitchMidi"]) + shift} for n in notes]
+            try:
+                excerpt = align_excerpt(shifted, ev)
+            except ValueError as exc:
+                errs.append(str(exc))
+                plan["attempts"].append({"shift": shift, "reason": "error", "detail": str(exc), "events": tag})
+                continue
+            if _usable_excerpt(excerpt):
+                found.append((excerpt["cost"], shift, excerpt))
+                plan["attempts"].append({"shift": shift, "reason": "usable", "events": tag})
+            elif excerpt.get("boundarySupported") is False:
+                boundary_msg = "谱面与录音首尾的时间证据冲突，不能确认覆盖范围；请检查谱面是否完整"
+                plan["attempts"].append({"shift": shift, "reason": "boundary_unsupported", "events": tag})
+            else:
+                plan["attempts"].append({"shift": shift, "reason": "unusable", "events": tag})
+        return found, errs, boundary_msg
+
+    cands, failures, boundary_failure = _run_shifts(events, "pyin")
+    if not cands and signal is not None and rate:
+        # 0.23: pYIN 事件分不出重复句 / 边界不支持时, 用独立传感器 BP 再试一轮
+        # (no23 slow: pYIN 三 shift 全败, BP 对齐可出 tempo 网格; no16 fast:
+        # pYIN boundary_unsupported, BP 有机会给出可用 excerpt)。pYIN-first:
+        # 今天能救起来的片段走原路径零变化; BP 也败则 advice 原样。
+        _bp_ev = _bp_locate_events(signal, rate)
+        if _bp_ev and len(_bp_ev) >= 8:
+            _bp_cands, _bp_failures, _ = _run_shifts(_bp_ev, "bp")
+            if _bp_cands:
+                cands, events = _bp_cands, _bp_ev
     if not cands:
         msg = boundary_failure or (failures[0] if failures else "录音片段与乐谱不吻合；请指定起始小节")
         plan["advice"] = f"自动对齐失败（{msg}）；可使用手动小节同步逐小节对齐后重分析。"
@@ -1932,7 +1947,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                                    duration_sec=duration_sec,
                                    requested_start=start_measure,
                                    score_last=score_notes[-1]["measure"],
-                                   rigid_start=start, onsets=onsets, pitch_notes=pitch_notes)
+                                   rigid_start=start, onsets=onsets, pitch_notes=pitch_notes,
+                                   signal=signal, rate=rate)
         if _plan["markers"]:
             _xml2 = transpose_score_xml(xml, _plan["shift"]) if _plan["shift"] else xml
             _rescued = analyze(wav, _xml2, bpm, instrument, _plan["start_measure"],
