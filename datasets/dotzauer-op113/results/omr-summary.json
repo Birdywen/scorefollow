@@ -213,7 +213,13 @@
       "note_count": 757,
       "measure_count": 64,
       "musicxml": "musicxml/Dotzauer_Op113_Book1_No15.musicxml",
-      "xml_sha256": "e13444c463335e5badc58c14952dd4b7144559a603902f1b0147e246f61df484"
+      "xml_sha256": "8f77974388990373980f0945639edd6377ff249a99879df4c44167d758405568",
+      "manual_replacement": {
+        "date": "2026-10-15",
+        "by": "assistant (user approved)",
+        "note": "m47: OCR marked 6 sixteenths as triplets; tuplet removed, duration 4->6 (divisions 24); job_id/note_count/measure_count describe the original OCR job",
+        "previous_xml_sha256": "e13444c463335e5badc58c14952dd4b7144559a603902f1b0147e246f61df484"
+      }
     },
     {
       "etude": 16,

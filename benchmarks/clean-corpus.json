@@ -92,6 +92,16 @@
       ]
     },
     {
+      "etude": 15,
+      "tier": "C",
+      "note": "m47 OCR triplet error fixed by hand 2026-10-15",
+      "monophonic_xml_sha256": "f45093141d389750ec82597ef6bb9535bf75acb41df5cd18db4ddf0c372895fe",
+      "clips": [
+        "dotzauer_b1_no15__11_s0_fast",
+        "dotzauer_b1_no15__11_s1_slow"
+      ]
+    },
+    {
       "etude": 17,
       "tier": "A",
       "note": "clean OCR",
@@ -152,7 +162,7 @@
       ]
     }
   ],
-  "clip_count": 28,
+  "clip_count": 30,
   "pending": {},
   "clean_without_audio": [
     18
@@ -164,7 +174,6 @@
     "10": "OCR lost 22 empty measures from m32; chords",
     "13": "multi-voice",
     "14": "chords (26) + multi-voice",
-    "15": "OCR triplet error m47 (fixable)",
     "16": "hidden bass note C2 m49 (fixable)",
     "19": "repeats/endings need unfolding",
     "22": "chord m12 + missing note m29, m34",
