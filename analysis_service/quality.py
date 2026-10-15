@@ -6,6 +6,9 @@ import math
 OVERALL_WEIGHTS = {"pitch": 0.5, "rhythm": 0.5}
 # 0.19: 八度+极端+打分剔除音占已测音的比例达到此值, 音准证据不可靠 (partial, 不出综合分)。
 PITCH_UNRELIABLE_RATIO = 0.2
+# evidence-2: 速度不一致且节奏分低于此值, 视为时间映射漂移 (partial, 不出综合分)。
+TEMPO_RHYTHM_FLOOR = 60
+QUALITY_VERSION = "evidence-2"
 
 
 def assess_quality(result: dict) -> dict:
@@ -31,6 +34,9 @@ def assess_quality(result: dict) -> dict:
         issues.append("low_coverage")
     if summary.get("tempoMismatch"):
         issues.append("tempo_mismatch")
+        rhythm_now = summary.get("rhythmScore")
+        if rhythm_now is not None and rhythm_now < TEMPO_RHYTHM_FLOOR:
+            issues.append("tempo_timing_unreliable")
     if summary.get("takeBeyondScoreAfterSec") is not None:
         issues.append("take_beyond_score")
     measured = summary.get("voicedNotes") or 0
@@ -53,7 +59,7 @@ def assess_quality(result: dict) -> dict:
     elif mismatch:
         outcome = "score_audio_mismatch"
     elif scores < 2 or "alignment_unverified" in issues or "low_coverage" in issues or \
-            "pitch_tracking_unreliable" in issues or \
+            "pitch_tracking_unreliable" in issues or "tempo_timing_unreliable" in issues or \
             "range" in (summary.get("rescueReasons") or []):
         outcome = "partial"
     elif summary.get("autoMeasureSync"):
@@ -72,9 +78,9 @@ def assess_quality(result: dict) -> dict:
     weights = dict(OVERALL_WEIGHTS)
     overall = None
     if pitch is not None and rhythm is not None and "alignment_unverified" not in issues \
-            and "low_coverage" not in issues and "pitch_tracking_unreliable" not in issues:
+            and "low_coverage" not in issues and "pitch_tracking_unreliable" not in issues and "tempo_timing_unreliable" not in issues:
         overall = int(math.floor(pitch * weights["pitch"] + rhythm * weights["rhythm"] + .5))
-    return {"version": "evidence-1", "outcome": outcome, "overallScore": overall,
+    return {"version": QUALITY_VERSION, "outcome": outcome, "overallScore": overall,
             "overallWeights": weights, "pitchMatchRate": match_rate, "issues": issues,
             "pitchCoverage": round(pitch_coverage, 3), "timingCoverage": round(timing_coverage, 3),
             # This indicates a usable timeline, never a claim of verified accuracy.

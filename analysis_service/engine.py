@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.19"
+VERSION = "string-mono-0.20"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -1192,12 +1192,18 @@ def _run_crepe_verdicts(aligned, items, signal, rate, tolerance):
                     None, None, 0.0, g["pitchMidi"], (g["lo"], g["hi"]), t3)
                 if fc is None:
                     continue
+                # 0.20: 兜底窗或无起音短音, CREPE 差三度以上多半是邻音, 与主循环同规则不指控。
+                if abs(fc) > 200 and (g.get("fallback") or g.get("noOnsetShort")):
+                    continue
+                if g.get("fallback"):
+                    entry["crepeFallback"] = True
                 entry["pitchErrorCents"] = fc
                 entry["confidence"] = fq
                 entry["crepeCents"] = fcc
                 entry["matchStatus"] = "matched"
                 _restatus_crepe_entry(entry, fc, fd, tolerance)
-                delta += 1
+                if not g.get("counted"):
+                    delta += 1
             else:
                 if entry["pitchErrorCents"] is None:
                     continue
@@ -1593,6 +1599,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             if nxt is not None:
                 hi_edge = min(hi_edge, nxt - 0.03)
         crepe_lo, crepe_hi = None, None
+        fallback_win = False
         mask = (times >= ref + skip) & (times <= hi_edge)
         valid = mask & np.isfinite(pitches) & (confidence >= 0.7)
         if beat_time is not None and pitch_notes:
@@ -1627,6 +1634,12 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                     detected = float(np.median(pitches[svalid]))
                     cents = round((detected - note["pitchMidi"]) * 100, 1)
                     quality = round(float(np.median(confidence[svalid])), 2)
+            if crepe_lo is None:
+                # 0.20: 无可用 pYIN 段 (无重叠或 <0.15s): pYIN 照旧不定音高, 只给 CREPE 登记
+                # 期望区间内的兜底窗; CREPE 读数 >200c 不指控 (见 _run_crepe_verdicts)。
+                fb_lo, fb_hi = max(ref + skip, expected), min(hi_edge, note_end)
+                if fb_hi - fb_lo >= 0.04:
+                    crepe_lo, crepe_hi, fallback_win = fb_lo, fb_hi, True
         else:
             crepe_lo, crepe_hi = ref + skip, hi_edge
             detected = float(np.median(pitches[valid])) if np.count_nonzero(valid) >= 4 else None
@@ -1641,7 +1654,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         if cents is None and crepe_lo is not None and crepe_hi is not None and crepe_hi > crepe_lo:
             crepe_items.append({"index": len(aligned), "lo": float(crepe_lo),
                                 "hi": float(crepe_hi), "pitchMidi": note["pitchMidi"],
-                                "kind": "gap"})
+                                "kind": "gap", "fallback": fallback_win,
+                                "noOnsetShort": onset is None and duration < 0.25})
         raw_cents, displaced, displaced_from = None, False, None
         if cents is not None and detected is not None and abs(cents) > pitch_tolerance_cents:
             # 起音落在本音自己的位置 (偏差 <= max(80 ms, 25% 时值)) 时音高窗测的就是本音:
@@ -1660,6 +1674,11 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         if onset is None and duration < 0.25 and cents is not None and abs(cents) > 200:
             cents = None
             quality = 0.0
+            # 0.20b: pYIN 窗内读到邻音被否决后仍登记 CREPE 补测 (同 >200c 规则; 已计覆盖, 不重复计)
+            if crepe_lo is not None and crepe_hi is not None and crepe_hi > crepe_lo:
+                crepe_items.append({"index": len(aligned), "lo": float(crepe_lo), "hi": float(crepe_hi),
+                                    "pitchMidi": note["pitchMidi"], "kind": "gap", "fallback": fallback_win,
+                                    "noOnsetShort": True, "counted": True})
         # absurd suspect 登记 (post-veto): veto 之后仍有值且荒谬才登记,
         # veto 掉的不进, 避免把邻音窗算进来。
         if cents is not None and abs(cents) > CREPE_OVERRIDE_ABSURD_CENTS \

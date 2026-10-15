@@ -24,7 +24,7 @@ export default function AnalysisQuality({ summary: s, quality, diagnostics, vers
     : s.autoMeasureSync ? "complete_with_rescue" : "complete");
   // 只录了一段 (唯一原因是 range) 不等于出了问题: 用中性措辞, 不催用户手动同步
   const rangeOnly = status === "partial" && s.pitchScore != null && s.rhythmScore != null
-    && !(quality?.issues ?? []).some((i) => i === "alignment_unverified" || i === "low_coverage" || i === "pitch_tracking_unreliable")
+    && !(quality?.issues ?? []).some((i) => i === "alignment_unverified" || i === "low_coverage" || i === "pitch_tracking_unreliable" || i === "tempo_timing_unreliable")
     && !!s.rescueReasons?.includes("range");
   const labels = {
     complete: ["结果可用", "Results available"], complete_with_rescue: ["已自动补救，请核对", "Auto-corrected; review alignment"],
@@ -52,6 +52,7 @@ export default function AnalysisQuality({ summary: s, quality, diagnostics, vers
     {s.detectedBpm != null && <p>{zh ? "实测速度" : "Detected tempo"} ≈ {s.detectedBpm} BPM</p>}
     {s.clipped && <p>{zh ? "录音存在削波，请降低输入音量。" : "Clipping detected; reduce the recording input level."}</p>}
     {(quality?.issues ?? []).includes("pitch_tracking_unreliable") && <p>{zh ? "部分音高没有测准（偏差过大的音已灰显，不计入音准分），建议回听这些小节或重录。" : "Some pitches could not be measured reliably (extreme deviations are greyed out and not scored); replay those measures or record again."}</p>}
+    {(quality?.issues ?? []).includes("tempo_timing_unreliable") && <p>{zh ? "录音中速度变化较大，后段时间对不上，节奏分仅供参考；可用下方手动小节同步后重分析。" : "Tempo varied a lot in this take, so later notes drift off the timeline and the rhythm score is indicative only. Use manual measure sync below and analyze again."}</p>}
     <p>{(status === "partial" && !rangeOnly) || status === "insufficient_evidence"
       ? (zh ? "请核对谱面、乐器和起始小节；必要时使用下方手动小节同步后重分析。" : "Check the score, instrument and starting measure; use manual measure sync below and analyze again if needed.")
       : (zh ? "分数不代表对齐质量；走谱前请回听首尾小节，确认时间边界。" : "Scores do not prove alignment quality; replay the first and last measures before following the take.")}</p>

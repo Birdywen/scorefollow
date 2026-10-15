@@ -13,6 +13,7 @@ import unittest
 
 from .engine import VERSION, analyze
 from .job_store import JobStore
+from .quality import QUALITY_VERSION
 from .test_engine import recording, score
 
 
@@ -76,10 +77,10 @@ class ServerRestartTests(unittest.TestCase):
         parameters = {"bpm": 60.0, "instrument": "violin", "startMeasure": 1,
                       "firstBeatAudioSec": None, "syncMode": "vamp-beat", "measureSync": None,
                       "pitchToleranceCents": 25.0}
-        queued, _ = self.store.submit("analysis", inputs, parameters, [VERSION, "evidence-1"])
-        running, _ = self.store.submit("analysis", inputs, {**parameters, "bpm": 62.0}, [VERSION, "evidence-1"])
+        queued, _ = self.store.submit("analysis", inputs, parameters, [VERSION, QUALITY_VERSION])
+        running, _ = self.store.submit("analysis", inputs, {**parameters, "bpm": 62.0}, [VERSION, QUALITY_VERSION])
         self.store.update(running["id"], {"status": "analyzing", "stage": "extracting_features"})
-        completed, _ = self.store.submit("analysis", inputs, {**parameters, "bpm": 61.0}, [VERSION, "evidence-1"])
+        completed, _ = self.store.submit("analysis", inputs, {**parameters, "bpm": 61.0}, [VERSION, QUALITY_VERSION])
         saved = analyze(audio, xml, 61, "violin")
         self.store.update(completed["id"], {"status": "completed", "finishedAt": time.time(), "result": saved})
         self.start()

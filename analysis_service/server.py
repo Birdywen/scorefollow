@@ -20,7 +20,7 @@ from uuid import uuid4
 from . import vamp_features
 from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score, read_wav, validate_measure_sync
 from .omr import MAX_PDF, recognize
-from .quality import assess_quality
+from .quality import QUALITY_VERSION, assess_quality
 from .engine import VERSION as STRING_VERSION, crepe_backend
 from .job_store import JobStore, QueueFull, TERMINAL
 
@@ -268,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
                                       "firstBeatAudioSec": float(first_beat) if first_beat is not None else None,
                                       "syncMode": sync_mode, "measureSync": measure_sync,
                                       "pitchToleranceCents": float(pitch_tolerance_cents)}
-                        version = [PIANO_VERSION if instrument == "piano" else STRING_VERSION, "evidence-1"]
+                        version = [PIANO_VERSION if instrument == "piano" else STRING_VERSION, QUALITY_VERSION]
                     job, created = job_store.submit(kind, inputs, parameters, version, ttl=TTL)
                     job_id = job["id"]
                     jobs[job_id] = {key: value for key, value in job.items() if key != "result"}
@@ -302,7 +302,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/health":
             self.respond(200, {"status": "ok", "stringAlgorithmVersion": STRING_VERSION,
-                               "qualityVersion": "evidence-1", "crepeBackend": crepe_backend()})
+                               "qualityVersion": QUALITY_VERSION, "crepeBackend": crepe_backend()})
             return
         if not self.authorized():
             self.respond(401, {"error": "未授权"})
