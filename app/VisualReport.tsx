@@ -1,5 +1,7 @@
 "use client";
 
+import { SCATTER_CAPACITY, downsampleBy } from "./scatter";
+
 const PITCH_TOLERANCE_CENTS = 15;
 
 export type VisualNote = {
@@ -273,13 +275,14 @@ export default function VisualReport({
         <text x={4} y={pTop + 3} fontSize={10} fill="var(--sf-muted)">偏高</text>
         <text x={4} y={pMid + 3} fontSize={10} fill="var(--sf-muted)">准</text>
         <text x={4} y={pBot + 3} fontSize={10} fill="var(--sf-muted)">偏低</text>
-        {notes.map((n, i) => {
-          const cx = xFor(i, notes.length);
+        {downsampleBy(notes, SCATTER_CAPACITY, (t) => (isScoredPitch(t) ? Math.abs(t.pitchErrorCents as number) : -1)).map(({ item: n, count }, i, arr) => {
+          const cx = xFor(i, arr.length);
           const uncertain = !isScoredPitch(n);
           const cy = uncertain ? pMid : yForCents(n.pitchErrorCents as number);
-          const pitchLabel = uncertain
+          const bucketSuffix = count > 1 ? (zh ? ` · 本段${count}个音, 显示最偏的1个` : ` · ${count} notes in segment, showing worst 1`) : "";
+          const pitchLabel = (uncertain
             ? (zh ? `未计分（异常/不确定） · 第 ${n.measure} 小节` : `Excluded (outlier/uncertain) · m${n.measure}`)
-            : (`${(n.pitchErrorCents as number) > 0 ? "+" : ""}${n.pitchErrorCents} cents · m${n.measure}`);
+            : (`${(n.pitchErrorCents as number) > 0 ? "+" : ""}${n.pitchErrorCents} cents · m${n.measure}`)) + bucketSuffix;
           return (
             <g
               key={n.id}
@@ -326,18 +329,19 @@ export default function VisualReport({
         <text x={4} y={tTop + 3} fontSize={10} fill="var(--sf-muted)">抢了</text>
         <text x={4} y={tMid + 3} fontSize={10} fill="var(--sf-muted)">正好</text>
         <text x={4} y={tBot + 3} fontSize={10} fill="var(--sf-muted)">拖了</text>
-        {notes.map((n, i) => {
-          const cx = xFor(i, notes.length);
+        {downsampleBy(notes, SCATTER_CAPACITY, (t) => (t.timingErrorMs == null ? -1 : Math.abs(t.timingErrorMs))).map(({ item: n, count }, i, arr) => {
+          const cx = xFor(i, arr.length);
           const isFirst = i === 0;
           const missing = isFirst || n.timingErrorMs == null;
           const cy = missing ? tMid : yForMs(n.timingErrorMs as number);
-          const timingLabel = isFirst
+          const timingSuffix = count > 1 && !isFirst ? (zh ? ` · 本段${count}个音, 显示最偏的1个` : ` · ${count} notes in segment, showing worst 1`) : "";
+          const timingLabel = (isFirst
             ? (zh ? `第一个音不计时 · 第 ${n.measure} 小节` : `First note is not timed · m${n.measure}`)
             : missing
               ? (zh ? `没听清起音 · 第 ${n.measure} 小节` : `Onset unclear · m${n.measure}`)
               : (zh
                 ? `${(n.timingErrorMs as number) > 0 ? "+" : ""}${n.timingErrorMs} 毫秒（${(n.timingErrorMs as number) > 0 ? "抢了" : "拖了"}） · 第 ${n.measure} 小节`
-                : `${(n.timingErrorMs as number) > 0 ? "+" : ""}${n.timingErrorMs} ms (${(n.timingErrorMs as number) > 0 ? "early" : "late"}) · m${n.measure}`);
+                : `${(n.timingErrorMs as number) > 0 ? "+" : ""}${n.timingErrorMs} ms (${(n.timingErrorMs as number) > 0 ? "early" : "late"}) · m${n.measure}`)) + timingSuffix;
           return (
             <g
               key={n.id}

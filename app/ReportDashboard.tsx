@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import s from './report.module.css';
+import { SCATTER_CAPACITY, downsampleBy } from './scatter';
 
 // 演奏报告面板: 音高四色分级 + 多种图表 + 导出 PDF/网页。纯 SVG, 无图表依赖。
 export type Grade = 'green' | 'orange' | 'purple' | 'red' | 'none';
@@ -174,8 +175,6 @@ function MeasureBars({ rows, zh, onMeasureClick }: { rows: MeasureRow[]; zh: boo
 
 function PitchScatter({ notes, zh, onNoteClick }: { notes: DashNote[]; zh: boolean; onNoteClick?: (n: DashNote) => void }) {
   const W = 720, H = 220, L = 34, R = 8, mid = 110, span = 96, LIM = 150;
-  const n = Math.max(notes.length, 1);
-  const dx = (W - L - R) / n;
   const yFor = (c: number) => mid - (clamp(c, -LIM, LIM) / LIM) * span;
   const bands: [number, Grade][] = [[100, 'purple'], [50, 'orange'], [25, 'green']];
   return <svg viewBox={`0 0 ${W} ${H}`} className={s.chart} role='img' aria-label={zh ? '音高走势' : 'Pitch along the piece'}>
@@ -185,13 +184,13 @@ function PitchScatter({ notes, zh, onNoteClick }: { notes: DashNote[]; zh: boole
     <text x={L - 4} y={mid + 4} textAnchor='end'>0</text>
     <text x={L + 6} y={16}>{zh ? '↑ 偏高' : '↑ sharp'}</text>
     <text x={L + 6} y={H - 6}>{zh ? '↓ 偏低' : '↓ flat'}</text>
-    {notes.map((note, i) => {
+    {downsampleBy(notes, SCATTER_CAPACITY, (t) => (t.pitchExcluded || t.pitchErrorCents == null ? -1 : Math.abs(t.pitchErrorCents))).map(({ item: note, count }, i, arr) => {
       const c = note.pitchErrorCents;
       const g = note.pitchExcluded ? 'none' : pitchGrade(c);
-      const x = L + dx * (i + 0.5);
+      const x = L + ((W - L - R) / Math.max(arr.length, 1)) * (i + 0.5);
       const y = g === 'none' || c == null ? mid : yFor(c);
-      const tip = `${zh ? '小节' : 'Bar'} ${note.measure} · ${g === 'none' || c == null ? gl('none', zh) : `${c > 0 ? '+' : ''}${Math.round(c)} ${zh ? '音分' : 'cents'}`}`;
-      return <circle key={note.id} cx={x} cy={y} r={g === 'none' ? 2.6 : 3.6} fill={g === 'none' ? 'none' : GRADE_COLOR[g]} stroke={GRADE_COLOR[g]} strokeWidth={g === 'none' ? 1.2 : 0} className={onNoteClick ? s.clickable : undefined} onClick={() => onNoteClick?.(note)}><title>{tip}</title></circle>;
+      const tip = `${zh ? '小节' : 'Bar'} ${note.measure} · ${g === 'none' || c == null ? gl('none', zh) : `${c > 0 ? '+' : ''}${Math.round(c)} ${zh ? '音分' : 'cents'}`}${count > 1 ? (zh ? ` · 本段${count}个音, 显示最偏的1个` : ` · ${count} notes in segment, showing worst 1`) : ''}`;
+      return <circle key={note.id} cx={x} cy={y} r={g === 'none' ? 2.6 : 3.6} fill={g === 'none' ? 'none' : GRADE_COLOR[g]} stroke={GRADE_COLOR[g]} strokeWidth={g === 'none' ? 1.2 : 0} className={onNoteClick ? s.clickable : undefined} onClick={() => onNoteClick?.(note)} onKeyDown={(e) => { if (onNoteClick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onNoteClick(note); } }} tabIndex={onNoteClick ? 0 : undefined} role={onNoteClick ? 'button' : undefined} aria-label={onNoteClick ? tip : undefined}><title>{tip}</title></circle>;
     })}
   </svg>;
 }
