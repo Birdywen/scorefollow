@@ -941,6 +941,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         ))}
       </div>}
       {doneTakes.length > 0 && <TakeCompare
+        zh={zh}
         takes={compareTakes}
         selectedName={selectedCompareName}
         onSelect={(name) => {
@@ -1001,7 +1002,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         {showDemo ? (zh ? "收起预览" : "Hide preview") : (zh ? "看模拟效果图" : "Show sample charts")}</button>
       {showDemo && <div style={{ marginTop: 12 }}>
         <ReportDashboard zh={zh} notes={mockNotes} scores={{ overall: 88, pitch: 90, rhythm: 86 }} meta={{ title: zh ? "示例曲目（模拟数据）" : "Sample piece (mock data)", instrument: "violin", bpm: 80, durationSec: 42 }} onMeasureClick={(m) => onJump(m)} />
-        <TakeCompare takes={mockTakes} />
+        <TakeCompare takes={mockTakes} zh={zh} />
       </div>}
     </section>}
     {result && <section className={styles.report} aria-label={zh ? "分析报告" : "Analysis report"}>

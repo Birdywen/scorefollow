@@ -126,10 +126,12 @@ export function TakeCompare({
   takes,
   selectedName,
   onSelect,
+  zh = true,
 }: {
   takes: CompareTake[];
   selectedName?: string;
   onSelect?: (name: string) => void;
+  zh?: boolean;
 }) {
   const valid = takes.filter((t) => t.pitch != null || t.rhythm != null);
   if (!valid.length) return null;
@@ -151,14 +153,14 @@ export function TakeCompare({
   }
   return (
     <div>
-      <h3 style={{ fontSize: 13, margin: "14px 0 8px" }}>一遍比一遍好吗（三遍对比）</h3>
+      <h3 style={{ fontSize: 13, margin: "14px 0 8px" }}>{zh ? "一遍比一遍好吗（三遍对比）" : "Take over take (3-take comparison)"}</h3>
       <div style={{ display: "grid", gap: 8 }}>
         {valid.map((t) => (
           <button
             key={t.name}
             onClick={() => onSelect?.(t.name)}
             aria-pressed={selectedName === t.name}
-            title={`${t.name}：音准 ${t.pitch ?? "—"}，节奏 ${t.rhythm ?? "—"}`}
+            title={zh ? `${t.name}：音准 ${t.pitch ?? "—"}，节奏 ${t.rhythm ?? "—"}` : `${t.name}: pitch ${t.pitch ?? "—"}, rhythm ${t.rhythm ?? "—"}`}
             style={{
               display: "grid",
               gridTemplateColumns: "52px 1fr 34px",
@@ -178,11 +180,11 @@ export function TakeCompare({
             <b>{t.name}</b>
             <span style={{ display: "grid", gap: 4 }}>
               <span style={{ display: "grid", gridTemplateColumns: "34px 1fr", gap: 6, alignItems: "center" }}>
-                <span style={{ color: "var(--sf-muted)" }}>音准</span>
+                <span style={{ color: "var(--sf-muted)" }}>{zh ? "音准" : "Pitch"}</span>
                 {bar(t.pitch, "#1a73e8")}
               </span>
               <span style={{ display: "grid", gridTemplateColumns: "34px 1fr", gap: 6, alignItems: "center" }}>
-                <span style={{ color: "var(--sf-muted)" }}>节奏</span>
+                <span style={{ color: "var(--sf-muted)" }}>{zh ? "节奏" : "Rhythm"}</span>
                 {bar(t.rhythm, "#0b8043")}
               </span>
             </span>
@@ -275,11 +277,20 @@ export default function VisualReport({
           const cx = xFor(i, notes.length);
           const uncertain = !isScoredPitch(n);
           const cy = uncertain ? pMid : yForCents(n.pitchErrorCents as number);
+          const pitchLabel = uncertain
+            ? (zh ? `未计分（异常/不确定） · 第 ${n.measure} 小节` : `Excluded (outlier/uncertain) · m${n.measure}`)
+            : (`${(n.pitchErrorCents as number) > 0 ? "+" : ""}${n.pitchErrorCents} cents · m${n.measure}`);
           return (
-            <g key={n.id} onClick={() => onNoteClick?.(n)} style={{ cursor: onNoteClick ? "pointer" : "default" }}>
-              <title>
-                {uncertain ? (zh ? "未计分（异常/不确定）" : "Excluded (outlier/uncertain)") : `${(n.pitchErrorCents as number) > 0 ? "+" : ""}${n.pitchErrorCents} cents`} · m{n.measure}
-              </title>
+            <g
+              key={n.id}
+              onClick={() => onNoteClick?.(n)}
+              onKeyDown={(e) => { if (onNoteClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onNoteClick(n); } }}
+              tabIndex={onNoteClick ? 0 : undefined}
+              role={onNoteClick ? "button" : undefined}
+              aria-label={onNoteClick ? pitchLabel : undefined}
+              style={{ cursor: onNoteClick ? "pointer" : "default" }}
+            >
+              <title>{pitchLabel}</title>
               {/* 加大点击热区 */}
               <circle cx={cx} cy={cy} r={11} fill="transparent" />
               <circle
@@ -320,15 +331,24 @@ export default function VisualReport({
           const isFirst = i === 0;
           const missing = isFirst || n.timingErrorMs == null;
           const cy = missing ? tMid : yForMs(n.timingErrorMs as number);
+          const timingLabel = isFirst
+            ? (zh ? `第一个音不计时 · 第 ${n.measure} 小节` : `First note is not timed · m${n.measure}`)
+            : missing
+              ? (zh ? `没听清起音 · 第 ${n.measure} 小节` : `Onset unclear · m${n.measure}`)
+              : (zh
+                ? `${(n.timingErrorMs as number) > 0 ? "+" : ""}${n.timingErrorMs} 毫秒（${(n.timingErrorMs as number) > 0 ? "抢了" : "拖了"}） · 第 ${n.measure} 小节`
+                : `${(n.timingErrorMs as number) > 0 ? "+" : ""}${n.timingErrorMs} ms (${(n.timingErrorMs as number) > 0 ? "early" : "late"}) · m${n.measure}`);
           return (
-            <g key={n.id} onClick={() => onNoteClick?.(n)} style={{ cursor: onNoteClick ? "pointer" : "default" }}>
-              <title>
-                {isFirst
-                  ? `第一个音不计时 · 第 ${n.measure} 小节`
-                  : missing
-                    ? `没听清起音 · 第 ${n.measure} 小节`
-                    : `${(n.timingErrorMs as number) > 0 ? "+" : ""}${n.timingErrorMs} 毫秒（${(n.timingErrorMs as number) > 0 ? "抢了" : "拖了"}） · 第 ${n.measure} 小节`}
-              </title>
+            <g
+              key={n.id}
+              onClick={() => onNoteClick?.(n)}
+              onKeyDown={(e) => { if (onNoteClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onNoteClick(n); } }}
+              tabIndex={onNoteClick ? 0 : undefined}
+              role={onNoteClick ? "button" : undefined}
+              aria-label={onNoteClick ? timingLabel : undefined}
+              style={{ cursor: onNoteClick ? "pointer" : "default" }}
+            >
+              <title>{timingLabel}</title>
               <circle cx={cx} cy={cy} r={11} fill="transparent" />
               <circle
                 cx={cx}

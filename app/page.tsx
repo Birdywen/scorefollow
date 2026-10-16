@@ -600,7 +600,6 @@ export default function ScoreFollowPage() {
     const m = { left: barPop.mL, top: barPop.mT, right: barPop.mR, bottom: barPop.mB };
     const overlaps = (x: number, y: number) =>
       x < m.right + GAP && x + box.width > m.left - GAP && y < m.bottom + GAP && y + box.height > m.top - GAP;
-    console.log("[layout]", { boxW: box.width, boxH: box.height, mL: m.left, mT: m.top, mR: m.right, mB: m.bottom, tapX: barPop.tapX, tapY: barPop.tapY, currentX: barPop.x, currentY: barPop.y });
     const fits = (x: number, y: number) => x >= EDGE && y >= EDGE && x + box.width <= vw - EDGE && y + box.height <= vh - EDGE;
     const cy = clampRange(barPop.tapY - box.height / 2, EDGE, vh - box.height - EDGE);
     const cx = clampRange(barPop.tapX - box.width / 2, EDGE, vw - box.width - EDGE);
@@ -613,9 +612,7 @@ export default function ScoreFollowPage() {
     for (const c of cands) {
       const x = clampRange(c.x, EDGE, vw - box.width - EDGE);
       const y = clampRange(c.y, EDGE, vh - box.height - EDGE);
-      console.log("[cand]", { rawX: Math.round(c.x), rawY: Math.round(c.y), clampedX: Math.round(x), clampedY: Math.round(y), fits: fits(x, y), overlaps: overlaps(x, y) });
       if (fits(x, y) && !overlaps(x, y)) {
-        console.log("[adopt]", { x: Math.round(x), y: Math.round(y) });
         if (Math.abs(x - barPop.x) > 0.5 || Math.abs(y - barPop.y) > 0.5) setBarPop({ ...barPop, x, y });
         return;
       }
