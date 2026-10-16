@@ -2,7 +2,7 @@
 
 import { describeFailure, type FailureInfo } from "@/lib/analysis-failure";
 import { useEffect, useRef, useState } from "react";
-import ScoreOsmdPreview from "./ScoreOsmdPreview";
+import ScorePreviewDialog from "./ScorePreviewDialog";
 import styles from "./performance.module.css";
 import {
   attachRecordingStart, createSession, deleteTakeBlob, loadTakeBlob, measureAndBeatAt,
@@ -729,15 +729,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     return () => { clearInterval(timer); controller.abort(); };
   }, [api, omrJob?.id, omrJob?.status, pdfName]);
 
-  function downloadMusicXml() {
-    const xml = omrJob?.result?.musicXml;
-    if (!xml) return;
-    const url = URL.createObjectURL(new Blob([xml], { type: "application/vnd.recordare.musicxml+xml" }));
-    const link = document.createElement("a");
-    link.href = url; link.download = (pdfName || "score").replace(/\.pdf$/i, "") + ".musicxml";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-  }
+
 
   const scoreMeasures = result?.summary.measureCount ?? result?.notes.reduce((max, note) => Math.max(max, note.measure), 0) ?? 0;
   const canJump = pdfMeasures > 0 && pdfMeasures === scoreMeasures;
@@ -852,9 +844,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           <p className={styles.hint}>{zh ? `已得到 ${omrJob.result.noteCount} 个可分析音符 · ${omrJob.result.measureCount} 小节` : `${omrJob.result.noteCount} analyzable notes · ${omrJob.result.measureCount} measures`}</p>
           {omrJob.result.compatible && <p className={styles.hint}>{zh ? "已自动作为演奏分析的目标谱；选择起始小节并录音即可。" : "Automatically selected as the target score. Choose a starting measure and record."}</p>}
           {!omrJob.result.compatible && <p className={styles.error}>{zh ? "识别已完成，但当前单声部分析器暂不支持此 MusicXML：" : "Recognition completed, but this MusicXML is not supported by the monophonic analyzer: "}{omrJob.result.reason}</p>}
-          <button className={styles.omrButton} onClick={() => setShowOsmd((v) => !v)}>{showOsmd ? (zh ? "收起乐谱预览" : "Hide score preview") : (zh ? "预览识别乐谱" : "Preview recognized score")}</button>
-          {showOsmd && <ScoreOsmdPreview musicXml={omrJob.result.musicXml} zh={zh} />}
-          <button className={styles.omrButton} onClick={downloadMusicXml}>{zh ? "下载 MusicXML（可选）" : "Download MusicXML (optional)"}</button>
+          <button className={styles.omrButton} onClick={() => setShowOsmd(true)}>{zh ? "预览识别乐谱（大窗口 · 可转调 · 可下载）" : "Preview recognized score (large · transpose · download)"}</button>
+          {showOsmd && <ScorePreviewDialog musicXml={omrJob.result.musicXml} filename={omrPdf?.name || pdfName || "score"} zh={zh} onClose={() => setShowOsmd(false)} />}
         </div>}
       </details>
     </section>

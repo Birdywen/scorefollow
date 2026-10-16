@@ -7,7 +7,7 @@ import styles from "./performance.module.css";
  * Mounted only when the user opens the preview, so the OSMD chunk loads
  * on demand and never touches SSR. Dark app theme => notation sits on a
  * white paper card (see .osmdPreview). */
-export default function ScoreOsmdPreview({ musicXml, zh }: { musicXml: string; zh: boolean }) {
+export default function ScoreOsmdPreview({ musicXml, zh, zoom = 1 }: { musicXml: string; zh: boolean; zoom?: number }) {
   const host = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -21,13 +21,13 @@ export default function ScoreOsmdPreview({ musicXml, zh }: { musicXml: string; z
         const osmd = new OpenSheetMusicDisplay(host.current, { autoResize: true, backend: "svg" });
         await osmd.load(musicXml);
         if (dead) return;
+        osmd.Zoom = zoom;
         osmd.render();
       } catch (exc) {
         if (!dead) setError(exc instanceof Error ? exc.message : String(exc));
       }
     })();
     return () => { dead = true; if (host.current) host.current.innerHTML = ""; };
-  }, [musicXml]);
-  if (error) return <p className={styles.error} role="alert">{zh ? "乐谱预览渲染失败（可用原 PDF 对照）：" : "Score preview failed (compare with the original PDF): "}{error}</p>;
-  return <div ref={host} className={styles.osmdPreview} aria-label={zh ? "识别乐谱预览" : "Recognized score preview"} />;
+  }, [musicXml, zoom]);
+  return <>{error && <p className={styles.error} role="alert">{zh ? "乐谱预览渲染失败（可用原 PDF 对照）：" : "Score preview failed (compare with the original PDF): "}{error}</p>}<div ref={host} className={styles.osmdPreview} aria-label={zh ? "识别乐谱预览" : "Recognized score preview"} /></>;
 }

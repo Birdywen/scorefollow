@@ -83,6 +83,18 @@
 /* OSMD 识别乐谱预览：白纸卡片（深色主题下黑色符头需托底），限高滚动 */
 .osmdPreview { background: #fff; border-radius: 10px; padding: 8px; margin-top: 8px; max-height: 460px; overflow: auto; }
 .osmdPreview svg { width: 100%; height: auto; }
+/* OMR 大窗口预览：遮罩 + 弹窗（工具条：转调/缩放/下载/关闭），白纸正文区滚动 */
+.osmdBackdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.55); }
+.osmdModal { box-sizing: border-box; flex-direction: column; gap: 10px; width: min(1200px, 96vw); height: 92dvh; max-height: 92dvh; padding: 14px 16px; border: 0; border-radius: 14px; background: var(--sf-surface, #fff); color: var(--sf-ink, #222); box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35); }
+.osmdModal[open] { display: flex; margin: auto; }
+.osmdModal::backdrop { background: rgba(0, 0, 0, 0.55); }
+.osmdToolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.osmdToolbar strong { margin-right: auto; font-size: 15px; }
+.osmdTool { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.osmdTool select { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--sf-border); background: var(--sf-surface); color: var(--sf-ink); font: inherit; }
+.osmdToolbar .omrButton { margin: 0; }
+.osmdBody { flex: 1; min-height: 0; overflow: auto; background: #fff; border-radius: 10px; padding: 12px; }
+.osmdBody .osmdPreview { max-height: none; overflow: visible; margin-top: 0; padding: 0; }
 
 /* 简洁明朗层 v1 (2026-10-14): 去边框、多留白、折叠区降噪; 放在最后覆盖前两层 */
 .panel { padding: 20px 18px; }
