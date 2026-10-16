@@ -13,9 +13,12 @@ try {
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(process.env.SF_UI_URL || "http://127.0.0.1/scorefollow/", { waitUntil: "networkidle" });
-    const theme = page.getByRole("button", { name: /^(夜间模式|Night mode)$/ });
+    const settings = page.getByRole("button", { name: /设置|Settings/ });
+    await settings.click();
+    const theme = page.getByRole("button", { name: /^(dark|light)$/ });
     await theme.click();
     await page.waitForFunction(() => document.documentElement.dataset.sfTheme === "dark");
+    await settings.click();
     await page.reload({ waitUntil: "networkidle" });
     await page.waitForFunction(() => document.querySelector("main").dataset.theme === "dark");
     assert.equal(await page.evaluate(() => localStorage.getItem("sf-theme")), "dark");

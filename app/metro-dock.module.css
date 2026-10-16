@@ -40,3 +40,7 @@
   .meter { left: 87px; bottom: 6px; }
 }
 @media (prefers-reduced-motion: reduce) { .disc { animation: none; } }
+/* 面板打开时它是唯一的关闭入口(收起设置), 移动端必须压过面板(z90)否则点不到; 桌面端保持原层叠 */
+@media (max-width: 600px) {
+  :global(html[data-sf-metro-panel="open"]) .dock { z-index: 95; }
+}
