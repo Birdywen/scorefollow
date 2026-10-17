@@ -335,6 +335,8 @@ function boot(){
     shade.style.left=(e[6]-pad)+'px'; shade.style.top=newTop+'px';
     shade.style.width=(e[7]-e[6]+pad*2)+'px'; shade.style.height=(e[3]-e[2]+pad*2)+'px';
     shade.style.display='block';
+    // One cursor at a time: React drops its own cursor (or parks this one while audio plays).
+    try{ window.dispatchEvent(new CustomEvent('sf:metro-shade-shown')); }catch(_e){}
     lastShadeTop=newTop;
     if(bigJump){ void shade.offsetWidth; requestAnimationFrame(function(){ shade.style.transition=SHADE_TR; }); }
     centerOn(e[2]);

@@ -889,7 +889,7 @@ export default function ScoreFollowPage() {
     }
     const s = document.createElement("script");
     // vendor 改动即 bump 此版本, 强制破浏览器缓存(旧引擎静默会导致无声/键位错乱)
-    s.src = `${BASE}/metro-engine.js?v=20261012-visible-follow`;
+    s.src = `${BASE}/metro-engine.js?v=20261017-one-cursor`;
     s.async = true;
     s.dataset.sfMetro = "1";
     s.onload = () => emitMetricRendered();
@@ -2022,6 +2022,9 @@ export default function ScoreFollowPage() {
       const md = mediaRef.current as unknown as { paused?: boolean; pause?: () => void } | null;
       if (md && mediaURL && md.paused === false) md.pause?.();
     } catch { /* noop */ }
+    // 立刻停 tick: pause 事件是异步的, 期间 tick 会把 React 光标又画回来。
+    cancelAnimationFrame(rafRef.current);
+    setPlaying(false);
     setCursor(null);
   }, [mediaURL]);
   useEffect(() => {
@@ -2029,6 +2032,20 @@ export default function ScoreFollowPage() {
     window.addEventListener("sf:metro-takeover", takeover);
     return () => window.removeEventListener("sf:metro-takeover", takeover);
   }, [yieldToMetro]);
+  // 强制只显示一个光标: 节拍器亮出 sga-shade 时, 录音在播则收起 shade, 否则撤掉 React 光标;
+  // React 光标一出现(绘制前)就收起 shade。
+  useEffect(() => {
+    const onShade = () => {
+      const md = mediaRef.current as unknown as { paused?: boolean } | null;
+      if (md && mediaURL && md.paused === false) parkLegacyShade();
+      else setCursor(null);
+    };
+    window.addEventListener("sf:metro-shade-shown", onShade);
+    return () => window.removeEventListener("sf:metro-shade-shown", onShade);
+  }, [mediaURL]);
+  useLayoutEffect(() => {
+    if (cursor && showCursor) parkLegacyShade();
+  }, [cursor, showCursor]);
   const doPlay = useCallback(() => {
     enterAutoFs();
     stopMetroForMedia();
@@ -3839,10 +3856,10 @@ export default function ScoreFollowPage() {
 
       <div className={styles.mainarea}>
       {mediaURL && mediaKind === "video" && (
-        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
+        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={(e) => { if (playing && !e.currentTarget.paused) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
       )}
       {mediaURL && mediaKind === "audio" && (
-        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={() => { if (playing) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
+        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={(e) => { if (playing && !e.currentTarget.paused) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
       )}
 
         <div
