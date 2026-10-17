@@ -43,7 +43,9 @@ with sync_playwright() as p:
         '/tmp/gt-50bf663d/Dotzauer Cello Etude no. 5 Book 1.mp3')
     panel.get_by_role('button', name=re.compile('^(Analyze|分析这一遍)$')).click()
     try:
-        panel.get_by_role('button', name=re.compile('用这一遍走谱|Follow with this take')).click()
+        # The full report dialog opens after analysis; follow from there (it closes the dialog).
+        page.get_by_role('dialog', name=re.compile('演奏报告|Performance report')).get_by_role(
+            'button', name=re.compile('用这一遍走谱|Follow with this take')).click()
     except Exception:
         print('PANEL_DIAGNOSTIC', panel.inner_text(), 'PAGE_ERRORS', errors)
         raise

@@ -46,8 +46,8 @@ const topics = [
   {
     title: ["7 · 回听、空分数与常见故障", "7 · Replay, missing scores and troubleshooting"],
     text: [
-      "点击报告音符或“复习片段”可从音符前约 0.5 秒回听；小节数核对一致后再映射到 PDF。“模拟效果图”是示例，不是你的演奏结果。分数为空时先看可判比例，检查录音是否太短、过轻、失真或混入伴奏，再核对谱面版本和起始小节。若提示 HTML、403、网络错误或钢琴转录失败，检查分析服务地址、访问权限及服务状态；这不代表演奏有问题。HTTPS 页面必须连接 HTTPS 分析服务。分数用于帮助练习回听，尚不是经过人工标注校准的考试评分。",
-      "Click a report note or review moment to replay from about 0.5 seconds before it. Verify measure counts before mapping to the PDF. Sample charts are demonstrations, not your results. For missing scores, check coverage, recording length, low level, distortion or accompaniment, then confirm the score version and start measure. HTML, 403, network errors or piano transcription failures call for checking the API address, access rules and service status—not your playing. HTTPS pages require an HTTPS analysis service. Scores guide practice and listening; they are not human-calibrated examination grades.",
+      "分析完成后会弹出完整报告，侧栏留一张结果摘要。点击报告音符或“逐音复习”里的音符可从音符前约 0.5 秒回听；小节数核对一致后再映射到 PDF。“示例报告”是示例，不是你的演奏结果。分数为空时先看可判比例，检查录音是否太短、过轻、失真或混入伴奏，再核对谱面版本和起始小节。若提示 HTML、403、网络错误或钢琴转录失败，检查分析服务地址、访问权限及服务状态；这不代表演奏有问题。HTTPS 页面必须连接 HTTPS 分析服务。分数用于帮助练习回听，尚不是经过人工标注校准的考试评分。",
+      "The full report opens when an analysis finishes; the side panel keeps a result summary. Click a report note or a note under Note review to replay from about 0.5 seconds before it. Verify measure counts before mapping to the PDF. The sample report is a demonstration, not your results. For missing scores, check coverage, recording length, low level, distortion or accompaniment, then confirm the score version and start measure. HTML, 403, network errors or piano transcription failures call for checking the API address, access rules and service status—not your playing. HTTPS pages require an HTTPS analysis service. Scores guide practice and listening; they are not human-calibrated examination grades.",
     ],
   },
   {

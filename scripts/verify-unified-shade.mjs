@@ -46,7 +46,8 @@ try {
   for (let i = 0; i < samples; i++) wav.writeInt16LE(Math.round(4000 * Math.sin(i * 2 * Math.PI * 440 / rate)), 44 + i * 2);
   await panel.locator('input[accept^="audio/"]').setInputFiles({ name: "take.wav", mimeType: "audio/wav", buffer: wav });
   await panel.getByRole("button", { name: /^(Analyze|分析这一遍)$/ }).click();
-  await panel.getByRole("button", { name: /用这一遍走谱|Follow with this take/ }).click();
+  // The full report dialog opens after analysis; follow from there (it closes the dialog).
+  await page.getByRole("dialog", { name: /演奏报告|Performance report/ }).getByRole("button", { name: /用这一遍走谱|Follow with this take/ }).click();
   await page.locator("audio").last().evaluate((e) => e.play());
   await page.waitForFunction("document.querySelector('.demaat') !== null");
   await page.waitForTimeout(2500);

@@ -3,6 +3,7 @@
 import { describeFailure, type FailureInfo } from "@/lib/analysis-failure";
 import { useEffect, useRef, useState } from "react";
 import ScorePreviewDialog from "./ScorePreviewDialog";
+import ReportDialog from "./ReportDialog";
 import styles from "./performance.module.css";
 import {
   attachRecordingStart, createSession, deleteTakeBlob, loadTakeBlob, measureAndBeatAt,
@@ -241,6 +242,10 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const [syncMsg, setSyncMsg] = useState("");
   const [syncWarn, setSyncWarn] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
+  // Full report opens in a wide dialog; it pops up when a fresh analysis lands.
+  const [reportOpen, setReportOpen] = useState(false);
+  // Step folds: null = follow the automatic rule, boolean = user override.
+  const [stepOpen, setStepOpen] = useState<{ score: boolean | null; setup: boolean | null }>({ score: null, setup: null });
   const [mockNotes] = useState(makeMockNotes);
   const [mockTakes] = useState<CompareTake[]>(makeMockTakes);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -298,6 +303,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     setError("");
     updateTake(ctx.takeId, { result: hookResult, jobStatus: "completed", error: undefined });
     setBusyTakeId(null);
+    setSelectedId(ctx.takeId);
+    setReportOpen(true);
     // Auto-locate the score view to the measure range the engine actually
     // covered. A vamp-beat take whose recording begins mid-score (soft start
     // with no pitched notes in the first measures) legitimately reports
@@ -615,6 +622,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       if (cached) {
         setError("");
         updateTake(take.id, { result: cached, jobStatus: "completed", error: undefined });
+        setSelectedId(take.id);
+        setReportOpen(true);
         return;
       }
       // Same inputs already being analyzed: skip the duplicate POST /jobs;
@@ -811,6 +820,49 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     if (m !== lastJumpMeasure.current) { lastJumpMeasure.current = m; onJump(m); }
   }
 
+  const scoreOpen = stepOpen.score ?? takes.length === 0;
+  const setupOpen = stepOpen.setup ?? takes.length === 0;
+  const instrumentName = ({ violin: zh ? "小提琴" : "Violin", viola: zh ? "中提琴" : "Viola", cello: zh ? "大提琴" : "Cello", piano: zh ? "钢琴" : "Piano" } as Record<string, string>)[instrument] ?? instrument;
+  const notices = !result ? [] : [
+    result.quality?.outcome === "score_audio_mismatch" ? (zh ? "录音和谱面好像对不上（可能不是同一首或同一段），这次的分数先别当真。" : "The recording may not match the score; scores are not reliable.") : "",
+    result.summary.tempoMismatch ? (zh ? `录音的速度约 ${result.summary.detectedBpm ?? "—"} BPM，和设定的 ${selected?.bpm ?? bpm} BPM 差得比较多，节奏分仅供参考。` : `Detected tempo ≈ ${result.summary.detectedBpm ?? "—"} BPM differs from the set tempo; rhythm score is indicative only.`) : "",
+    result.summary.takeBeyondScoreAfterSec != null ? (zh ? "录音比谱面长，多出来的部分没有打分。" : "The recording runs past the score; the extra part is not scored.") : "",
+    result.summary.syncAdvice ? (zh ? "自动对齐小节没有成功，原因见下方“技术细节”，也可以手动同步小节。" : "Automatic bar alignment failed; see Technical details or sync bars manually.") : "",
+  ].filter(Boolean);
+  const scoreCells = result && <>
+    <div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.pitchScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.pitchScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "音准" : "Pitch"}</div>
+    <div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.rhythmScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.rhythmScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "跟拍" : "Timing"}</div>
+    {/* 综合分只取后端 quality.overallScore，前端不补算；旧报告显示“未计算”，两项都缺显示“证据不足”，绝不显示 0 */}
+    <div><b data-unscored={result.quality?.overallScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.quality?.overallScore ?? (result.summary.pitchScore == null && result.summary.rhythmScore == null ? (zh ? "证据不足" : "Insufficient evidence") : (zh ? "未计算" : "Not computed"))}</b>{zh ? "综合" : "Overall"}</div>
+  </>;
+  // Review notes grouped by bar; the summary card shows the 3 busiest bars.
+  const issueGroups: [number, Note[]][] = (() => {
+    const byBar = new Map<number, Note[]>();
+    for (const note of issues) { const list = byBar.get(note.measure); if (list) list.push(note); else byBar.set(note.measure, [note]); }
+    return [...byBar.entries()].sort((a, b) => a[0] - b[0]);
+  })();
+  const topBars = result?.quality?.outcome === "score_audio_mismatch" ? [] : [...issueGroups].sort((a, b) => b[1].length - a[1].length || a[0] - b[0]).slice(0, 3);
+  const noteLabel = (note: Note) => (note.pitchErrorCents == null ? (zh ? "音高?" : "pitch?") : `${note.pitchErrorCents > 0 ? "+" : ""}${Math.round(note.pitchErrorCents)}¢`)
+    + (note.timingErrorMs != null ? ` ${note.timingErrorMs > 0 ? "+" : ""}${note.timingErrorMs}ms` : note.timingStatus === "uncertain" ? (zh ? " 起音?" : " onset?") : "");
+  const canFollow = Boolean(selected?.blob && (result?.measureIntervals?.length ?? 0) > 1 && onFollowTake);
+  function followTake(): boolean {
+    if (!selected || !result || !onFollowTake) return false;
+    const res = onFollowTake({ name: selected.name, url: selected.url, starts: (result.measureIntervals ?? []).map((m) => ({ measure: m.measure, startSec: m.startSec })) });
+    if (typeof res === "string") { setError(res); setSyncMsg(""); setSyncWarn(false); return false; }
+    setError("");
+    const measureCount = result.summary.measureCount ?? 0;
+    const notes: string[] = [];
+    if (pdfMeasures > 0 && measureCount > 0 && pdfMeasures !== measureCount)
+      notes.push(zh ? `谱面 ${pdfMeasures} 小节、报告 ${measureCount} 小节，阴影可能错位，请先核对` : `The score has ${pdfMeasures} measures vs ${measureCount} in the report; the shade may misalign. Verify first.`);
+    if (res && typeof res === "object") notes.push(res.warning);
+    setSyncWarn(notes.length > 0);
+    setSyncMsg(((zh ? "已载入谱面播放器：回到谱面按 ▶ 播放（音频条自带播放键也行），蓝色小节阴影会跟着录音走" : "Loaded into the score player: back to the score and press ▶ (or the strip's own play button); the blue measure shade follows the recording"))
+      + (notes.length ? (zh ? `；注意：${notes.join("；")}` : ` Note: ${notes.join("; ")}`) : ""));
+    return true;
+  }
+  const followButton = (inDialog: boolean) => <button className={styles.omrButton} disabled={result?.quality?.followReady === false}
+    onClick={() => { if (followTake() && inDialog) setReportOpen(false); }}>{zh ? "用这一遍走谱" : "Follow with this take"}</button>;
+
   return <aside className={styles.panel} aria-label={zh ? "演奏分析" : "Performance analysis"}>
     <div className={styles.head}><strong>{zh ? "演奏分析" : "Performance analysis"}</strong><button onClick={onClose} aria-label={zh ? "关闭" : "Close"}>×</button></div>
     {error && <p role="alert" className={styles.error}>{error}</p>}
@@ -821,8 +873,10 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       <li className={takes.length > 0 ? styles.isDone : undefined} aria-current={scoreLoaded && takes.length > 0 && !result ? "step" : undefined}><span className={styles.stepNum} aria-hidden="true">3</span>{zh ? "录音" : "Takes"}</li>
       <li aria-current={result ? "step" : undefined}><span className={styles.stepNum} aria-hidden="true">4</span>{zh ? "报告" : "Report"}</li>
     </ol>
-    <section className={styles.omr} aria-label={zh ? "从 PDF 生成 MusicXML" : "PDF to MusicXML"}>
-      <h2><span className={styles.stepNum} aria-hidden="true">1</span> {zh ? "备谱" : "Score"}</h2>
+    <details className={styles.step} open={scoreOpen} aria-label={zh ? "从 PDF 生成 MusicXML" : "PDF to MusicXML"}
+      onToggle={(e) => { const open = e.currentTarget.open; if (open !== scoreOpen) setStepOpen((s) => ({ ...s, score: open })); }}>
+      <summary><span className={styles.stepNum} aria-hidden="true">1</span><b>{zh ? "备谱" : "Score"}</b>
+        <span className={styles.stepSum}>{xmlFile ? xmlFile.name : (zh ? "未导入 MusicXML" : "No MusicXML yet")}</span></summary>
       <p className={styles.hint}>{pdfName ? (zh ? `当前谱面：${pdfName}` : `Loaded score: ${pdfName}`) : (zh ? "先导入 MusicXML，或在下面从 PDF 识别" : "Import MusicXML first, or recognize it from a PDF below")}</p>
       <label className={styles.field}>{zh ? "导入 MusicXML (.xml/.musicxml)" : "Import MusicXML (.xml/.musicxml)"}
         <input type="file" accept=".xml,.musicxml" onChange={(e) => { setXmlFile(e.target.files?.[0] ?? null); setOmrJob(null); }} /></label>
@@ -848,8 +902,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           {showOsmd && <ScorePreviewDialog musicXml={omrJob.result.musicXml} filename={omrPdf?.name || pdfName || "score"} zh={zh} onClose={() => setShowOsmd(false)} />}
         </div>}
       </details>
-    </section>
-    <p className={styles.stepTag}><span className={styles.stepNum} aria-hidden="true">2</span> {zh ? "设置" : "Setup"}</p>
+    </details>
+    <details className={styles.step} open={setupOpen}
+      onToggle={(e) => { const open = e.currentTarget.open; if (open !== setupOpen) setStepOpen((s) => ({ ...s, setup: open })); }}>
+      <summary><span className={styles.stepNum} aria-hidden="true">2</span><b>{zh ? "设置" : "Setup"}</b>
+        <span className={styles.stepSum}>{instrumentName} · {bpm} BPM · {zh ? `第 ${startMeasure} 小节起` : `from m${startMeasure}`}</span></summary>
     <div className={styles.grid2}>
       <label className={styles.field}>{zh ? "乐器" : "Instrument"}
         <select value={instrument} onChange={(e) => setInstrument(e.target.value)}>
@@ -857,21 +914,21 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           <option value="cello">{zh ? "大提琴" : "Cello"}</option><option value="piano">{zh ? "钢琴" : "Piano"}</option>
         </select></label>
       <label className={styles.field}>BPM <input type="number" min={30} max={200} value={bpm} onChange={(e) => setBpm(Number(e.target.value))} /></label>
-      <label className={styles.field}>{zh ? "录音从第几小节开始" : "Start measure"}
+      <label className={styles.field}>{zh ? "起始小节" : "Start measure"}
         <input type="number" min={1} max={omrJob?.result?.measureCount || pdfMeasures || undefined} step={1} value={startMeasure}
           onChange={(e) => setStartMeasure(Number(e.target.value))} /></label>
-      <label className={styles.field}>{zh ? "每小节拍数（节拍器/同步用）" : "Beats per measure"}
+      <label className={styles.field} title={zh ? "节拍器和同步录音用" : "Used by the metronome and synced takes"}>{zh ? "每小节拍数" : "Beats per measure"}
         <select value={beatsPerMeasure} onChange={(e) => { setBeatsPerMeasure(Number(e.target.value)); setCountInBeats(Number(e.target.value)); }}>
           <option value={2}>2</option><option value={3}>3</option><option value={4}>4</option><option value={6}>6</option>
         </select></label>
-      <label className={styles.field}>{zh ? "预备拍（节拍器，不录入分析起点）" : "Count-in beats"}
+      <label className={styles.field} title={zh ? "只在节拍器里响，不算进分析起点" : "Metronome only; not part of the analyzed take"}>{zh ? "预备拍" : "Count-in beats"}
         <input type="number" min={0} max={8} step={1} value={countInBeats} onChange={(e) => setCountInBeats(Number(e.target.value))} /></label>
     </div>
-    <p className={styles.hint}>{zh ? "“自动定位片段”会忽略起始小节、自动找录音位置；指定小节请用“分析这一遍”。" : "“Find excerpt” ignores the start measure and locates the take automatically; use “Analyze” for a fixed start measure."}</p>
+    </details>
 
     <section className={styles.omr} aria-label={zh ? "同步录音" : "Synced recording"}>
       <h2><span className={styles.stepNum} aria-hidden="true">3</span> {zh ? "录音" : "Takes"}</h2>
-      <p className={styles.hint}>{zh ? "节拍器只从本机播放、不混入录音文件；录音只采集麦克风。建议戴耳机，预备拍不会计入分析。" : "Clicks play locally and are never mixed into the file; only the mic is recorded. Use headphones; count-in is excluded."}</p>
+      <p className={styles.hint}>{zh ? "建议戴耳机：节拍器声不会录进去，预备拍不计入分析。" : "Use headphones: clicks are not recorded and the count-in is not analyzed."}</p>
       {!scoreLoaded && <p role="status" className={styles.hint}>{zh ? "尚未载入谱面：请先在上方载入 PDF 或导入 MusicXML，然后再录音或分析。" : "No score loaded: load a PDF or import MusicXML first, then record and analyze."}</p>}
       <label className={styles.field}>{zh ? "录音设备" : "Microphone"}
         <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
@@ -886,9 +943,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           onChange={(e) => { const file = e.target.files?.[0]; if (file) void addTakeBlob(file, { startMeasure, bpm, beatsPerMeasure, countInBeats, firstBeatAudioSec: null, sessionId: "upload" }, file.name); e.target.value = ""; }} /></label>
       </div>
       {selected && <section className={styles.quality} aria-label={zh ? "音频预检" : "Audio preflight"}>
-        <h3>{zh ? "音频预检" : "Audio preflight"}</h3>
-        <p>{zh ? "录音时长" : "Recording duration"}：{selected.durationSec}s · {selected.blob?.type || (zh ? "未知格式" : "Unknown format")}</p>
-        <p>{zh ? "最长支持 180 秒；静音、削波、音高与谱面匹配将在分析时检查。" : "Up to 180 seconds; silence, clipping, pitch and score matching are checked during analysis."}</p>
+        <p title={zh ? "静音、削波、音高与谱面匹配将在分析时检查" : "Silence, clipping, pitch and score matching are checked during analysis"}>
+          <b>{zh ? "音频预检" : "Audio preflight"}</b> · {selected.durationSec}s · {selected.blob?.type || (zh ? "未知格式" : "Unknown format")} · {zh ? "最长 180 秒" : "max 180 s"}</p>
       </section>}
       {recording && session && <p role="status" className={styles.hint}>
         {tick && tick.elapsedSec >= 0
@@ -897,12 +953,14 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       </p>}
       {takes.length > 0 && <div className={styles.takes}>
         {takes.map((take, i) => (
-          <div key={take.id} className={styles.take}>
+          <div key={take.id} className={styles.take} title={take.jobId ? `${zh ? "分析编号" : "Analysis ID"}：${take.jobId}` : undefined}>
             <label><input type="radio" name="take" checked={take.id === selectedId} onChange={() => {
               setSelectedId(take.id); setBpm(take.bpm); setStartMeasure(take.startMeasure);
               setBeatsPerMeasure(take.beatsPerMeasure); setCountInBeats(take.countInBeats);
-            }} /> <b>{zh ? `第 ${i + 1} 遍` : `Take ${i + 1}`}</b> · {take.name} · {take.durationSec}s · m{take.startMeasure} · {take.bpm} BPM
-              {take.firstBeatAudioSec != null ? ` · sync ${take.firstBeatAudioSec.toFixed(2)}s` : ` · ${zh ? "未同步" : "unsynced"}`}
+            }} /> <b>{zh ? `第 ${i + 1} 遍` : `Take ${i + 1}`}</b>
+              <span className={styles.takeMeta}> · {take.durationSec}s · m{take.startMeasure} · {take.bpm} BPM
+              {take.firstBeatAudioSec != null ? ` · sync ${take.firstBeatAudioSec.toFixed(2)}s` : ` · ${zh ? "未同步" : "unsynced"}`}</span>
+              <span className={styles.takeName}>{take.name}</span>
             </label>
             <div className={styles.takeRow}>
               <button className={`${styles.omrButton} ${styles.analyzeBtn}`} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take)}>
@@ -910,7 +968,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
               {busyTakeId === take.id && <button className={styles.omrButton} onClick={() => cancelAnalysis(take.id)}>{zh ? "取消分析" : "Cancel"}</button>}
               <button className={styles.omrButton}
                 disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false || instrument === "piano" || take.firstBeatAudioSec != null}
-                title={instrument === "piano" ? (zh ? "自动定位暂不支持钢琴" : "Excerpt location is not available for piano") : take.firstBeatAudioSec != null ? (zh ? "已同步录音不能自动定位" : "Synced takes cannot use automatic excerpt location") : undefined}
+                title={instrument === "piano" ? (zh ? "自动定位暂不支持钢琴" : "Excerpt location is not available for piano") : take.firstBeatAudioSec != null ? (zh ? "已同步录音不能自动定位" : "Synced takes cannot use automatic excerpt location") : (zh ? "忽略起始小节，自动找出录音在谱上的位置" : "Ignores the start measure and finds where the take sits in the score")}
                 onClick={() => void analyzeTake(take, true)}>
                 {zh ? "自动定位片段" : "Find excerpt"}</button>
               <button className={styles.omrButton} onClick={() => {
@@ -927,7 +985,6 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
                 {take.result.quality?.outcome === "score_audio_mismatch" ? (zh ? "输入可能不匹配" : "Possible score/take mismatch") : <>{zh ? "音准" : "Pitch"} {take.result.summary.pitchScore ?? "—"} · {zh ? "跟拍" : "Timing"} {take.result.summary.rhythmScore ?? "—"}</>}</span>}
             </div>
             {take.error && <p className={styles.error}>{take.error}</p>}
-            {take.jobId && <p className={styles.hint}>{zh ? "分析编号" : "Analysis ID"}：{take.jobId}</p>}
           </div>
         ))}
       </div>}
@@ -961,7 +1018,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         {playingMeasure != null && <span role="status">{zh ? `只回听第 ${playingMeasure} 小节` : `Playing measure ${playingMeasure} only`}</span>}
         <button onClick={() => { playbackRange.current = null; setPlayingMeasure(null); if (player.current) { player.current.currentTime = 0; void player.current.play().catch(() => setError(zh ? "无法播放录音" : "Could not play this recording")); } }}>{zh ? "播放整遍" : "Play full take"}</button>
       </div>}
-      {selected?.blob && <MeasureSyncEditor key={selected.id} zh={zh} markers={selected.measureSync ?? []} startMeasure={selected.startMeasure}
+      {selected?.blob && <details className={`${styles.fold} ${styles.syncFold}`} open={(selected.measureSync?.length ?? 0) > 0 || undefined}>
+        <summary>{zh ? "手动对齐小节（可选，自动对齐不准时用）" : "Manual measure sync (optional, if auto alignment is off)"}</summary>
+        <MeasureSyncEditor key={selected.id} zh={zh} markers={selected.measureSync ?? []} startMeasure={selected.startMeasure}
         confirmed={!!selected.syncScoreXml} disabled={busyTakeId != null || recording} getAudio={() => player.current} onJump={onJump}
         onPreview={(startSec, endSec) => {
           const audio = player.current;
@@ -983,21 +1042,31 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
             if (error) throw new Error(error);
             updateTake(selected.id, { syncScoreXml: xml }); setError("");
           } catch (exc) { setError(String(exc)); }
-        }} />}
+        }} /></details>}
     </section>
 
-    {!result && <section className={styles.omr} aria-label={zh ? "效果预览" : "Preview"}>
-      <h2>{zh ? "先看看效果（模拟数据）" : "Preview with sample data"}</h2>
-      <p className={styles.hint}>{zh ? "还没录音也能看：下面是假装拉完一遍的样子，点一点试试。" : "No recording needed: sample charts below. Click around to try."}</p>
-      <button className={styles.omrButton} onClick={() => setShowDemo((v) => !v)}>
-        {showDemo ? (zh ? "收起预览" : "Hide preview") : (zh ? "看模拟效果图" : "Show sample charts")}</button>
-      {showDemo && <div style={{ marginTop: 12 }}>
-        <ReportDashboard zh={zh} notes={mockNotes} scores={{ overall: 88, pitch: 90, rhythm: 86 }} meta={{ title: zh ? "示例曲目（模拟数据）" : "Sample piece (mock data)", instrument: "violin", bpm: 80, durationSec: 42 }} onMeasureClick={(m) => onJump(m)} />
-        <TakeCompare takes={mockTakes} zh={zh} />
-      </div>}
+    {!result && <button className={`${styles.omrButton} ${styles.linkBtn}`} onClick={() => setShowDemo(true)}>
+      {zh ? "还没录音？先看看报告长什么样（模拟数据）" : "No take yet? See a sample report (mock data)"}</button>}
+    {showDemo && <ReportDialog title={zh ? "示例报告（模拟数据）" : "Sample report (mock data)"} zh={zh} onClose={() => setShowDemo(false)}>
+      <ReportDashboard zh={zh} notes={mockNotes} scores={{ overall: 88, pitch: 90, rhythm: 86 }} meta={{ title: zh ? "示例曲目（模拟数据）" : "Sample piece (mock data)", instrument: "violin", bpm: 80, durationSec: 42 }} onMeasureClick={(m) => onJump(m)} />
+      <TakeCompare takes={mockTakes} zh={zh} />
+    </ReportDialog>}
+    {result && <section className={styles.summary} aria-label={zh ? "结果摘要" : "Result summary"}>
+      <h2><span className={styles.stepNum} aria-hidden="true">4</span> {zh ? "结果" : "Result"}</h2>
+      <div className={styles.summaryScores}>{scoreCells}</div>
+      {notices.length > 0 && <p role="status" className={styles.warn} title={notices.join("\n")}>{notices[0]}{notices.length > 1 ? (zh ? `（另有 ${notices.length - 1} 条提示，见完整报告）` : ` (+${notices.length - 1} more in the full report)`) : ""}</p>}
+      {topBars.length > 0 && <div className={styles.topBars}><span>{zh ? "先练" : "Practice first"}</span>
+        {topBars.map(([m, list]) => <button key={m} className={styles.omrButton} onClick={() => replayMeasure(m)}
+          title={zh ? `回听第 ${m} 小节（${list.length} 处问题）` : `Replay bar ${m} (${list.length} issues)`}>{zh ? `第 ${m} 小节` : `Bar ${m}`}</button>)}</div>}
+      <button className={styles.primary} onClick={() => setReportOpen(true)}>{zh ? "查看完整报告" : "Open full report"}</button>
+      {canFollow && followButton(false)}
+      {syncMsg && <p role="status" className={syncWarn ? styles.warn : styles.hint}>{syncMsg}</p>}
     </section>}
-    {result && <section className={styles.report} aria-label={zh ? "分析报告" : "Analysis report"}>
-      <h2><span className={styles.stepNum} aria-hidden="true">4</span> {zh ? "演奏报告" : "Performance report"}</h2>
+    {result && reportOpen && <ReportDialog title={zh ? "演奏报告" : "Performance report"} zh={zh} onClose={() => setReportOpen(false)}
+      toolbar={<>{playingMeasure != null && <span role="status" className={styles.hint}>{zh ? `正在回听第 ${playingMeasure} 小节` : `Playing bar ${playingMeasure}`}</span>}
+        <button className={styles.omrButton} onClick={() => { player.current?.pause(); playbackRange.current = null; setPlayingMeasure(null); }}>{zh ? "停止回听" : "Stop"}</button></>}>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    <section className={styles.report} aria-label={zh ? "分析报告" : "Analysis report"}>
       <ReportDashboard
         zh={zh}
         notes={result.notes}
@@ -1005,12 +1074,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           ? { overall: null, pitch: null, rhythm: null }
           : { overall: result.quality?.overallScore ?? null, pitch: result.summary.pitchScore, rhythm: result.summary.rhythmScore }}
         meta={{ title: (pdfName || "").replace(/[.]pdf$/i, ""), date: selected?.createdAt, instrument: result.instrument ?? instrument, bpm: selected?.bpm ?? bpm, durationSec: selected?.durationSec, version: result.version }}
-        notices={[
-          result.quality?.outcome === "score_audio_mismatch" ? (zh ? "录音和谱面好像对不上（可能不是同一首或同一段），这次的分数先别当真。" : "The recording may not match the score; scores are not reliable.") : "",
-          result.summary.tempoMismatch ? (zh ? `录音的速度约 ${result.summary.detectedBpm ?? "—"} BPM，和设定的 ${selected?.bpm ?? bpm} BPM 差得比较多，节奏分仅供参考。` : `Detected tempo ≈ ${result.summary.detectedBpm ?? "—"} BPM differs from the set tempo; rhythm score is indicative only.`) : "",
-          result.summary.takeBeyondScoreAfterSec != null ? (zh ? "录音比谱面长，多出来的部分没有打分。" : "The recording runs past the score; the extra part is not scored.") : "",
-          result.summary.syncAdvice ? (zh ? "自动对齐小节没有成功，原因见下方“技术细节”，也可以手动同步小节。" : "Automatic bar alignment failed; see Technical details or sync bars manually.") : "",
-        ].filter(Boolean)}
+        notices={notices}
         scoreMeasureCount={scoreMeasures || undefined}
         onNoteClick={(dn) => { const full = result.notes.find((n) => n.id === dn.id); if (full) replay(full); }}
         onMeasureClick={replayMeasure}
@@ -1019,10 +1083,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         <summary>{zh ? "技术细节（给老师和开发者看）" : "Technical details"}</summary>
       <AnalysisQuality summary={result.summary} quality={result.quality} diagnostics={result.diagnostics} version={result.version} zh={zh} />
       {result.instrument !== "piano" && result.summary.pitchToleranceCents == null && <p role="status" className={styles.hint}>{zh ? "这是旧评分规则的报告。图表已按 ±15 音分显示；请更新分析服务并重新分析，刷新分数与错音数量。" : "This report uses the old scoring rules. Charts now use ±15 cents; update the analysis service and reanalyze to refresh the score and wrong-note totals."}</p>}
-      <div className={styles.scores}><div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.pitchScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.pitchScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "音准" : "Pitch"}</div>
-        <div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.rhythmScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.rhythmScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "跟拍" : "Timing"}</div>
-        {/* 综合分只取后端 quality.overallScore，前端不补算；旧报告显示“未计算”，两项都缺显示“证据不足”，绝不显示 0 */}
-        <div><b data-unscored={result.quality?.overallScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.quality?.overallScore ?? (result.summary.pitchScore == null && result.summary.rhythmScore == null ? (zh ? "证据不足" : "Insufficient evidence") : (zh ? "未计算" : "Not computed"))}</b>{zh ? "综合" : "Overall"}</div></div>
+      <div className={styles.scores}>{scoreCells}</div>
       {/* 引擎状态: 后端已回传 degraded/degradedReasons(旧报告缺失则不渲染, 不抛错) */}
       {result.summary.degraded === true && <p role="status" className={styles.warn} title={onlyGridRejected(result.summary.degradedReasons) ? (zh ? "节拍跟踪器正常运行，但拍点网格与谱面音高不吻合，未采用；已改用音高证据对齐。常见原因：谱面八度或速度与录音不符" : "The beat tracker ran, but its grid disagreed with the score pitches and was not used; alignment fell back to pitch evidence. Usually the score octave or tempo differs from the take") : zh ? "完整 vamp 插件（pYIN + QM）不可用，已退回内置算法；分数仍可参考，但起音与节拍精度低于完整算法" : "Full vamp plugins (pYIN + QM) unavailable; fell back to builtin detectors. Scores still apply but onset/beat precision is lower"}>
         {zh ? `降级算法：${degradedLabels(result.summary.degradedReasons, true)}` : `Degraded engine: ${degradedLabels(result.summary.degradedReasons, false)}`}
@@ -1070,35 +1131,22 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         }}>{zh ? "将自动小节同步写入光标" : "Apply auto measure sync to cursor"}</button>
         {result.syncSuggestion && <span className={styles.hint}>{zh ? `全局偏移 ${result.syncSuggestion.appliedOffsetSec}s · 候选 ${result.syncSuggestion.candidates.map((c) => c.offsetSec).join("/")}` : `offset ${result.syncSuggestion.appliedOffsetSec}s · candidates ${result.syncSuggestion.candidates.map((c) => c.offsetSec).join("/")}`}</span>}
       </div>}
-      {selected?.blob && (result.measureIntervals?.length ?? 0) > 1 && onFollowTake && <div>
-        <button className={styles.omrButton} disabled={result.quality?.followReady === false} onClick={() => {
-          const res = onFollowTake({ name: selected.name, url: selected.url, starts: (result.measureIntervals ?? []).map((m) => ({ measure: m.measure, startSec: m.startSec })) });
-          if (typeof res === "string") { setError(res); setSyncMsg(""); setSyncWarn(false); return; }
-          setError("");
-          const measureCount = result.summary.measureCount ?? 0;
-          const notes: string[] = [];
-          if (pdfMeasures > 0 && measureCount > 0 && pdfMeasures !== measureCount)
-            notes.push(zh ? `谱面 ${pdfMeasures} 小节、报告 ${measureCount} 小节，阴影可能错位，请先核对` : `The score has ${pdfMeasures} measures vs ${measureCount} in the report; the shade may misalign. Verify first.`);
-          if (res && typeof res === "object") notes.push(res.warning);
-          setSyncWarn(notes.length > 0);
-          setSyncMsg(((zh ? "已载入谱面播放器：回到谱面按 ▶ 播放（音频条自带播放键也行），蓝色小节阴影会跟着录音走" : "Loaded into the score player: back to the score and press ▶ (or the strip's own play button); the blue measure shade follows the recording"))
-            + (notes.length ? (zh ? `；注意：${notes.join("；")}` : ` Note: ${notes.join("; ")}`) : ""));
-        }}>{zh ? "用这一遍走谱" : "Follow with this take"}</button>
-      </div>}
+      {canFollow && <div>{followButton(true)}</div>}
       {syncMsg && <p role="status" className={syncWarn ? styles.warn : styles.hint}>{syncMsg}</p>}
-      <h3>{zh ? "复习片段" : "Review moments"} ({issues.length})</h3>
-      {issues.length === 0 && <p className={styles.hint}>{zh ? "没有明确的问题；请检查可判比例。" : "No definite issues; check coverage above."}</p>}
-      <ol className={styles.issues}>{issues.slice(0, 40).map((note) => <li key={note.id}>
-        <button onClick={() => replay(note)} title={zh ? "从该音符前 0.5s 回听" : "Replay from 0.5s before this note"}>
-          <b>{zh ? "小节" : "Bar"} {note.measure}</b> · {note.pitchErrorCents == null ? (zh ? "音高不确定" : "Pitch uncertain") : `${note.pitchErrorCents > 0 ? "+" : ""}${note.pitchErrorCents} ¢`}
-          {note.timingErrorMs != null && ` · ${note.timingErrorMs > 0 ? "+" : ""}${note.timingErrorMs} ms`}
-          {note.timingStatus === "uncertain" && ` · ${zh ? "起音不确定" : "Onset uncertain"}`}
-        </button></li>)}</ol>
+      {issues.length === 0 ? <p className={styles.hint}>{zh ? "没有明确的问题；请检查可判比例。" : "No definite issues; check coverage above."}</p> : <details className={styles.fold}>
+        <summary>{zh ? `逐音复习 · ${issueGroups.length} 个小节共 ${issues.length} 处` : `Note review · ${issues.length} in ${issueGroups.length} bars`}</summary>
+        <ol className={styles.issueGroups}>{issueGroups.map(([m, list]) => <li key={m}>
+          <button className={styles.issueBar} onClick={() => replayMeasure(m)} title={zh ? "回听这一小节" : "Replay this bar"}>{zh ? `小节 ${m}` : `Bar ${m}`}</button>
+          <span className={styles.issueNotes}>{list.slice(0, 12).map((note) => <button key={note.id} onClick={() => replay(note)} title={zh ? "从该音符前 0.5s 回听" : "Replay from 0.5s before this note"}>{noteLabel(note)}</button>)}
+            {list.length > 12 && <span className={styles.hint}>+{list.length - 12}</span>}</span>
+        </li>)}</ol>
+      </details>}
       <details className={styles.fold}>
         <summary>{zh ? "局限与说明" : "Limitations"}</summary>
         {result.limitations.map((text) => <p className={styles.hint} key={text}>{text}</p>)}
       </details>
-    </section>}
+    </section>
+    </ReportDialog>}
     <details className={styles.fold}>
       <summary>{zh ? "服务设置" : "Service"}</summary>
       <label className={styles.field}>{zh ? "分析服务地址" : "Analysis API URL"}
