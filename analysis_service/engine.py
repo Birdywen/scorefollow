@@ -295,6 +295,69 @@ def classify_pitch(cents: float | None, detected_midi: float | None, tolerance: 
     return "correct"
 
 
+# 异常音按证据归因加权, 取代 >600¢ 一刀切。>150¢ 才进归因; 归因出的非演奏来源
+# (上音拖尾/下音抢拍/空弦共鸣) 降权, 窗内多数帧其实在目标音上 (混窗) 则改用目标簇。
+# 无任何解释且音色稳定的大偏差是真错音, 全权计分, 不靠归因刷分。
+OUTLIER_SUSPECT_CENTS = 150.0
+CELLO_OPEN_MIDI = (36, 43, 50, 57)
+CAUSE_WEIGHT = {"carryover-prev": 0.25, "anticipation-next": 0.25, "open-string-ring": 0.5,
+                "mixed-window": 1.0}
+
+
+def attribute_outlier(cents, detected, target_midi, frames, prev_midi=None, next_midi=None):
+    """大偏差音归因。返回 None (不可疑) 或 {cause, recovered:(midi, cents)|None, stability}。
+    mixed-window: 窗内 >=3 帧且 >=40% 落在目标 ±50¢ → 取该簇中位数作为本音读数。"""
+    if cents is None or detected is None or abs(cents) <= OUTLIER_SUSPECT_CENTS:
+        return None
+    out = {"cause": None, "recovered": None, "stability": None}
+    if frames is not None and len(frames) >= 4:
+        f = np.asarray(frames, dtype=float)
+        near = np.abs(f - target_midi) * 100 <= 50
+        if np.count_nonzero(near) >= 3 and float(np.mean(near)) >= 0.4:
+            m = float(np.median(f[near]))
+            out["cause"] = "mixed-window"
+            out["recovered"] = (m, round((m - target_midi) * 100, 1))
+            return out
+        out["stability"] = round(float(np.mean(np.abs(f - np.median(f)) * 100 <= 100)), 2)
+    # 拖尾/共鸣会与本音混在窗内 (不稳); 整窗稳定在邻音/空弦上是拉错音, 不归因。
+    if out["stability"] is None or out["stability"] >= 0.8:
+        return out
+    for name, ref in (("carryover-prev", prev_midi), ("anticipation-next", next_midi)):
+        if ref is not None and abs(detected - ref) * 100 <= 40 and abs(ref - target_midi) >= 1:
+            out["cause"] = name
+            return out
+    if any(abs(detected - o) * 100 <= 40 for o in CELLO_OPEN_MIDI) \
+            and not any(abs(target_midi - o) * 100 <= 40 for o in CELLO_OPEN_MIDI):
+        out["cause"] = "open-string-ring"
+    return out
+
+
+def pitch_weight(cents, cause=None, stability=None, confidence=None) -> float:
+    """单音音准权重 [0,1]。<=150¢ 全权; >600¢ 为 0; 有归因按表; 无归因时
+    音色稳定且置信高 (真错音) 全权, 否则 150→600¢ 线性衰减, 下限 0.3。"""
+    a = abs(float(cents))
+    if a > PITCH_SCORE_EXCLUDE_CENTS:
+        return 0.0
+    if a <= OUTLIER_SUSPECT_CENTS:
+        return 1.0
+    if cause in CAUSE_WEIGHT:
+        return CAUSE_WEIGHT[cause]
+    if stability is not None and stability >= 0.8 and (confidence or 0) >= 0.9:
+        return 1.0
+    decay = (PITCH_SCORE_EXCLUDE_CENTS - a) / (PITCH_SCORE_EXCLUDE_CENTS - OUTLIER_SUSPECT_CENTS)
+    return round(max(0.3, decay), 2)
+
+
+def _assign_pitch_weights(aligned: list) -> None:
+    """终值 cents 定权 (CREPE 接管后才定), 权 0 的标 pitchExcluded 供前端灰显。"""
+    for n in aligned:
+        if n.get("pitchStatus") in ("sharp", "flat", "correct") and n.get("pitchErrorCents") is not None:
+            w = pitch_weight(n["pitchErrorCents"], n.get("outlierCause"), n.get("windowStability"), n.get("confidence"))
+            n["pitchWeight"] = w
+            if w == 0.0:
+                n["pitchExcluded"] = True
+
+
 def _displaced_match(note_index: int, notes: list, detected: float, tolerance: float):
     """节奏优先归因: 本窗音高超差时, 在 ±4 音/±6 拍内找音高匹配的邻音。
     找到返回 (new_cents, neighbor_measure), 否则 None。音准按邻音判对,
@@ -357,7 +420,7 @@ def _measure_scores(aligned: list, tolerance: float) -> list:
             if not edge:
                 continue
             pool.append((edge[-1] if nb < m else edge[0], 0.5))
-        pool = [(n, w) for n, w in pool if not n.get("pitchExcluded")]
+        pool = [(n, w * n.get("pitchWeight", 1.0)) for n, w in pool if not n.get("pitchExcluded")]
         if not pool:
             out.append({"measure": m, "pitchScore": None, "noteCount": len(by_measure[m]),
                         "scoredNotes": 0})
@@ -1647,6 +1710,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 hi_edge = min(hi_edge, nxt - 0.03)
         crepe_lo, crepe_hi = None, None
         fallback_win = False
+        frames = None
         mask = (times >= ref + skip) & (times <= hi_edge)
         valid = mask & np.isfinite(pitches) & (confidence >= 0.7)
         if beat_time is not None and pitch_notes:
@@ -1678,6 +1742,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 crepe_lo, crepe_hi = lo, hi
                 svalid = (times >= lo) & (times <= hi) & np.isfinite(pitches) & (confidence >= 0.7)
                 if np.count_nonzero(svalid) >= 4:
+                    frames = pitches[svalid]
                     detected = float(np.median(pitches[svalid]))
                     cents = round((detected - note["pitchMidi"]) * 100, 1)
                     quality = round(float(np.median(confidence[svalid])), 2)
@@ -1690,6 +1755,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                     fvalid = ((times >= fb_lo0) & (times <= fb_hi0) & np.isfinite(pitches)
                               & (confidence >= 0.7))
                     if np.count_nonzero(fvalid) >= 4:
+                        frames = pitches[fvalid]
                         detected = float(np.median(pitches[fvalid]))
                         cents = round((detected - note["pitchMidi"]) * 100, 1)
                         quality = round(float(np.median(confidence[fvalid])), 2)
@@ -1702,6 +1768,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         else:
             crepe_lo, crepe_hi = ref + skip, hi_edge
             detected = float(np.median(pitches[valid])) if np.count_nonzero(valid) >= 4 else None
+            frames = pitches[valid] if detected is not None else None
             cents = round((detected - note["pitchMidi"]) * 100, 1) if detected is not None else None
             quality = round(float(np.median(confidence[valid])), 2) if cents is not None else 0.0
         # 节奏优先归因: 本窗超差但邻音 (±4 音/±6 拍) 匹配时, 音准按邻音判对,
@@ -1725,6 +1792,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                 raw_cents, displaced_from = cents, hit[1]
                 cents = hit[0]
                 displaced = True
+        outlier_cause, window_stability = None, None
+        if cents is not None and not displaced:
+            attr = attribute_outlier(cents, detected, note["pitchMidi"], frames,
+                                     notes[note_index - 1]["pitchMidi"] if note_index > 0 else None,
+                                     notes[note_index + 1]["pitchMidi"] if note_index + 1 < len(notes) else None)
+            if attr is not None:
+                outlier_cause, window_stability = attr["cause"], attr["stability"]
+                if attr["recovered"] is not None:
+                    detected, cents = attr["recovered"]
         delta = round((onset - expected) * 1000) if onset is not None else None
         if cents is not None:
             measured_count += 1
@@ -1763,6 +1839,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "confidence": quality, "pitchStatus": pitch_status, "timingStatus": timing_status,
                         "rawPitchErrorCents": raw_cents, "pitchDisplaced": displaced,
                         "displacedFromMeasure": displaced_from,
+                        "outlierCause": outlier_cause, "windowStability": window_stability,
                         "matchStatus": "matched" if cents is not None else "uncertain", "status": status})
     # CREPE verdicts (lazy + crop): 缺测补齐 + 荒谬值接管, 详见 _run_crepe_verdicts。
     # 无窗时零调用、零开销; 看似合理的 pYIN 读数永远不动。
@@ -1773,11 +1850,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     trim_active = _drop_player_outliers(aligned, pitch_tolerance_cents)
     pitch_errors = [abs(float(n["pitchErrorCents"])) for n in aligned
                     if n.get("pitchStatus") in ("sharp", "flat", "correct")]
-    # 0.19: 偏差 >PITCH_SCORE_EXCLUDE_CENTS 的音不计音准分; 覆盖率/补救门槛/匹配率仍用全部可判音。
-    for n in aligned:
-        if n.get("pitchStatus") in ("sharp", "flat", "correct") and abs(float(n["pitchErrorCents"])) > PITCH_SCORE_EXCLUDE_CENTS:
-            n["pitchExcluded"] = True
-    score_errors = [e for e in pitch_errors if e <= PITCH_SCORE_EXCLUDE_CENTS]
+    # 逐音权重 (归因 + 偏差 + 稳定度); >600¢ 仍为 0。覆盖率/补救门槛/匹配率仍用全部可判音。
+    _assign_pitch_weights(aligned)
+    weighted = [(abs(float(n["pitchErrorCents"])), n["pitchWeight"]) for n in aligned
+                if n.get("pitchWeight", 0) > 0 and n.get("pitchStatus") in ("sharp", "flat", "correct")]
     # 不将不可判断的音符作为正确或错误；节奏得分只在至少三个起音可匹配时给出。
     pitch_score = None
     pitch_gate_score = None
@@ -1793,9 +1869,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         penalties = np.maximum(np.asarray(pitch_errors) - pitch_tolerance_cents, 0)
         # 补救门槛沿用 0.18 口径 (含剔除音), 与 rhythm_gate_score 同理, 控制流不变。
         pitch_gate_score = round(max(0, 100 - float(np.mean(np.minimum(penalties, 100))) * 1.2))
-        if score_errors:
-            kept = np.maximum(np.asarray(score_errors) - pitch_tolerance_cents, 0)
-            pitch_score = round(max(0, 100 - float(np.mean(np.minimum(kept, 100))) * 1.2))
+        if weighted:
+            kept = np.maximum(np.array([e for e, _ in weighted]) - pitch_tolerance_cents, 0)
+            wts = np.array([w for _, w in weighted])
+            pitch_score = round(max(0, 100 - float(np.sum(np.minimum(kept, 100) * wts) / np.sum(wts)) * 1.2))
         in_tune = [abs(float(n["pitchErrorCents"])) for n in aligned if n["pitchStatus"] == "correct"]
         intonation_score = 100 if in_tune else None
     rhythm_score = None
