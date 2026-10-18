@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.24"
+VERSION = "string-mono-0.25"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -120,6 +120,7 @@ def parse_score(xml: str) -> list[dict]:
                 key_alter = {}
         # 小节线把临时升降号清零, 调号保留到下次变调。
         accidentals: dict[tuple[str, int], int] = {}
+        chord_ok, chord_base = False, None
         for item in measure:
             tag = item.tag.rsplit("}", 1)[-1]
             if tag in ("backup", "forward"):
@@ -128,8 +129,11 @@ def parse_score(xml: str) -> list[dict]:
                 continue
             if item.find("./{*}grace") is not None:
                 continue
-            if item.find("./{*}chord") is not None:
-                raise ValueError("双音/和弦暂不支持")
+            # 0.25: 同声部双音/和弦。<chord/> 音与前一音同起点、不推进时间;
+            # pitchMidi 保留首个 (基础) 音 (= 单声部投影的选择), 全部音高进 chordMidi。
+            chord = item.find("./{*}chord") is not None
+            if chord and not chord_ok:
+                raise ValueError("双音/和弦缺少起始音符")
             voice = item.findtext("./{*}voice")
             if voice:
                 voices.add(voice)
@@ -174,13 +178,28 @@ def parse_score(xml: str) -> list[dict]:
                 if not 36 <= midi <= 96:
                     raise ValueError("音域暂仅支持 MIDI 36–96")
                 ties = {t.get("type") for t in item.findall("./{*}tie")}
+                if chord:
+                    # 和弦音: 并入基础音; 延音线续上的和弦音不是新起音, 忽略。
+                    if chord_base is not None and "stop" not in ties:
+                        tones = chord_base.setdefault("chordMidi", [chord_base["pitchMidi"]])
+                        if midi not in tones:
+                            tones.append(midi)
+                            tones.sort()
+                    continue
                 if "stop" in ties:
                     if not notes or notes[-1]["pitchMidi"] != midi:
                         raise ValueError("跨小节连音不完整")
                     notes[-1]["durationBeat"] += length
+                    chord_base = None
                 else:
                     notes.append({"id": f"n{len(notes) + 1}", "measure": index, "onsetBeat": beat,
                                   "durationBeat": length, "pitchMidi": midi})
+                    chord_base = notes[-1]
+                chord_ok = True
+            elif chord:
+                continue
+            else:
+                chord_ok, chord_base = False, None
             beat += length
     if not notes or len(notes) > 1000:
         raise ValueError("MusicXML 必须包含 1–1000 个可演奏音符")
@@ -616,7 +635,7 @@ def measure_start_beats(xml: str, include_end: bool = False) -> dict[int, float]
                 raise ValueError("多声部/交错时间轴暂不支持")
             if tag != "note":
                 continue
-            if item.find("./{*}grace") is not None:
+            if item.find("./{*}grace") is not None or item.find("./{*}chord") is not None:
                 continue
             duration = item.findtext("./{*}duration")
             if duration is None:
@@ -862,7 +881,10 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
         errs: list[str] = []
         boundary_msg = None
         for shift in OCTAVE_SEARCH_SHIFTS:
-            shifted = notes if shift == 0 else [{**n, "pitchMidi": float(n["pitchMidi"]) + shift} for n in notes]
+            shifted = notes if shift == 0 else [
+                {**n, "pitchMidi": float(n["pitchMidi"]) + shift,
+                 **({"chordMidi": [p + shift for p in n["chordMidi"]]} if n.get("chordMidi") else {})}
+                for n in notes]
             try:
                 excerpt = align_excerpt(shifted, ev)
             except ValueError as exc:
@@ -885,7 +907,8 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
         # (no23 slow: pYIN 三 shift 全败, BP 对齐可出 tempo 网格; no16 fast:
         # pYIN boundary_unsupported, BP 有机会给出可用 excerpt)。pYIN-first:
         # 今天能救起来的片段走原路径零变化; BP 也败则 advice 原样。
-        _bp_ev = _bp_locate_events(signal, rate)
+        _bp_ev = _bp_locate_events(signal, rate, chords=True) if any(n.get("chordMidi") for n in notes) \
+            else _bp_locate_events(signal, rate)
         if _bp_ev and len(_bp_ev) >= 8:
             _bp_cands, _bp_failures, _ = _run_shifts(_bp_ev, "bp")
             if _bp_cands:
@@ -1147,10 +1170,62 @@ def bp_monophonic(notes, window: float = 0.05, head: float = 0.05) -> list:
     return [tuple(r) for r in out if r[1] > r[0]]
 
 
-def _bp_locate_events(signal, rate):
+# 0.25 chord grouping: a cellist rolls a chord (bass 0.2-0.4 s ahead), so its
+# tones start up to BP_ROLL_SEC apart but ring together; successive melody
+# notes barely overlap. A note joins the open group if it starts within 50 ms
+# of the group's first onset (as bp_monophonic), or within BP_ROLL_SEC while
+# overlapping a sounding member by more than BP_RING_SEC.
+BP_ROLL_SEC = 0.40
+BP_RING_SEC = 0.10
+
+
+def bp_chords(notes, head: float = 0.05) -> list:
+    """Basic Pitch notes -> time-ordered (start, end, pitches) events; pitches is
+    always a sorted tuple, even for one note (see alignment._match_cost)."""
+    rows = []
+    for item in notes or []:
+        try:
+            start, end, midi = float(item[0]), float(item[1]), float(item[2])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if (math.isfinite(start) and math.isfinite(end) and math.isfinite(midi)
+                and start >= head and end > start):
+            rows.append((start, end, midi))
+    rows.sort()
+    groups = []
+    for row in rows:
+        lead = row[0] - groups[-1][0][0] if groups else None
+        if groups and (lead <= 0.05 or (lead <= BP_ROLL_SEC and
+                                        row[0] < max(r[1] for r in groups[-1]) - BP_RING_SEC)):
+            groups[-1].append(row)
+        else:
+            groups.append([row])
+    out = []
+    for group in groups:
+        pitches = tuple(sorted({r[2] for r in group}))
+        out.append([group[0][0], max(r[1] for r in group), pitches])
+    for i in range(len(out) - 1):
+        out[i][1] = min(out[i][1], out[i + 1][0] - 0.001)
+    return [tuple(r) for r in out if r[1] > r[0]]
+
+
+def _bp_locate_events(signal, rate, chords: bool = False):
     """Optional Basic Pitch events for auto-locate. None unless SCOREFOLLOW_BP_PYTHON
     names a venv interpreter with basic-pitch[onnx]; any failure or timeout -> None,
-    so locate falls back to pYIN and the fused events exactly as in 0.11."""
+    so locate falls back to pYIN and the fused events exactly as in 0.11.
+    chords=True groups simultaneous notes (bp_chords) for chord scores; the raw
+    notes are cached so both reductions share one inference."""
+    raw = _bp_raw_notes(signal, rate)
+    if raw is None:
+        return None
+    return (bp_chords(raw) if chords else bp_monophonic(raw)) or None
+
+
+def _bp_raw_notes(signal, rate):
+    import os
+    python = os.environ.get('SCOREFOLLOW_BP_PYTHON', '').strip()
+    if not python:
+        return None
     import os
     python = os.environ.get('SCOREFOLLOW_BP_PYTHON', '').strip()
     if not python:
@@ -1164,7 +1239,7 @@ def _bp_locate_events(signal, rate):
     if key in _BP_CACHE:
         _BP_CACHE.move_to_end(key)
         return _BP_CACHE[key]
-    events = None
+    notes = None
     try:
         worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bp_worker.py')
         with tempfile.TemporaryDirectory(prefix='sf-bp-') as tmp:
@@ -1181,13 +1256,13 @@ def _bp_locate_events(signal, rate):
                            stderr=subprocess.DEVNULL, timeout=BP_TIMEOUT_SEC, check=True)
             with open(out_path, encoding='utf-8') as handle:
                 raw = json.load(handle)
-        events = bp_monophonic(raw.get('notes')) or None
+        notes = raw.get('notes') if isinstance(raw.get('notes'), list) else None
     except Exception:
-        events = None
-    _BP_CACHE[key] = events
+        notes = None
+    _BP_CACHE[key] = notes
     while len(_BP_CACHE) > _BP_CACHE_CAP:
         _BP_CACHE.popitem(last=False)
-    return events
+    return notes
 
 
 CREPE_TIMEOUT_SEC = 240
@@ -1481,6 +1556,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     if sync_mode == "metronome" and first_beat_audio_sec is None:
         raise ValueError("metronome 模式需要 firstBeatAudioSec")
     score_notes = parse_score(xml)
+    has_chords = any(n.get("chordMidi") for n in score_notes)
     if type(start_measure) is not int or start_measure < 0 or start_measure > score_notes[-1]["measure"]:
         raise ValueError("开始小节没有可演奏音符")
     signal, rate = read_wav(wav)
@@ -1561,7 +1637,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # below is pYIN-first too (BP second, fused last).
         bp_events, bp_excerpt = None, None
         if excerpt is None or not excerpt.get("confident"):
-            bp_events = _bp_locate_events(signal, rate)
+            # 0.25: 含和弦的谱面用 BP 和弦分组 (同时发声的音合成一个事件)。
+            bp_events = _bp_locate_events(signal, rate, chords=True) if has_chords \
+                else _bp_locate_events(signal, rate)
             if bp_events:
                 try:
                     bp_excerpt = align_excerpt(score_notes, bp_events,
@@ -1903,6 +1981,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         # 错位由计时误差在节奏侧扣分 (小节错位是节奏错, 不是音准错)。
         cents, detected, quality, crepe_cents = _apply_crepe_opinion(
             cents, detected, quality, note["pitchMidi"], (crepe_lo, crepe_hi), None)
+        chord_tones = note.get("chordMidi")
+        if chord_tones and detected is not None:
+            # 0.25 双音/和弦: 单音高跟踪器只跟住一个声部, 按最近的和弦音计音准;
+            # 半音内没有和弦音就不判 (多声部下读数不可信, 不指控错音)。
+            nearest = min(chord_tones, key=lambda p: abs(detected - p))
+            cents = round((detected - nearest) * 100, 1) if abs(detected - nearest) <= 1.0 else None
+            if cents is None:
+                quality = 0.0
         # lazy gap 登记: 主循环结束后再对缺测窗跑 crop 推理。veto (窗内多半是
         # 邻音) 之后才变 None 的音不登记, 避免把邻音音高算到本音头上。
         if cents is None and crepe_lo is not None and crepe_hi is not None and crepe_hi > crepe_lo:
@@ -1962,6 +2048,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "matchStatus": "matched" if cents is not None else "uncertain", "status": status})
     # CREPE verdicts (lazy + crop): 缺测补齐 + 荒谬值接管, 详见 _run_crepe_verdicts。
     # 无窗时零调用、零开销; 看似合理的 pYIN 读数永远不动。
+    # CREPE 也是单声部跟踪器, 和弦音不登记。
+    crepe_items = [it for it in crepe_items if not aligned[it["index"]].get("chordMidi")]
     measured_count += _run_crepe_verdicts(
         aligned, crepe_items, signal, rate, pitch_tolerance_cents)
     # 动态剔除极端音 (门控见 _drop_player_outliers); 音准分按剔除后重建,

@@ -131,10 +131,11 @@ class EngineTests(unittest.TestCase):
         self.assertAlmostEqual(seconds_per_quarter(xml, 112), 60 / 112 * 2 / 3)
         self.assertAlmostEqual(seconds_per_quarter(score(), 112), 60 / 112)
 
-    def test_parse_single_voice_and_reject_chords(self):
+    def test_parse_single_voice_and_reject_chord_without_base(self):
         self.assertEqual(len(parse_score(score())), 5)
         xml = '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">' + score()
         self.assertEqual(len(parse_score(xml)), 5)
+        # A <chord/> tone needs a preceding base note in the same measure.
         with self.assertRaisesRegex(ValueError, "双音"):
             parse_score(score().replace("<note><pitch>", "<note><chord/><pitch>", 1))
 

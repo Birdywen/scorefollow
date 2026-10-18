@@ -19,23 +19,97 @@ import math
 import numpy as np
 
 
-def usable_events(pitch_notes: list) -> list[tuple[float, float, float]]:
-    """Validate sensor output before using its order or timestamps as anchors."""
+def usable_events(pitch_notes: list) -> list[tuple]:
+    """Validate sensor output before using its order or timestamps as anchors.
+
+    The pitch is a MIDI float, or a sequence of MIDI floats for a chord event
+    (Basic Pitch chord groups); a chord keeps only its in-range pitches and
+    collapses to a float when one remains.
+    """
     events = []
     previous_end = 0.0
     for segment in pitch_notes:
         try:
-            start, end, midi = map(float, segment)
+            start, end, raw = segment
+            start, end = float(start), float(end)
+            if isinstance(raw, (list, tuple)):
+                pitches = tuple(sorted({float(p) for p in raw}))
+                if not pitches:
+                    raise ValueError
+            else:
+                pitches = (float(raw),)
         except (TypeError, ValueError) as exc:
             raise ValueError("音高事件格式无效") from exc
-        if not all(math.isfinite(v) for v in (start, end, midi)) or start < 0 or end <= start:
+        if not all(math.isfinite(v) for v in (start, end, *pitches)) or start < 0 or end <= start:
             raise ValueError("音高事件时间或数值无效")
         if start < previous_end - .001:
             raise ValueError("音高事件重叠或未按时间排序")
         previous_end = end
-        if end - start >= .09 and 36 <= midi <= 96:
-            events.append((start, end, midi))
+        kept = tuple(p for p in pitches if 36 <= p <= 96)
+        if end - start >= .09 and kept:
+            # A polyphonic sensor's event stays a tuple even with one pitch: its
+            # silence on the other chord tones is evidence (see _match_cost).
+            events.append((start, end, kept if isinstance(raw, (list, tuple)) else kept[0]))
     return events
+
+
+def _written(note: dict):
+    """A score note's pitch for matching: MIDI float, or a tuple for a chord."""
+    chord = note.get("chordMidi")
+    return tuple(float(p) for p in chord) if chord and len(chord) > 1 else float(note["pitchMidi"])
+
+
+def _as_set(p) -> tuple:
+    return p if isinstance(p, tuple) else (p,)
+
+
+def _anchor_ok(heard, written) -> bool:
+    """Opening-note gate: within 150 cents of the written pitch or its octave.
+    For chords any heard/written pair may satisfy it."""
+    for h in _as_set(heard):
+        for w in _as_set(written):
+            cents = abs(h - w) * 100
+            if min(cents, abs(cents - 1200)) <= 150:
+                return True
+    return False
+
+
+def _match_cost(heard, written) -> float:
+    """Edit cost between a heard event and a written note.
+
+    Single pitch vs single pitch is exactly _pitch_diff (monophonic paths are
+    unchanged). A single heard pitch against a chord (pYIN follows one voice)
+    costs its distance to the nearest chord tone. A heard chord costs the mean
+    distance of each heard pitch to its nearest written tone (wrong extra
+    pitches cost), plus half the fraction of written tones not heard within a
+    quarter tone (a missed tone costs less than a wrong one: Basic Pitch often
+    drops the short rolled bass).
+    """
+    if not isinstance(heard, tuple):
+        if not isinstance(written, tuple):
+            return _pitch_diff(heard, written)
+        return min(_pitch_diff(heard, w) for w in written)
+    ws = _as_set(written)
+    precision = sum(min(_pitch_diff(h, w) for w in ws) for h in heard) / len(heard)
+    missed = sum(1 for w in ws if not any(abs(h - w) <= .5 for h in heard)) / len(ws)
+    return min(2.5, precision + .5 * missed)
+
+
+EXTRA_EVENT_COST = 1.25
+
+
+def _extra_cost(heard, written) -> float:
+    """Cost of an audio event left unmatched right after `written` was matched.
+
+    Monophonic notes keep the fixed 1.25. Next to a chord, a fragment whose
+    pitches all belong to that chord is cheap: Basic Pitch splits a rolled
+    chord (short bass first, upper tones after) into several events.
+    """
+    if not isinstance(written, tuple):
+        return EXTRA_EVENT_COST
+    hs = _as_set(heard)
+    precision = sum(min(_pitch_diff(h, w) for w in written) for h in hs) / len(hs)
+    return min(EXTRA_EVENT_COST, .1 + precision)
 
 
 def locate_excerpt(score_notes: list[dict], pitch_notes: list, *, max_events: int = 64,
@@ -68,11 +142,10 @@ def locate_excerpt(score_notes: list[dict], pitch_notes: list, *, max_events: in
                 positions = [position(segment[0]) - origin for segment in segments]
     candidates = []
     for start in range(len(score_notes)):
-        written = [float(note["pitchMidi"]) for note in score_notes[start:start + 2 * n + 4]]
-        anchor_cents = abs(events[0] - written[0]) * 100
+        written = [_written(note) for note in score_notes[start:start + 2 * n + 4]]
         # A low average cost cannot justify an unrelated opening note: it
         # shifts every later scoring window even if the passage was located.
-        if min(anchor_cents, abs(anchor_cents - 1200)) > 150:
+        if not _anchor_ok(events[0], written[0]):
             continue
         if len(written) < max(6, int(n * .65)):
             continue
@@ -84,11 +157,9 @@ def locate_excerpt(score_notes: list[dict], pitch_notes: list, *, max_events: in
             for j, target in enumerate(written, 1):
                 if abs(i - j) > max(4, n // 3):
                     continue
-                cents = abs(midi - target) * 100
                 # A 1200-cent discrepancy may be a pitch-tracker octave error,
-                # but is never as cheap as an exact match.
-                octave = abs(cents - 1200) / 100 + .75
-                difference = min(2.5, cents / 100, octave)
+                # but is never as cheap as an exact match (see _pitch_diff).
+                difference = _match_cost(midi, target)
                 if positions is not None:
                     # Retain elapsed time across missing pYIN events. The grid
                     # is audio-only; DTW does not manufacture rhythm evidence.
@@ -96,7 +167,7 @@ def locate_excerpt(score_notes: list[dict], pitch_notes: list, *, max_events: in
                     difference += min(3.0, abs(positions[i - 1] - score_offset) * 2)
                 row[j] = (prev[j - 1] + difference if i == 1 or j == 1 else
                           min(prev[j - 1] + difference,
-                              prev[j] + 1.25, row[j - 1] + .85))
+                              prev[j] + _extra_cost(midi, target), row[j - 1] + .85))
             prev = row
         minimum = min(prev[max(6, int(n * .65)):]) / n
         candidates.append((minimum, start))
@@ -149,9 +220,8 @@ def _prefix_candidates(score_notes: list[dict], events: list[float],
     floor = max(6, int(k * .65))
     scored = []
     for start in range(len(score_notes)):
-        written = [float(note["pitchMidi"]) for note in score_notes[start:start + 2 * k + 4]]
-        anchor_cents = abs(head[0] - written[0]) * 100 if written else float("inf")
-        if min(anchor_cents, abs(anchor_cents - 1200)) > 150:
+        written = [_written(note) for note in score_notes[start:start + 2 * k + 4]]
+        if not written or not _anchor_ok(head[0], written[0]):
             continue
         if len(written) < max(6, int(k * .65)):
             continue
@@ -161,9 +231,9 @@ def _prefix_candidates(score_notes: list[dict], events: list[float],
             for j, target in enumerate(written, 1):
                 if abs(i - j) > band:
                     continue
-                diff = _pitch_diff(midi, target)
+                diff = _match_cost(midi, target)
                 row[j] = (prev[j - 1] + diff if i == 1 or j == 1 else
-                          min(prev[j - 1] + diff, prev[j] + 1.25, row[j - 1] + .85))
+                          min(prev[j - 1] + diff, prev[j] + _extra_cost(midi, target), row[j - 1] + .85))
             prev = row
         scored.append((min(prev[floor:]) / k if len(prev) > floor else float("inf"), start))
     scored.sort()
@@ -181,7 +251,7 @@ def _full_path(score_notes: list[dict], events: list[float], start: int) -> tupl
     cover the excerpt (band-unreachable: correct rejection, not an error).
     """
     n = len(events)
-    written = [float(note["pitchMidi"]) for note in score_notes[start:]]
+    written = [_written(note) for note in score_notes[start:]]
     m = len(written)
     if m < 8:
         return float("inf"), 0, None
@@ -195,12 +265,12 @@ def _full_path(score_notes: list[dict], events: list[float], start: int) -> tupl
         lo = max(1, i - band)
         hi = min(m, i + band)
         for j in range(lo, hi + 1):
-            diff = _pitch_diff(midi, written[j - 1])
+            diff = _match_cost(midi, written[j - 1])
             if i == 1 or j == 1:
                 row[j] = prev[j - 1] + diff
                 back[i, j] = 1
             else:
-                options = (prev[j - 1] + diff, prev[j] + 1.25, row[j - 1] + .85)
+                options = (prev[j - 1] + diff, prev[j] + _extra_cost(midi, written[j - 1]), row[j - 1] + .85)
                 action = int(np.argmin(options))
                 row[j] = options[action]
                 back[i, j] = action + 1

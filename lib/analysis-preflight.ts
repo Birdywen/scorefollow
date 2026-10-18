@@ -20,7 +20,8 @@ export function inspectScoreXml(xml: string): ScorePreflight {
   if (parts.length !== 1) report.errors.push("multiple_parts");
   report.measures = parts[0]?.getElementsByTagNameNS("*", "measure").length ?? 0;
   if (!report.measures) report.errors.push("no_measures");
-  if (elements("chord").length || elements("backup").length || elements("forward").length || new Set(elements("voice").map((el) => el.textContent?.trim())).size > 1) report.errors.push("polyphonic");
+  if (elements("backup").length || elements("forward").length || new Set(elements("voice").map((el) => el.textContent?.trim())).size > 1) report.errors.push("polyphonic");
+  else if (elements("chord").length) report.warnings.push("chords");
   if (elements("repeat").length || elements("ending").length) report.errors.push("repeats");
   if (elements("transpose").length) report.errors.push("transposing");
   const meters = elements("time").map((el) => `${text(el, "beats")}/${text(el, "beat-type")}`);
@@ -73,7 +74,8 @@ export function preflightMessage(code: string, zh: boolean): string {
     multiple_parts: ["当前分析要求单个乐器声部。", "Analysis currently requires a single instrument part."],
     no_measures: ["谱面没有小节。", "The score has no measures."],
     no_notes: ["谱面没有可分析音符。", "The score has no pitched notes to analyze."],
-    polyphonic: ["当前谱面解析器不支持和弦或多声部。", "The score parser does not support chords or multiple voices."],
+    polyphonic: ["当前谱面解析器不支持多声部（同一声部内的双音/和弦可以）。", "The score parser does not support multiple voices (double stops/chords within one voice are fine)."],
+    chords: ["含双音/和弦：按和弦对齐并计节奏；音准只对能单独听清的声部给分。", "Contains double stops/chords: aligned and timed as chords; intonation is scored only where one voice is clearly audible."],
     repeats: ["请先展开反复与跳房子，再上传线性谱面。", "Expand repeats and endings before uploading a linear score."],
     transposing: ["请上传实音记谱，当前不支持移调记谱。", "Upload a concert-pitch score; transposing notation is unsupported."],
     meter_changes: ["当前分析不支持拍号变化。", "Meter changes are not supported yet."],
