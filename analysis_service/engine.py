@@ -750,6 +750,45 @@ def _usable_excerpt(excerpt: dict) -> bool:
             and slope is not None and 0.15 <= slope <= 2.0)
 
 
+ALIGN_GRID_MAX_DEV = 0.5
+
+
+def _alignment_grid(alignment, notes, base_beat, sec_per_beat, start, beat_time):
+    """Measure-level timeline from a confident alignment, or None when the
+    current grid already agrees with it within ALIGN_GRID_MAX_DEV seconds."""
+    if not alignment.get("confident") or not alignment.get("quarterPeriod"):
+        return None
+    mt = alignment.get("measureTimes") or []
+    if len(mt) < 2:
+        return None
+    first = {}
+    for n in notes:
+        first.setdefault(n["measure"], n["onsetBeat"])
+    pts = sorted((first[m["measure"]], m["audioSec"]) for m in mt if m["measure"] in first)
+    if len(pts) < 2:
+        return None
+    qs = np.array([q for q, _ in pts])
+    ts = np.array([t for _, t in pts])
+    if np.any(np.diff(qs) <= 0) or np.any(np.diff(ts) <= 0):
+        return None
+    slope = float(alignment["quarterPeriod"])
+
+    def grid(rel):
+        return beat_time(rel) if beat_time is not None else start + (rel + base_beat) * sec_per_beat
+    dev = max(abs(grid(q - base_beat) - t) for q, t in pts)
+    if dev <= ALIGN_GRID_MAX_DEV:
+        return None
+
+    def align_time(rel):
+        q = rel + base_beat
+        if q <= qs[0]:
+            return float(ts[0] + (q - qs[0]) * slope)
+        if q >= qs[-1]:
+            return float(ts[-1] + (q - qs[-1]) * slope)
+        return float(np.interp(q, qs, ts))
+    return align_time
+
+
 def _anchor_tempo(anchors: list, fallback: float) -> float:
     """分段锚点的稳健速度（秒/拍）：中途停顿时全局拟合斜率被污染（跨停顿的
     配对拉高斜率），按段取中位数并丢掉 gap 超过 2 倍中位数的段。"""
@@ -1703,6 +1742,14 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         start = (location_anchor if auto_located else onsets[0]) - notes[0]["onsetBeat"] * sec_per_beat
         if auto_tempo_refit:
             start = alignment["t0"]
+    # 0.24: the pitch alignment (often Basic Pitch) already knows where each
+    # measure starts. When the beat grid disagrees with it (wrong tempo unit,
+    # slow drift), score on the alignment's measure map instead — same standing
+    # as confirmed markers: per measure, never per note, so rhythm stays measurable.
+    align_grid = _alignment_grid(alignment, notes, base_beat, sec_per_beat, start, beat_time) \
+        if sync_mode in ("vamp-beat", "legacy") and alignment is not None else None
+    if align_grid is not None:
+        beat_time = align_grid
     # Score excerpts can start at any measure. Never count score notes beyond
     # the recording as missed notes, including when the full score is hours long.
     last_voiced = times[voiced[-1]]
@@ -2008,6 +2055,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         sensors.append("fused-locate")
     if bp_locate:
         sensors.append("bp-locate")
+    if align_grid is not None:
+        sensors.append("align-grid")
     # Optional-plugin degradation is explicit in the payload (not logs only),
     # derived from effective detector availability after engine guards
     # (single-note pitch guard, beat_map length/tempo filtering). Beat counts
