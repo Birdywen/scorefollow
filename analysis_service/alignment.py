@@ -366,10 +366,17 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
     # A small median residual can hide a contradictory tail (e.g. incomplete
     # notation forced onto a complete recording). Never certify its boundaries
     # from the global line after the local anchors have rejected those events.
-    edge_pairs = (matched[0], matched[-1])
-    boundary_supported = bool(anchors) and slope is not None and all(
-        abs(anchor_time(anchors, score_notes[s]["onsetBeat"], slope) - segments[e][0]) <= .60
-        for s, e in edge_pairs)
+    # A take cut mid-note hides the first note's onset: when the anchors put
+    # that note's start before the recording and the matched event lies inside
+    # the note, the head edge cannot be checked rather than contradicting.
+    def _edge_ok(s, e, head):
+        at = anchor_time(anchors, score_notes[s]["onsetBeat"], slope)
+        if abs(at - segments[e][0]) <= .60:
+            return True
+        end = anchor_time(anchors, score_notes[s]["onsetBeat"] + score_notes[s]["durationBeat"], slope)
+        return head and at <= .05 and at <= segments[e][0] < end
+    boundary_supported = bool(anchors) and slope is not None and \
+        _edge_ok(*matched[0], True) and _edge_ok(*matched[-1], False)
     confident = confident and boundary_supported
     last = score_notes[end_index]
     end_audio = (round(anchor_time(anchors, last["onsetBeat"] + last["durationBeat"], slope), 3)
