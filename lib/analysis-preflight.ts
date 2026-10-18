@@ -75,7 +75,7 @@ export function preflightMessage(code: string, zh: boolean): string {
     no_measures: ["谱面没有小节。", "The score has no measures."],
     no_notes: ["谱面没有可分析音符。", "The score has no pitched notes to analyze."],
     polyphonic: ["当前谱面解析器不支持多声部（同一声部内的双音/和弦可以）。", "The score parser does not support multiple voices (double stops/chords within one voice are fine)."],
-    chords: ["含双音/和弦：按和弦对齐并计节奏；音准只对能单独听清的声部给分。", "Contains double stops/chords: aligned and timed as chords; intonation is scored only where one voice is clearly audible."],
+    chords: ["含双音/和弦：按和弦对齐并计节奏，谱面每个和弦音单独检查音准；没拉到的音单独标出，与低音成八度的上方音无法单独测。", "Contains double stops/chords: aligned and timed as chords, and every written chord tone is checked for intonation; unplayed tones are flagged, and a tone an octave above a lower chord tone cannot be measured separately."],
     repeats: ["请先展开反复与跳房子，再上传线性谱面。", "Expand repeats and endings before uploading a linear score."],
     transposing: ["请上传实音记谱，当前不支持移调记谱。", "Upload a concert-pitch score; transposing notation is unsupported."],
     meter_changes: ["当前分析不支持拍号变化。", "Meter changes are not supported yet."],

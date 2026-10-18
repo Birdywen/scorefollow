@@ -4,7 +4,9 @@ Runs in its own venv (SCOREFOLLOW_BP_PYTHON) so basic-pitch, onnxruntime,
 librosa and numba never enter the service interpreter. Usage:
     python -I -B bp_worker.py in.wav out.json
 Writes {"notes": [[start_sec, end_sec, midi], ...]} with Basic Pitch's default
-note thresholds; the monophonic reduction happens in engine.py.
+note thresholds; the monophonic reduction happens in engine.py. Since 0.26 it also
+writes the frame-level note activation (frames x 88 keys, float16) to
+<out>.note.npy for per-tone chord intonation (chord_pitch.py).
 """
 import json
 import pathlib
@@ -30,6 +32,8 @@ def main(argv):
         min_note_len=int(round(127.7 / 1000 * FPS)), min_freq=None, max_freq=None,
         melodia_trick=True)
     notes = sorted([float(e[0]), float(e[1]), float(e[2])] for e in events)
+    import numpy as np
+    np.save(argv[2] + '.note.npy', output['note'].astype(np.float16))
     pathlib.Path(argv[2]).write_text(json.dumps({'notes': notes}))
     return 0
 

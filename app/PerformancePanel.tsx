@@ -16,7 +16,7 @@ import MeasureSyncEditor, { validateMarkers, type MeasureMarker, type SyncedAudi
 import { useAnalysisJob } from "./hooks/useAnalysisJob";
 import ScorePreflight from "./ScorePreflight";
 import AnalysisQuality, { type Quality } from "./AnalysisQuality";
-import { inspectScoreXml, preflightMessage } from "@/lib/analysis-preflight";
+import { inspectScoreXml, midiName, preflightMessage } from "@/lib/analysis-preflight";
 
 type Note = {
   id: string; measure: number; pitchMidi: number; expectedSec: number;
@@ -25,6 +25,7 @@ type Note = {
   pitchStatus?: "correct" | "sharp" | "flat" | "uncertain" | "octave" | "outlier";
   timingStatus?: "correct" | "early" | "late" | "uncertain" | "unscored";
   matchStatus?: "matched" | "uncertain";
+  chordTones?: { midi: number; cents: number | null; state: "measured" | "missing" | "unchecked" | "inseparable" | "unmeasured" }[];
 };
 type Rhythm = {
   source?: string; beats?: number[];
@@ -742,7 +743,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
 
   const scoreMeasures = result?.summary.measureCount ?? result?.notes.reduce((max, note) => Math.max(max, note.measure), 0) ?? 0;
   const canJump = pdfMeasures > 0 && pdfMeasures === scoreMeasures;
-  const issues = result?.notes.filter((note) => note.status !== "correct"
+  const issues = result?.notes.filter((note) => (note.status !== "correct" || note.chordTones?.some((t) => t.state === "missing"))
     && !(note.status === "wrong_pitch" && "pitchExcluded" in note && note.pitchExcluded === true)) ?? [];
   const doneTakes = takes.filter((t) => t.result);
   const compareTakes: CompareTake[] = doneTakes.map((t, i) => ({
@@ -842,7 +843,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     return [...byBar.entries()].sort((a, b) => a[0] - b[0]);
   })();
   const topBars = result?.quality?.outcome === "score_audio_mismatch" ? [] : [...issueGroups].sort((a, b) => b[1].length - a[1].length || a[0] - b[0]).slice(0, 3);
-  const noteLabel = (note: Note) => (note.pitchErrorCents == null ? (zh ? "音高?" : "pitch?") : `${note.pitchErrorCents > 0 ? "+" : ""}${Math.round(note.pitchErrorCents)}¢`)
+  // 双音/和弦: 逐个谱面音给读数 (漏拉/测不了单独标), 不只显示偏差最大的那个音。
+  const signedCents = (c: number) => `${c > 0 ? "+" : ""}${Math.round(c)}¢`;
+  const chordLabel = (tones: NonNullable<Note["chordTones"]>) => tones.map((t) => midiName(t.midi)
+    + (t.cents != null ? signedCents(t.cents) : t.state === "missing" ? (zh ? "漏" : " missing") : "?")).join(" ");
+  const noteLabel = (note: Note) => (note.chordTones?.length ? chordLabel(note.chordTones) : note.pitchErrorCents == null ? (zh ? "音高?" : "pitch?") : signedCents(note.pitchErrorCents))
     + (note.timingErrorMs != null ? ` ${note.timingErrorMs > 0 ? "+" : ""}${note.timingErrorMs}ms` : note.timingStatus === "uncertain" ? (zh ? " 起音?" : " onset?") : "");
   const canFollow = Boolean(selected?.blob && (result?.measureIntervals?.length ?? 0) > 1 && onFollowTake);
   function followTake(): boolean {

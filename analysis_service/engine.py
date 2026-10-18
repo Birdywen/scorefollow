@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.25"
+VERSION = "string-mono-0.26"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -450,6 +450,66 @@ def _verify_targets(aligned: list, signal, rate, tolerance: float) -> None:
                            else "outlier" if ps == "outlier" else "uncertain" if ps == "uncertain"
                            else ts if ts in ("late", "early") else "timing_uncertain" if ts == "uncertain"
                            else "correct")
+
+
+def _note_status(pitch_status: str, timing_status: str | None) -> str:
+    return ("wrong_pitch" if pitch_status in ("sharp", "flat") else "octave_uncertain" if pitch_status == "octave"
+            else "outlier" if pitch_status == "outlier" else "uncertain" if pitch_status == "uncertain"
+            else timing_status if timing_status in ("late", "early") else "timing_uncertain" if timing_status == "uncertain"
+            else "correct")
+
+
+def _score_chord_tones(aligned: list, signal, rate, act, tolerance: float) -> None:
+    """0.26 双音/和弦逐音音准 (见 chord_pitch.py): 谱面写的每个和弦音单独对照自己的
+    谱面音高。Basic Pitch 逐帧激活定每个音何时在响, 音高从该音自己的谐波读。
+    音符级 pitchErrorCents/状态取偏差最大的已测音 (显示用); 音准分逐音计 (见 _pitch_items)。
+    没有 Basic Pitch 激活时不动 (保留 0.25 的最近和弦音读数)。"""
+    if act is None:
+        return
+    from .chord_pitch import measure_chord
+    for i, n in enumerate(aligned):
+        tones = n.get("chordMidi")
+        if not tones:
+            continue
+        on = n["performedSec"] if n.get("performedSec") is not None else n["expectedSec"]
+        nxt = aligned[i + 1] if i + 1 < len(aligned) else None
+        end = (nxt["performedSec"] if nxt and nxt.get("performedSec") is not None
+               else nxt["expectedSec"] if nxt else n["expectedEndSec"])
+        if end <= on:
+            end = n["expectedEndSec"]
+        res = measure_chord(signal, rate, act, tones, on, end)
+        for t in res:
+            t["pitchStatus"] = classify_pitch(t["cents"], t["midi"] + t["cents"] / 100, tolerance) \
+                if t["cents"] is not None else None
+        n["chordTones"] = res
+        measured = [t for t in res if t["cents"] is not None]
+        if measured:
+            worst = max(measured, key=lambda t: abs(t["cents"]))
+            n["pitchErrorCents"] = worst["cents"]
+            n["confidence"] = 0.9
+            n["matchStatus"] = "matched"
+            n["pitchStatus"] = worst["pitchStatus"]
+        else:
+            n["pitchErrorCents"] = None
+            n["confidence"] = 0.0
+            n["matchStatus"] = "uncertain"
+            n["pitchStatus"] = "uncertain"
+        n["rawPitchErrorCents"], n["pitchDisplaced"], n["displacedFromMeasure"] = None, False, None
+        n["status"] = _note_status(n["pitchStatus"], n.get("timingStatus"))
+
+
+def _pitch_items(aligned: list) -> list:
+    """(|cents|, weight) per scored pitch: one per note, one per measured tone for chords."""
+    items = []
+    for n in aligned:
+        if n.get("pitchWeight", 0) <= 0 or n.get("pitchStatus") not in ("sharp", "flat", "correct"):
+            continue
+        tones = [t for t in n.get("chordTones") or [] if t["cents"] is not None]
+        if tones:
+            items.extend((abs(float(t["cents"])), n["pitchWeight"]) for t in tones)
+        else:
+            items.append((abs(float(n["pitchErrorCents"])), n["pitchWeight"]))
+    return items
 
 
 def _assign_pitch_weights(aligned: list) -> None:
@@ -1138,6 +1198,8 @@ def _select_grid_phase(beats: np.ndarray, med: float, anchor: int, notes: list,
 BP_TIMEOUT_SEC = 30
 _BP_CACHE_CAP = 64
 _BP_CACHE: OrderedDict = OrderedDict()
+_BP_ACT_CACHE_CAP = 8
+_BP_ACT_CACHE: OrderedDict = OrderedDict()
 
 
 def bp_monophonic(notes, window: float = 0.05, head: float = 0.05) -> list:
@@ -1222,24 +1284,33 @@ def _bp_locate_events(signal, rate, chords: bool = False):
 
 
 def _bp_raw_notes(signal, rate):
+    return _bp_run(signal, rate)[0]
+
+
+def _bp_note_activation(signal, rate):
+    """Frame-level Basic Pitch note activation (frames x 88 keys) for chord intonation.
+    Kept in a small separate cache (long takes are MBs); a miss re-runs the same inference."""
+    return _bp_run(signal, rate, need_act=True)[1]
+
+
+def _bp_run(signal, rate, need_act=False):
+    """(notes or None, activation or None); failures are cached as (None, None)."""
     import os
     python = os.environ.get('SCOREFOLLOW_BP_PYTHON', '').strip()
     if not python:
-        return None
-    import os
-    python = os.environ.get('SCOREFOLLOW_BP_PYTHON', '').strip()
-    if not python:
-        return None
+        return None, None
     import hashlib
     import json
     import subprocess
     import tempfile
     x = np.ascontiguousarray(signal, dtype=np.float32)
     key = (hashlib.blake2b(x.tobytes(), digest_size=16).digest(), int(rate))
-    if key in _BP_CACHE:
+    if key in _BP_CACHE and (not need_act or key in _BP_ACT_CACHE or _BP_CACHE[key] is None):
         _BP_CACHE.move_to_end(key)
-        return _BP_CACHE[key]
-    notes = None
+        if key in _BP_ACT_CACHE:
+            _BP_ACT_CACHE.move_to_end(key)
+        return _BP_CACHE[key], _BP_ACT_CACHE.get(key)
+    notes, act = None, None
     try:
         worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bp_worker.py')
         with tempfile.TemporaryDirectory(prefix='sf-bp-') as tmp:
@@ -1256,13 +1327,23 @@ def _bp_raw_notes(signal, rate):
                            stderr=subprocess.DEVNULL, timeout=BP_TIMEOUT_SEC, check=True)
             with open(out_path, encoding='utf-8') as handle:
                 raw = json.load(handle)
+            try:
+                act = np.load(out_path + '.note.npy')
+                if act.ndim != 2 or act.shape[1] != 88:
+                    act = None
+            except Exception:
+                act = None
         notes = raw.get('notes') if isinstance(raw.get('notes'), list) else None
     except Exception:
-        notes = None
+        notes, act = None, None
     _BP_CACHE[key] = notes
     while len(_BP_CACHE) > _BP_CACHE_CAP:
         _BP_CACHE.popitem(last=False)
-    return notes
+    if act is not None and notes is not None:
+        _BP_ACT_CACHE[key] = act
+        while len(_BP_ACT_CACHE) > _BP_ACT_CACHE_CAP:
+            _BP_ACT_CACHE.popitem(last=False)
+    return notes, (act if notes is not None else None)
 
 
 CREPE_TIMEOUT_SEC = 240
@@ -2052,6 +2133,10 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     crepe_items = [it for it in crepe_items if not aligned[it["index"]].get("chordMidi")]
     measured_count += _run_crepe_verdicts(
         aligned, crepe_items, signal, rate, pitch_tolerance_cents)
+    if has_chords:
+        _was = sum(n.get("pitchErrorCents") is not None for n in aligned if n.get("chordMidi"))
+        _score_chord_tones(aligned, signal, rate, _bp_note_activation(signal, rate), pitch_tolerance_cents)
+        measured_count += sum(n.get("pitchErrorCents") is not None for n in aligned if n.get("chordMidi")) - _was
     # 动态剔除极端音 (门控见 _drop_player_outliers); 音准分按剔除后重建,
     # dropped/octave/outlier 一律不计入。
     # 对齐全部定型后才核对目标音: 只改评分, 不回灌速度趋势/CREPE 登记 (见 _verify_targets)。
@@ -2061,8 +2146,7 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                     if n.get("pitchStatus") in ("sharp", "flat", "correct")]
     # 逐音权重 (归因 + 偏差 + 稳定度); >600¢ 仍为 0。覆盖率/补救门槛/匹配率仍用全部可判音。
     _assign_pitch_weights(aligned)
-    weighted = [(abs(float(n["pitchErrorCents"])), n["pitchWeight"]) for n in aligned
-                if n.get("pitchWeight", 0) > 0 and n.get("pitchStatus") in ("sharp", "flat", "correct")]
+    weighted = _pitch_items(aligned)  # 和弦音逐音计
     # 不将不可判断的音符作为正确或错误；节奏得分只在至少三个起音可匹配时给出。
     pitch_score = None
     pitch_gate_score = None
@@ -2193,6 +2277,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "scoredPitchNotes": len(pitch_errors),
                         "correctPitchNotes": correct_pitch_notes, "wrongPitchNotes": wrong_pitch_notes,
                         "octaveUncertainNotes": octave_uncertain_notes,
+                        **({"chordTones": {state: sum(t["state"] == state for n in aligned for t in n.get("chordTones") or [])
+                                           for state in ("measured", "missing", "unchecked", "inseparable", "unmeasured")}}
+                           if has_chords else {}),
                         "rhythmScore": rhythm_score, "timingAccuracyScore": timing_accuracy_score,
                         "rhythmStabilityScore": rhythm_stability_score,
                         "timingOffsetMs": timing_offset, "timingSpreadMs": rhythm_spread,
