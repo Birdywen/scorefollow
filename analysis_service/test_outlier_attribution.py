@@ -1,55 +1,91 @@
+import math
 import unittest
 
 import numpy as np
 
-from .engine import attribute_outlier, pitch_weight, _assign_pitch_weights
+from .engine import verify_target, pitch_weight, _assign_pitch_weights
+
+RATE = 22050
 
 
-class OutlierAttributionTest(unittest.TestCase):
-    def test_small_error_not_suspect(self):
-        self.assertIsNone(attribute_outlier(120.0, 60.0, 59.0, None))
+def tone(*midis, sec=0.4, odd_only=False, amps=(1.0, 0.7, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15)):
+    """Harmonic tone(s), 8 partials each; a little noise so the floor is realistic."""
+    t = np.arange(int(sec * RATE)) / RATE
+    x = np.zeros_like(t)
+    for m in midis:
+        f = 440 * 2 ** ((m - 69) / 12)
+        for k, a in enumerate(amps, start=1):
+            if f * k < RATE / 2 and not (odd_only and k % 2 == 0):
+                x += a * np.sin(2 * math.pi * f * k * t)
+    rng = np.random.default_rng(0)
+    return (0.2 * x / np.max(np.abs(x)) + 1e-4 * rng.standard_normal(len(t))).astype(np.float32)
+
+
+def check(sig, target, detected):
+    return verify_target(sig, RATE, 0.0, len(sig) / RATE, target, detected)
+
+
+class VerifyTargetTest(unittest.TestCase):
+    def test_tracker_picked_octave_harmonic(self):
+        v = check(tone(48), 48, 60)  # played C3, tracker read C4
+        self.assertEqual(v["check"], "confirmed")
+        self.assertAlmostEqual(v["recovered"][1], 0.0, delta=5)
+
+    def test_tracker_picked_twelfth(self):
+        v = check(tone(50), 50, 69)  # 3rd partial of D3
+        self.assertEqual(v["check"], "confirmed")
+
+    def test_tracker_subharmonic(self):
+        v = check(tone(57), 57, 45)
+        self.assertEqual(v["check"], "confirmed")
+
+    def test_really_played_octave_high(self):
+        self.assertEqual(check(tone(60), 48, 60)["check"], "wrong-note")
+
+    def test_really_played_octave_low(self):
+        self.assertEqual(check(tone(45), 57, 45)["check"], "wrong-note")
+
+    def test_really_played_wrong_note(self):
+        v = check(tone(64), 60, 64)
+        self.assertEqual(v["check"], "wrong-note")
+        self.assertIsNone(v["recovered"])
+
+    def test_caught_string_keeps_target_intonation(self):
+        sig = tone(55.2, 50)  # target G3 played 20c sharp, open D rings
+        v = check(sig, 55, 50)
+        self.assertEqual(v["check"], "two-series")
+        self.assertAlmostEqual(v["recovered"][1], 20.0, delta=6)
+
+    def test_faint_target_residual_is_wrong_note(self):
+        t = tone(60)
+        sig = t + 0.03 * tone(55)  # wrong note E4-ish played, faint target G3 reverb
+        v = check(sig.astype(np.float32), 55, 60)
+        self.assertEqual(v["check"], "wrong-note")
+        self.assertLess(v["margin"], -10)
+
+    def test_twelfth_beyond_six_partials_still_shared(self):
+        v = check(tone(48), 48, 67)  # tracker on 3rd partial; its 4th-6th exceed target's 6
+        self.assertEqual(v["check"], "confirmed")
+
+    def test_noise_is_unclear(self):
+        sig = (0.05 * np.random.default_rng(1).standard_normal(int(0.4 * RATE))).astype(np.float32)
+        self.assertEqual(check(sig, 60, 66)["check"], "unclear")
+
+    def test_short_window_skipped(self):
+        self.assertIsNone(verify_target(tone(60), RATE, 0.0, 0.03, 60, 64))
+
+
+class PitchWeightTest(unittest.TestCase):
+    def test_weights(self):
         self.assertEqual(pitch_weight(120.0), 1.0)
-
-    def test_mixed_window_recovers_target_cluster(self):
-        frames = np.array([62.0, 62.0, 60.02, 60.0, 59.98, 60.01])
-        a = attribute_outlier(200.0, 62.0, 60.0, frames)
-        self.assertEqual(a["cause"], "mixed-window")
-        self.assertAlmostEqual(a["recovered"][1], 0.0, delta=3)
-
-    def test_carryover_and_anticipation_downweighted(self):
-        frames = np.array([65.0, 65.0, 65.0, 62.5, 63.0, 61.5])
-        a = attribute_outlier(500.0, 65.0, 60.0, frames, prev_midi=65.0, next_midi=67.0)
-        self.assertEqual(a["cause"], "carryover-prev")
-        self.assertEqual(pitch_weight(500.0, a["cause"], a["stability"], 1.0), 0.25)
-        b = attribute_outlier(700.0, 67.0, 60.0, np.array([67.0, 67.0, 67.0, 64.0, 64.5, 63.8]),
-                              prev_midi=62.0, next_midi=67.0)
-        self.assertEqual(b["cause"], "anticipation-next")
-
-    def test_stable_neighbor_pitch_is_wrong_note_not_carryover(self):
-        a = attribute_outlier(500.0, 65.0, 60.0, np.full(6, 65.0), prev_midi=65.0)
-        self.assertIsNone(a["cause"])
-        self.assertEqual(pitch_weight(500.0, a["cause"], a["stability"], 1.0), 1.0)
-
-    def test_open_string_ring(self):
-        a = attribute_outlier(-500.0, 50.0, 55.0, np.array([50.0, 50.0, 50.0, 53.0, 52.5, 53.5]),
-                              prev_midi=57.0, next_midi=57.0)
-        self.assertEqual(a["cause"], "open-string-ring")
-        self.assertEqual(pitch_weight(-500.0, a["cause"]), 0.5)
-
-    def test_stable_confident_unexplained_is_real_wrong_note(self):
-        a = attribute_outlier(400.0, 64.0, 60.0, np.full(8, 64.0), prev_midi=62.0, next_midi=62.0)
-        self.assertIsNone(a["cause"])
-        self.assertEqual(pitch_weight(400.0, None, a["stability"], 0.95), 1.0)
-
-    def test_unstable_unexplained_decays_with_floor(self):
-        self.assertEqual(pitch_weight(375.0, None, 0.3, 0.8), 0.5)
-        self.assertEqual(pitch_weight(590.0, None, 0.3, 0.8), 0.3)
-        self.assertEqual(pitch_weight(650.0, None, 0.3, 0.8), 0.0)
+        self.assertEqual(pitch_weight(400.0, "wrong-note"), 1.0)
+        self.assertEqual(pitch_weight(375.0, "unclear"), 0.5)
+        self.assertEqual(pitch_weight(590.0), 0.3)
+        self.assertEqual(pitch_weight(650.0, "wrong-note"), 0.0)
 
     def test_assign_marks_excluded_only_at_zero(self):
-        notes = [{"pitchStatus": "sharp", "pitchErrorCents": 700.0, "confidence": 1.0},
-                 {"pitchStatus": "sharp", "pitchErrorCents": 300.0, "confidence": 0.8,
-                  "windowStability": 0.2},
+        notes = [{"pitchStatus": "sharp", "pitchErrorCents": 700.0},
+                 {"pitchStatus": "sharp", "pitchErrorCents": 300.0, "targetCheck": "unclear"},
                  {"pitchStatus": "uncertain", "pitchErrorCents": None}]
         _assign_pitch_weights(notes)
         self.assertTrue(notes[0]["pitchExcluded"])
