@@ -95,13 +95,18 @@ export function validateTakeSync(firstBeatAudioSec: number | null): string | nul
 }
 
 // IndexedDB blob store: metadata lives in React state, audio lives here.
+// v2 adds "results": the last completed analysis per take (key = take id), so a
+// report and "follow with this take" survive reloads and the server's 1-hour TTL.
 const DB = "scorefollow-practice";
 const STORE = "takes";
+const RESULTS = "results";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => { req.result.createObjectStore(STORE); };
+    const req = indexedDB.open(DB, 2);
+    req.onupgradeneeded = () => {
+      for (const name of [STORE, RESULTS]) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name);
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -139,10 +144,41 @@ export async function deleteTakeBlob(id: string): Promise<void> {
   const db = await openDb();
   try {
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, "readwrite");
+      const tx = db.transaction([STORE, RESULTS], "readwrite");
       tx.objectStore(STORE).delete(id);
+      tx.objectStore(RESULTS).delete(id);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export type SavedResult = { signature: string; result: unknown; savedAt: number };
+
+export async function saveTakeResult(id: string, saved: SavedResult): Promise<void> {
+  const db = await openDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(RESULTS, "readwrite");
+      tx.objectStore(RESULTS).put(saved, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export async function loadTakeResult(id: string): Promise<SavedResult | null> {
+  const db = await openDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(RESULTS, "readonly");
+      const req = tx.objectStore(RESULTS).get(id);
+      req.onsuccess = () => resolve((req.result as SavedResult) ?? null);
+      req.onerror = () => reject(req.error);
     });
   } finally {
     db.close();

@@ -6,8 +6,8 @@ import ScorePreviewDialog from "./ScorePreviewDialog";
 import ReportDialog from "./ReportDialog";
 import styles from "./performance.module.css";
 import {
-  attachRecordingStart, createSession, deleteTakeBlob, loadTakeBlob, measureAndBeatAt,
-  saveTakeBlob, validateTakeSync, type PracticeSession,
+  attachRecordingStart, createSession, deleteTakeBlob, loadTakeBlob, loadTakeResult, measureAndBeatAt,
+  saveTakeBlob, saveTakeResult, validateTakeSync, type PracticeSession,
 } from "@/lib/practice-sync";
 import { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
 import ReportDashboard from "./ReportDashboard";
@@ -73,7 +73,7 @@ const LOCAL_API = "http://127.0.0.1:8765";
 // 与 next.config.ts basePath 保持同步；root 构建时由 NEXT_PUBLIC_SF_BASE="" 覆盖
 const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
 const TAKES_KEY = "sf-takes-meta-v1";
-const MAX_TAKES = 3;
+const MAX_TAKES = 10;
 // Keep browser recordings below this page's 180-second conversion limit.
 const MAX_RECORDING_MS = 179_500;
 
@@ -142,8 +142,8 @@ function takeId(): string {
   return `t-${Date.now()}-${Math.floor(Math.random() * 1e9).toString(36)}`;
 }
 
-// Session-scoped analysis cache (in-memory only, per panel mount): never
-// localStorage, never raw audio blobs — only validated completed Results keyed
+// In-memory analysis cache (seeded on mount from the per-take results saved in
+// IndexedDB; never localStorage, never raw audio blobs) — validated completed Results keyed
 // by a signature of MusicXML content + audio/take identity + instrument + BPM
 // + start measure + sync mode/data. A result is reused only when every input
 // matches, so different takes or settings always re-submit. Failed results are
@@ -299,6 +299,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     const ctx = jobTakeRef.current;
     if (!ctx || !alive.current) return;
     try { analysisCache.current.set(ctx.signature, hookResult); } catch { /* cache failures must not break analysis */ }
+    void saveTakeResult(ctx.takeId, { signature: ctx.signature, result: hookResult, savedAt: Date.now() }).catch(() => undefined);
     try { analysisInflight.current.delete(ctx.signature); } catch { /* ignore */ }
     jobTakeRef.current = null;
     setError("");
@@ -380,7 +381,13 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         const restored: Take[] = [];
         for (const m of meta.slice(0, MAX_TAKES)) {
           const blob = await loadTakeBlob(m.id).catch(() => null);
-          restored.push({ ...m, blob, url: blob ? URL.createObjectURL(blob) : "" });
+          // Saved report comes back only if it still passes the same guard as a fresh one.
+          const saved = await loadTakeResult(m.id).catch(() => null);
+          const result = saved && isValidAnalysisResult(saved.result) ? saved.result as Result : undefined;
+          if (result && saved) analysisCache.current.set(saved.signature, result);
+          // Without a result, an old in-flight/completed chip would be stale after reload.
+          const jobStatus = result ? "completed" : m.jobStatus && ["failed", "timed_out", "cancelled"].includes(m.jobStatus) ? m.jobStatus : undefined;
+          restored.push({ ...m, blob, url: blob ? URL.createObjectURL(blob) : "", result, jobStatus });
         }
         if (alive.current && restored.length) {
           setTakes(restored);
