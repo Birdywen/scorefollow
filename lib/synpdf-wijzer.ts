@@ -10,6 +10,8 @@ import type { PageAnalysis } from "./synpdf-core";
 export interface MeasureRect { x: number; y: number; w: number; h: number; }
 export interface TimeEntry { t: number; mix: number; }
 export interface CursorRect { x: number; y: number; w: number; h: number; measure: number; }
+/** 录音里实测的起音: frac = 在小节内的位置(0..1, 按谱面拍位), t = 实测秒 */
+export interface Onset { frac: number; t: number; }
 
 const TOFF = 0.01;
 
@@ -35,6 +37,8 @@ export function buildMeasures(a: PageAnalysis): MeasureRect[] {
 export class Wijzer {
   measures: MeasureRect[] = [];
   times: TimeEntry[] = [];
+  /** mix → 该小节实测起音(走谱时由分析结果给出); 有则点击/方向键落到真实起音上 */
+  onsets = new Map<number, Onset[]>();
   cursor: CursorRect | null = null;
   loopStart = 0;
   loopEnd = 0;
@@ -43,6 +47,7 @@ export class Wijzer {
   reset(a: PageAnalysis): void {
     this.measures = buildMeasures(a);
     this.times = [];
+    this.onsets = new Map();
     this.cursor = null;
   }
 
@@ -96,11 +101,14 @@ export class Wijzer {
       const e = this.measures[d];
       if (y > e.y + e.h || y < e.y || x > e.x + e.w) continue;
       if (x < e.x) return null;
+      const frac = (x - e.x) / e.w;
+      const near = this.nearestOnset(d, frac);
+      if (near) return { t: near.t, measure: d };
       for (let b = 0; b < this.times.length; b++) {
         if (d === this.times[b].mix) {
           const t0 = this.times[b].t;
           const t1 = b + 1 < this.times.length ? this.times[b + 1].t : t0 + 2;
-          return { t: t0 + (t1 - t0) * ((x - e.x) / e.w) + TOFF, measure: d };
+          return { t: t0 + (t1 - t0) * frac + TOFF, measure: d };
         }
       }
       return { t: TOFF, measure: d };
@@ -118,11 +126,22 @@ export class Wijzer {
     ix += dir;
     if (ix < 0) ix = this.times.length - 1;
     if (ix >= this.times.length) ix = 0;
-    return this.times[ix].t + TOFF;
+    const down = this.onsets.get(this.times[ix].mix)?.[0];
+    return down && down.frac < 0.05 ? down.t : this.times[ix].t + TOFF;
+  }
+
+  /** 小节 d 内离点击位置 frac 最近的实测起音 */
+  nearestOnset(d: number, frac: number): Onset | null {
+    let best: Onset | null = null;
+    for (const o of this.onsets.get(d) ?? []) {
+      if (!best || Math.abs(o.frac - frac) < Math.abs(best.frac - frac)) best = o;
+    }
+    return best;
   }
 
   /** TAP 建图: 在当前播放时刻打一个小节起点 */
   tap(t: number): TimeEntry {
+    if (!this.times.length) this.onsets = new Map();
     const e = { t: Math.round(1e3 * t) / 1e3, mix: this.times.length };
     if (e.mix >= this.measures.length) e.mix = this.measures.length - 1;
     this.times.push(e);
@@ -130,8 +149,9 @@ export class Wijzer {
   }
 
   /** 载入 timing JSON(等价 preload 的 times_arr) */
-  loadTimes(times: TimeEntry[]): void {
+  loadTimes(times: TimeEntry[], onsets?: Map<number, Onset[]>): void {
     this.times = times.map((e) => ({ t: 1 * e.t, mix: 1 * e.mix }));
+    this.onsets = onsets ?? new Map();
   }
 
   /** 原版 knip: 小节比同步点多时按 +2s 补齐, 点击/方向键无需先 TAP */

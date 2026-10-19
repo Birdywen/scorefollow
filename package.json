@@ -12,7 +12,8 @@
     "analysis-test": "python3 -B -m unittest discover -s analysis_service -t .",
     "practice-sync": "node scripts/practice-sync-regression.mjs",
     "analysis-guard": "node scripts/analysis-guard-regression.mjs",
-    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run practice-sync && npm run analysis-test && npm run build"
+    "follow-anchors": "node scripts/follow-anchors-regression.mjs",
+    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run practice-sync && npm run follow-anchors && npm run analysis-test && npm run build"
   },
   "dependencies": {
     "next": "16.3.5",

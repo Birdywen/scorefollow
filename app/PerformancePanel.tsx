@@ -17,6 +17,7 @@ import { useAnalysisJob } from "./hooks/useAnalysisJob";
 import ScorePreflight from "./ScorePreflight";
 import AnalysisQuality, { type Quality } from "./AnalysisQuality";
 import { inspectScoreXml, midiName, preflightMessage } from "@/lib/analysis-preflight";
+import { followAnchors, type FollowOnset } from "@/lib/follow-anchors";
 
 type Note = {
   id: string; measure: number; pitchMidi: number; expectedSec: number;
@@ -207,7 +208,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   onJump: (measure: number) => void; onClose: () => void;
   getSyncedAudio?: () => SyncedAudio | null;
   onApplyMeasureSync?: (markers: { measure: number; audioSec: number }[]) => string | null;
-  onFollowTake?: (take: { name: string; url: string; starts: { measure: number; startSec: number }[] }) => string | { warning: string } | null;
+  onFollowTake?: (take: { name: string; url: string; starts: { measure: number; startSec: number }[]; onsets?: FollowOnset[] }) => string | { warning: string } | null;
 }) {
   const [api, setApi] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -859,7 +860,8 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const canFollow = Boolean(selected?.blob && (result?.measureIntervals?.length ?? 0) > 1 && onFollowTake);
   function followTake(): boolean {
     if (!selected || !result || !onFollowTake) return false;
-    const res = onFollowTake({ name: selected.name, url: selected.url, starts: (result.measureIntervals ?? []).map((m) => ({ measure: m.measure, startSec: m.startSec })) });
+    const anchors = followAnchors(result.measureIntervals ?? [], result.notes, result.syncSuggestion?.appliedOffsetSec ?? 0);
+    const res = onFollowTake({ name: selected.name, url: selected.url, ...anchors });
     if (typeof res === "string") { setError(res); setSyncMsg(""); setSyncWarn(false); return false; }
     setError("");
     const measureCount = result.summary.measureCount ?? 0;

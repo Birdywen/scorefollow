@@ -3712,7 +3712,7 @@ export default function ScoreFollowPage() {
             setTapCount(entries.length);
             return null;
           }}
-          onFollowTake={({ name, url, starts }) => {
+          onFollowTake={({ name, url, starts, onsets }) => {
             const w = wijzerRef.current;
             if (!w.measures.length) return lang === "zh" ? "谱面尚未分析出小节" : "Score measures not analyzed yet";
             const entries = (starts ?? [])
@@ -3723,11 +3723,18 @@ export default function ScoreFollowPage() {
             for (let i = 1; i < entries.length; i++) {
               if (!(entries[i].t > entries[i - 1].t)) return lang === "zh" ? "小节起点时间不递增" : "Measure starts are not increasing";
             }
+            // Clicks land on the take's measured onsets (exact played time, no lead).
+            const onsetMap = new Map<number, { frac: number; t: number }[]>();
+            for (const o of onsets ?? []) {
+              const mix = o.measure - 1;
+              if (!Number.isFinite(o.sec) || !Number.isFinite(o.frac) || mix < 0 || mix >= w.measures.length) continue;
+              onsetMap.set(mix, [...(onsetMap.get(mix) ?? []), { frac: o.frac, t: o.sec }].sort((a, b) => a.frac - b.frac));
+            }
             setMediaURL(url);
             setMediaName(name);
             setMediaKind("audio");
             parkLegacyShade();
-            w.loadTimes(entries);
+            w.loadTimes(entries, onsetMap);
             setTapCount(entries.length);
             if (!showCursor) return { warning: lang === "zh"
               ? "光标覆盖层已关闭，播放时看不到蓝色阴影：请在“面板”工作台打开“光标”，或关闭“干净视图”"
