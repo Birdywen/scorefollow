@@ -19,9 +19,10 @@ from .engine import read_wav
 from .piano_align import align, smooth_map
 from .piano_audio import Spectra, StrikeModel, blind_tuning, measure_tuning, retune, wav_bytes
 from .piano_score import has_repeats, parse_piano_score
+from .score_trust import SYMPTOM_TEXT, assess, note_doubt, second_witness
 from .validation import validate_instrument, validate_bpm
 
-VERSION = "piano-align-0.5"
+VERSION = "piano-align-0.6"
 RETUNE_MIN_CENTS = 12            # a piano this far from A440 is resampled to A440 before transcription
 SHIFT_MARGIN = 1.3               # a semitone-shifted reading must beat the written one by this factor
 HEARD, ABSENT = 0.7, 0.3         # audio verdict thresholds on P(key struck)
@@ -36,6 +37,7 @@ SYSTEMATIC_GAP_MEASURES = 4      # ...with no more than this many measures betwe
 SYSTEMATIC_CONSISTENCY = 0.7     # a lost accidental changes (nearly) every such note in its passage
 SMOOTH_HALF_WINDOW_BEATS = 2.0   # tempo shaping slower than this is rubato, faster is rhythm
 CHORD_UNEVEN_MS = 50             # chord notes spread wider than this sound split
+DOUBT_EXCLUDE = 0.5              # a measure the score is this doubtful about: its disagreements are not scored
 # 5090 transcription service (Tailscale). Override with env; old public IP is dead (CGNAT).
 PIANO_API_URL = os.environ.get("PIANO_API_URL", "http://100.88.202.126:7777").rstrip("/")
 POLL_TIMEOUT_SEC = 400
@@ -219,8 +221,10 @@ def midi_name(m: int) -> str:
     return f"{PC_NAMES[m % 12]}{m // 12 - 1}"
 
 
-def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf: list | None = None) -> dict:
-    """start_measure 0 = locate the excerpt automatically. perf: pre-transcribed events (tests/benchmarks)."""
+def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf: list | None = None,
+                  second_xml: str | None = None, trust: bool = True) -> dict:
+    """start_measure 0 = locate the excerpt automatically. perf: pre-transcribed events (tests/benchmarks).
+    second_xml: an independent OMR reading of the same page. trust=False ignores score doubt (benchmarks)."""
     validate_instrument("piano", ["piano"])
     validate_bpm(bpm, 30, 200)
     signal, rate = read_wav(wav)
@@ -242,6 +246,10 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
     if not scope:
         raise ValueError("录音与谱面对不上：没有匹配到谱面音符")
     match, wrong = dict(r["match"]), dict(r["wrong"])
+    # How far each measure of the score can be trusted, from the score alone and a second reading.
+    trust_map = assess(xml, second_xml, parse=parse_piano_score) if trust else {}
+    doubt_of = lambda m: trust_map[m]["doubt"] if m in trust_map else 0.0
+    wit = second_witness(xml, second_xml, parse=parse_piano_score) if trust else {}
     smooth = smooth_map(r["tempo"], SMOOTH_HALF_WINDOW_BEATS)
     on_arr = np.array([e[0] for e in perf])
     pitch_arr = np.array([int(round(e[2])) for e in perf])
@@ -287,9 +295,13 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
         m = int(pitch_arr[j])
         if j in used or not lo_t <= on <= hi_t or any(0 < on - t < 0.1 for t in by_pitch_used[m]):
             continue
-        p, label = _check(model, m, on, masked(m, on))
+        hidden = masked(m, on)
+        p, label = _check(model, m, on, hidden)
         weight = 0.0 if label == "absent" else 1.0 if label in ("heard", "unchecked") else p
-        extras.append({"j": j, "t": on, "midi": m, "p": p, "label": label, "weight": weight})
+        # Every partial of this key is a partial of a lower key sounding with it: the audio cannot tell
+        # a struck key from the transcriber hearing an overtone, and adding an octave is a rare mistake.
+        extras.append({"j": j, "t": on, "midi": m, "p": p, "label": label, "weight": weight,
+                       "overtone": hidden and label != "absent"})
 
     # --- Timeline per measure from the smoothed tempo map.
     lo_beat, hi_beat = notes[scope[0]]["onsetBeat"], notes[scope[-1]]["onsetBeat"]
@@ -443,6 +455,42 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
                                    f"多半是谱面识别漏掉了这个和弦音；这些不算多音。",
                              "en": f"m{_ranges(ms)}: {midi_name(m)} is added to the written chords {len(xs)} times. The score "
                                    f"likely lost this chord tone; not counted as extra notes."})
+    # Measures the score itself is doubtful about (its structure, or a second reading disagrees): their
+    # disagreements count only as far as the score is trusted, and not at all above DOUBT_EXCLUDE.
+    # Per disagreement, a second reading refines the measure's doubt: agreeing with the written key, the
+    # player decides; siding with the take, the score is at fault.
+    doubtful_hits, hit_reasons, note_d = defaultdict(int), set(), {}
+    for k in scope:
+        if k in excluded or k not in verdict or verdict[k]["label"] == "heard":
+            continue
+        m = notes[k]["measure"]
+        played = int(pitch_arr[wrong[k]]) if k in wrong else None
+        d, why = note_doubt(doubt_of(m), wit.get(m), "wrong" if k in wrong else "missed", notes[k]["pitchMidi"], played)
+        note_d[k] = d
+        if d >= DOUBT_EXCLUDE:
+            excluded[k] = "score_doubtful"
+            doubtful_hits[m] += 1
+            hit_reasons.update(trust_map[m]["reasons"] if m in trust_map and why != "contradicted" else [])
+            hit_reasons.update(["reading_sides_with_take"] if why == "contradicted" else [])
+    for x in extras:
+        m = measure_at(x["t"])
+        if m is None or x.get("scoreMissing") or x["overtone"] or x["label"] == "absent":
+            continue
+        x["doubt"], why = note_doubt(doubt_of(m), wit.get(m), "extra", played=x["midi"])
+        if x["doubt"] >= DOUBT_EXCLUDE:
+            x["scoreDoubt"] = True
+            doubtful_hits[m] += 1
+            hit_reasons.update(trust_map[m]["reasons"] if m in trust_map and why != "contradicted" else [])
+            hit_reasons.update(["reading_sides_with_take"] if why == "contradicted" else [])
+    if doubtful_hits:
+        ms = sorted(doubtful_hits)
+        reasons = sorted(hit_reasons - {"reading_disagrees"}) or sorted(hit_reasons)
+        hits = sum(doubtful_hits.values())
+        evidence.append({"kind": "score_doubtful", "measures": ms, "count": hits, "reasons": reasons,
+                         "zh": f"第 {_ranges(ms)} 小节：谱面本身有疑点（{'；'.join(SYMPTOM_TEXT[w][0] for w in reasons)}），"
+                               f"这些小节里录音与谱面的 {hits} 处不一致不计为错误。",
+                         "en": f"m{_ranges(ms)}: the score itself is doubtful here ({'; '.join(SYMPTOM_TEXT[w][1] for w in reasons)}); "
+                               f"{hits} disagreements with the take are not counted as mistakes."})
     excluded_spans = {span_of[k] for k, why in excluded.items() if why == "region"}
     excluded_secs = [span_secs[si] for si in excluded_spans if si in span_secs]
 
@@ -499,11 +547,14 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
     def in_excluded_time(t):
         return any(a <= t < b for a, b in excluded_secs)
 
-    counted_extras = [x for x in extras if not in_excluded_time(x["t"]) and not x.get("scoreMissing")]
+    counted_extras = [x for x in extras if not in_excluded_time(x["t"]) and not x.get("scoreMissing")
+                      and not x.get("scoreDoubt") and not x["overtone"]]
     n_notes = len(pitch_notes)
-    err_missed = sum(verdict[k]["weight"] for k in pitch_notes if k in verdict and k not in wrong)
-    err_wrong = sum(verdict[k]["weight"] for k in pitch_notes if k in wrong)
-    err_extra = sum(x["weight"] for x in counted_extras)
+    # A disagreement is the player's mistake only as far as the score is trusted in its measure.
+    trusted = lambda k: 1.0 - note_d.get(k, doubt_of(notes[k]["measure"]))
+    err_missed = sum(verdict[k]["weight"] * trusted(k) for k in pitch_notes if k in verdict and k not in wrong)
+    err_wrong = sum(verdict[k]["weight"] * trusted(k) for k in pitch_notes if k in wrong)
+    err_extra = sum(x["weight"] * (1.0 - x.get("doubt", 0.0)) for x in counted_extras)
     good = n_notes - err_missed - err_wrong
     performed_w = good + err_wrong + err_extra
     pitch_score = None if pitch_refused else round(200 * good / max(1e-9, n_notes + performed_w))
@@ -603,9 +654,13 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
     def status_of(refused, partial):
         return "refused" if refused else "partial" if partial else "ok"
 
+    scoped_set = set(scoped_measures)
     score_check = {"pitch": status_of(pitch_refused, bool(excluded)),
                    "rhythm": status_of(rhythm_refused, bool(bad_len_measures)),
-                   "excludedNotes": len(excluded), "evidence": evidence}
+                   "excludedNotes": len(excluded), "evidence": evidence,
+                   "secondReading": bool(second_xml) and trust,
+                   "doubtfulMeasures": sorted(m for m in trust_map if m in scoped_set and doubt_of(m) >= DOUBT_EXCLUDE),
+                   "scoredShare": round(1 - len(excluded) / len(scope), 3)}
     measure_count = max((n["measure"] for n in notes), default=0)  # OMR may append empty measures
     voiced = correct + wrong_n
     return {"version": VERSION, "instrument": "piano", "bpm": bpm, "mode": "note-aligned-polyphonic",
@@ -643,7 +698,8 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
             "extras": [{"sec": round(x["t"], 3), "midi": x["midi"], "measure": measure_at(x["t"]),
                         "counted": x in counted_extras and x["label"] != "absent",
                         "reason": "score_missing" if x.get("scoreMissing") else "excluded_measure" if in_excluded_time(x["t"])
-                        else "ghost" if x["label"] == "absent" else None,
+                        else "ghost" if x["label"] == "absent" else "overtone" if x["overtone"]
+                        else "score_doubtful" if x.get("scoreDoubt") else None,
                         "audioCheck": {"result": x["label"], "p": None if x["p"] is None else round(x["p"], 2)}}
                        for x in extras][:300],
             "limitations": ["仅支持独奏钢琴。音高分为按证据加权的音符 F1：转录与谱面不一致时回到频谱核实，"

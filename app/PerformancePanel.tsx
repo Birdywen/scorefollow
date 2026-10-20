@@ -67,7 +67,9 @@ type Result = {
     uncertainNotes?: number; audioRescuedNotes?: number; ghostExtras?: number;
     audioCheck?: { available: boolean };
     scoreCheck?: { pitch: "ok" | "partial" | "refused"; rhythm: "ok" | "partial" | "refused"; excludedNotes: number;
-      evidence: { kind: string; measures: number[]; zh: string; en: string }[] };
+      evidence: { kind: string; measures: number[]; zh: string; en: string }[];
+      // piano-align-0.6: per-measure score trust
+      secondReading?: boolean; doubtfulMeasures?: number[]; scoredShare?: number };
     tuning?: { offsetCents: number; referenceHz: number; stretchCentsPerOctave: number | null; spreadCents: number | null;
       measuredKeys: number; outOfTuneKeys: { midi: number; cents: number; strikes: number }[]; tuningScore: number | null;
       retunedForTranscription: boolean; semitoneShift: number } };
@@ -102,6 +104,9 @@ function PianoDetails({ result, zh }: { result: Result; zh: boolean }) {
         : `Score check: ${check.pitch === "refused" ? "pitch not scored" : check.pitch === "partial" ? `${check.excludedNotes} notes left out of pitch` : "pitch scored"}; ${check.rhythm === "refused" ? "rhythm not scored" : check.rhythm === "partial" ? "some measures left out of rhythm" : "rhythm scored"}. Evidence:`}</p>
       <ul>{check.evidence.map((e, i) => <li key={`${e.kind}:${i}`}>{zh ? e.zh : e.en}</li>)}</ul>
     </div>}
+    {check?.scoredShare != null && <p>{zh
+      ? `谱面可信度：${check.secondReading ? "已与第二次独立识别逐小节比对，并做了谱面结构检查" : "做了谱面结构检查（没有第二次识别可比对）"}；本次评分覆盖 ${Math.round(check.scoredShare * 100)}% 的音符。`
+      : `Score trust: ${check.secondReading ? "compared measure by measure with a second, independent reading, plus structure checks" : "structure checks only (no second reading to compare)"}; ${Math.round(check.scoredShare * 100)}% of the notes were scored.`}</p>}
     {s.audioCheck?.available && <p>{zh
       ? `频谱核实：${s.audioRescuedNotes ?? 0} 个转录漏掉的音在录音中确认弹了（不扣分），${s.ghostExtras ?? 0} 个转录误报的音已剔除，${s.uncertainNotes ?? 0} 个拿不准（按把握程度部分计分）。`
       : `Audio check: ${s.audioRescuedNotes ?? 0} notes the transcriber missed were confirmed in the recording (no penalty), ${s.ghostExtras ?? 0} transcriber ghosts dropped, ${s.uncertainNotes ?? 0} uncertain (partly counted).`}</p>}

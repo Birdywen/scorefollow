@@ -21,6 +21,7 @@ from . import vamp_features
 from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score, read_wav, validate_measure_sync
 from .piano_score import parse_piano_score
 from .omr import MAX_PDF, recognize
+from . import second_reading
 from .quality import QUALITY_VERSION, assess_quality
 from .engine import VERSION as STRING_VERSION, crepe_backend
 from .job_store import JobStore, QueueFull, TERMINAL
@@ -67,7 +68,7 @@ def fail_job(job_id: str, change: dict) -> None:
 
 def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_measure: int,
         first_beat_audio_sec: float | None = None, sync_mode: str = "legacy", measure_sync=None,
-        pitch_tolerance_cents: float = 25.0) -> None:
+        pitch_tolerance_cents: float = 25.0, second_xml: str | None = None) -> None:
     started = time.monotonic()
     parameters = json.dumps([bpm, instrument, start_measure, first_beat_audio_sec,
                              sync_mode, measure_sync, pitch_tolerance_cents], sort_keys=True)
@@ -82,7 +83,7 @@ def run(job_id: str, audio: bytes, xml: str, bpm: float, instrument: str, start_
             update_job(job_id, {"stage": stage})
             # 钢琴走独立复音通道: 转录即传感器, 不经过单声部 FFT 管道
             from .piano_engine import analyze_piano
-            result = analyze_piano(audio, xml, bpm, start_measure)
+            result = analyze_piano(audio, xml, bpm, start_measure, second_xml=second_xml)
             # Piano does not depend on vamp plugins; report no vamp degradation.
             summary = result.get("summary", {})
             summary.setdefault("degraded", False)
@@ -137,6 +138,8 @@ def run_omr(job_id: str, pdf: bytes, filename: str, rest_beats: int | None) -> N
     try:
         update_job(job_id, {"status": "uploading", "stage": "uploading"})
         result = recognize(pdf, filename, rest_beats, update)
+        # An independent reading of the same page, for per-measure score trust (piano analysis).
+        result["secondReading"] = "started" if second_reading.start(pdf, result["musicXml"]) else "unavailable"
         change = {"status": "completed", "stage": "completed", "progress": 100, "result": result,
                   "finishedAt": time.time()}
         update_job(job_id, change)
@@ -265,16 +268,20 @@ class Handler(BaseHTTPRequestHandler):
                         version = "omr-adapter-1"
                     else:
                         from .piano_engine import VERSION as PIANO_VERSION
+                        second_xml = second_reading.lookup(xml) if instrument == "piano" else None
                         inputs = {"audio.wav": audio, "score.musicxml": xml.encode()}
                         parameters = {"bpm": bpm, "instrument": instrument, "startMeasure": start_measure,
                                       "firstBeatAudioSec": float(first_beat) if first_beat is not None else None,
                                       "syncMode": sync_mode, "measureSync": measure_sync,
                                       "pitchToleranceCents": float(pitch_tolerance_cents)}
+                        if second_xml:  # only then: unchanged keys keep earlier jobs' dedupe and retry lineage
+                            parameters["secondReading"] = hashlib.sha256(second_xml.encode()).hexdigest()[:16]
                         version = [PIANO_VERSION if instrument == "piano" else STRING_VERSION, QUALITY_VERSION]
                     job, created = job_store.submit(kind, inputs, parameters, version, ttl=TTL)
                     job_id = job["id"]
                     jobs[job_id] = {key: value for key, value in job.items() if key != "result"}
                 else:
+                    second_xml = second_reading.lookup(xml) if kind == "analysis" and instrument == "piano" else None
                     if sum(j["status"] not in TERMINAL for j in jobs.values()) >= 4:
                         raise QueueFull()
                     job_id, created = uuid4().hex, True
@@ -285,7 +292,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     pool.submit(run, job_id, audio, xml, bpm, instrument, start_measure,
                                 float(first_beat) if first_beat is not None else None, sync_mode, measure_sync,
-                                float(pitch_tolerance_cents))
+                                float(pitch_tolerance_cents), second_xml)
         except QueueFull:
             self.respond(429, {"error": "分析队列已满，请稍后重试"})
             return
@@ -303,7 +310,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path == "/health":
+            from .piano_engine import VERSION as PIANO_VERSION
             self.respond(200, {"status": "ok", "stringAlgorithmVersion": STRING_VERSION,
+                               "pianoAlgorithmVersion": PIANO_VERSION, "secondReading": second_reading.available(),
                                "qualityVersion": QUALITY_VERSION, "crepeBackend": crepe_backend()})
             return
         if not self.authorized():
