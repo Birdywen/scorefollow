@@ -19,6 +19,7 @@ from uuid import uuid4
 
 from . import vamp_features
 from .engine import MAX_FIRST_BEAT_SECONDS, analyze, parse_score, read_wav, validate_measure_sync
+from .piano_score import parse_piano_score
 from .omr import MAX_PDF, recognize
 from .quality import QUALITY_VERSION, assess_quality
 from .engine import VERSION as STRING_VERSION, crepe_backend
@@ -211,9 +212,10 @@ class Handler(BaseHTTPRequestHandler):
                 xml = request["scoreXml"]
                 if not isinstance(xml, str):
                     raise ValueError("请上传 MusicXML")
-                notes = parse_score(xml)
-                bpm = float(request["bpm"])
                 instrument = request["instrument"]
+                # Piano scores are polyphonic (chords, grand staff, repeats): own parser.
+                notes = parse_piano_score(xml) if instrument == "piano" else parse_score(xml)
+                bpm = float(request["bpm"])
                 start_measure = request.get("startMeasure", 1)
                 # Automatic Vamp beat tracking is the normal path. The user BPM
                 # remains the fallback when the optional beat detector is absent.
@@ -225,10 +227,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("pitchToleranceCents 须在 10–50 音分之间")
                 if instrument not in ("violin", "viola", "cello", "piano") or not 30 <= bpm <= 200:
                     raise ValueError("无效的乐器或 BPM")
-                if type(start_measure) is not int or not 0 <= start_measure <= notes[-1]["measure"]:
+                if type(start_measure) is not int or not 0 <= start_measure <= max(n["measure"] for n in notes):
                     raise ValueError("开始小节没有可演奏音符")
-                if start_measure == 0 and (instrument == "piano" or sync_mode == "metronome" or first_beat is not None):
-                    raise ValueError("自动定位仅支持未同步的单声部录音")
+                if start_measure == 0 and (sync_mode == "metronome" or first_beat is not None):
+                    raise ValueError("自动定位仅支持未同步的录音")
                 if sync_mode not in ("legacy", "metronome", "vamp-beat", "manual-measures"):
                     raise ValueError("无效的同步模式")
                 if sync_mode == "manual-measures":

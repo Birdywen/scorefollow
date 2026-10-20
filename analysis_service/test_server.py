@@ -118,7 +118,8 @@ class ApiTests(unittest.TestCase):
                 time.sleep(.05)
             else:
                 self.fail("auto excerpt analysis did not complete")
-        for overrides in ({"instrument": "piano"}, {"syncMode": "metronome", "firstBeatAudioSec": .5}):
+        # piano-align-0.4 locates piano excerpts too; a metronome-synced take still cannot.
+        for overrides in ({"syncMode": "metronome", "firstBeatAudioSec": .5},):
             status, _, result = self.request("POST", "/jobs", {**body, **overrides})
             self.assertEqual(status, 400)
             self.assertIn("自动定位", result["error"])

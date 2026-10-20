@@ -20,7 +20,7 @@ import { inspectScoreXml, midiName, preflightMessage } from "@/lib/analysis-pref
 import { followAnchors, type FollowOnset } from "@/lib/follow-anchors";
 
 type Note = {
-  id: string; measure: number; pitchMidi: number; expectedSec: number;
+  id: string; measure: number; pitchMidi: number; expectedSec: number; playedMidi?: number; staff?: number;
   performedSec: number | null; pitchErrorCents: number | null;
   timingErrorMs: number | null; confidence: number; status: string;
   pitchStatus?: "correct" | "sharp" | "flat" | "uncertain" | "octave" | "outlier";
@@ -56,7 +56,11 @@ type Result = {
     voicedNotes: number; timedNotes: number; confidence: string;
     syncMode?: string; tempoMismatch?: boolean; detectedBpm?: number | null; recordedFirstBeatSec?: number | null; estimatedLatencyMs?: number | null; coveredSec?: number;
     autoLocated?: boolean; locationCost?: number | null;
-    autoMeasureSync?: boolean; octaveShift?: number | null; takeBeyondScoreAfterSec?: number | null; rescueReasons?: string[]; syncAdvice?: string | null; clipped?: boolean };
+    autoMeasureSync?: boolean; octaveShift?: number | null; takeBeyondScoreAfterSec?: number | null; rescueReasons?: string[]; syncAdvice?: string | null; clipped?: boolean;
+    // piano-align-0.4
+    chordCount?: number; chordSpreadMs?: number | null; unevenChords?: number; unevenChordMeasures?: number[];
+    handOffsetMs?: number | null; tempoVariationPct?: number | null; repeatsUnfolded?: boolean;
+    scoreSuspects?: { pitchClass: number; semitones: number; count: number; measures: number[] }[] };
 };
 type Take = {
   measureSync?: MeasureMarker[]; syncScoreXml?: string;
@@ -66,7 +70,34 @@ type Take = {
   blob: Blob | null; url: string;
   jobId?: string; jobStatus?: string; result?: Result; error?: string;
 };
-type OmrResult = { musicXml: string; compatible: boolean; reason?: string | null; noteCount: number; measureCount: number; restoredFirstRest: boolean };
+type OmrResult = { musicXml: string; compatible: boolean; reason?: string | null; noteCount: number; measureCount: number; restoredFirstRest: boolean;
+  pianoCompatible?: boolean; pianoReason?: string | null; pianoNoteCount?: number };
+/** Piano uses the polyphonic parser; older services only report the monophonic check. */
+const omrUsable = (r: OmrResult, instrument: string) => instrument === "piano" ? (r.pianoCompatible ?? r.compatible) : r.compatible;
+/** piano-align-0.4 extras: wrong notes with the played pitch, chord evenness, hands, score suspects. */
+function PianoDetails({ result, zh }: { result: Result; zh: boolean }) {
+  const s = result.summary;
+  const wrong = result.notes.filter((n) => n.status === "wrong_pitch" && n.playedMidi != null);
+  if (s.chordCount == null && !wrong.length) return null;
+  const pc = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+  const hand = s.handOffsetMs;
+  return <div className={styles.hint}>
+    {s.wrongPitchNotes != null && <p>{zh ? `错音 ${s.wrongPitchNotes}` : `Wrong notes ${s.wrongPitchNotes}`}{wrong.length > 0 && ": " + wrong.slice(0, 8).map((n) => zh
+      ? `第 ${n.measure} 小节 ${midiName(n.pitchMidi)} 弹成 ${midiName(n.playedMidi!)}`
+      : `m${n.measure} ${midiName(n.pitchMidi)} played as ${midiName(n.playedMidi!)}`).join(" · ")}{wrong.length > 8 ? " …" : ""}</p>}
+    {s.chordCount != null && s.chordCount > 0 && <p>{zh
+      ? `和弦齐奏：中位差 ${s.chordSpreadMs ?? "—"} 毫秒，${s.unevenChords ?? 0}/${s.chordCount} 个和弦不齐（>50 毫秒）${s.unevenChordMeasures?.length ? `，多见于第 ${s.unevenChordMeasures.join("、")} 小节` : ""}`
+      : `Chord evenness: median spread ${s.chordSpreadMs ?? "—"} ms, ${s.unevenChords ?? 0}/${s.chordCount} chords uneven (>50 ms)${s.unevenChordMeasures?.length ? `, mostly in m${s.unevenChordMeasures.join(", ")}` : ""}`}</p>}
+    {hand != null && <p>{zh
+      ? `左右手：${Math.abs(hand) < 15 ? "基本同步" : hand < 0 ? `右手平均早 ${-hand} 毫秒` : `右手平均晚 ${hand} 毫秒`}`
+      : `Hands: ${Math.abs(hand) < 15 ? "together" : hand < 0 ? `right hand ${-hand} ms early` : `right hand ${hand} ms late`}`}</p>}
+    {s.tempoVariationPct != null && <p>{zh ? `速度起伏（小节间）：${s.tempoVariationPct}%；渐快渐慢不计入节奏分` : `Tempo variation between measures: ${s.tempoVariationPct}%; gradual tempo changes are not counted against rhythm`}</p>}
+    {s.repeatsUnfolded && <p>{zh ? "已按反复展开对齐。" : "Aligned with repeats unfolded."}</p>}
+    {s.scoreSuspects?.map((x) => <p className={styles.error} key={`${x.pitchClass}:${x.semitones}`}>{zh
+      ? `谱面可能有误：${pc[x.pitchClass]} 在第 ${x.measures.join("、")} 小节共 ${x.count} 次都被弹成${x.semitones > 0 ? "高" : "低"} ${Math.abs(x.semitones)} 个半音；若是 PDF 识别的谱，请核对调号和临时记号。`
+      : `Possible score error: ${pc[x.pitchClass]} was played ${Math.abs(x.semitones)} semitone(s) ${x.semitones > 0 ? "higher" : "lower"} ${x.count} times (m${x.measures.join(", ")}); if the score came from PDF recognition, check key signature and accidentals.`}</p>)}
+  </div>;
+}
 type OmrJob = { id: string; status: string; progress?: number; error?: string; cached?: boolean; result?: OmrResult };
 type AnalysisJob = { id: string; status: string; error?: string; result?: Result };
 
@@ -614,7 +645,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       // Build the cache signature from the exact request inputs before any
       // POST, so dedup/hit checks run before cancelling a previous analysis.
       const xml = await xmlFile.text();
-      const preflight = inspectScoreXml(xml);
+      const preflight = inspectScoreXml(xml, instrument);
       if (preflight.errors.length) throw new Error(preflightMessage(preflight.errors[0], zh));
       if (manual && take.syncScoreXml !== xml) throw new Error("Confirm the measure sync for this MusicXML before analysis / 请先为当前 MusicXML 确认小节同步");
       const effectiveStart = autoLocate ? 0 : take.startMeasure;
@@ -895,7 +926,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       <label className={styles.field}>{zh ? "导入 MusicXML (.xml/.musicxml)" : "Import MusicXML (.xml/.musicxml)"}
         <input type="file" accept=".xml,.musicxml" onChange={(e) => { setXmlFile(e.target.files?.[0] ?? null); setOmrJob(null); }} /></label>
       {xmlFile && <span className={styles.hint}>{xmlFile.name}</span>}
-      <ScorePreflight file={xmlFile} zh={zh} />
+      <ScorePreflight file={xmlFile} zh={zh} instrument={instrument} />
       <details className={styles.fold}>
         <summary>{zh ? "从 PDF 识别（OMR，可选）" : "Recognize from PDF (OMR, optional)"}</summary>
         <label className={styles.field}>{zh ? "另选用于识别的 PDF（可选）" : "PDF for recognition (optional)"}
@@ -909,9 +940,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         {omrJob && <p role="status" className={styles.hint}>OMR {omrJob.status}{omrJob.cached ? (zh ? " · 缓存结果" : " · cached") : ""}{omrJob.progress != null ? ` · ${omrJob.progress}%` : ""}</p>}
         {omrJob?.error && <p className={styles.error} role="alert">{omrJob.error}</p>}
         {omrJob?.result && <div className={styles.omrResult}>
-          <p className={styles.hint}>{zh ? `已得到 ${omrJob.result.noteCount} 个可分析音符 · ${omrJob.result.measureCount} 小节` : `${omrJob.result.noteCount} analyzable notes · ${omrJob.result.measureCount} measures`}</p>
-          {omrJob.result.compatible && <p className={styles.hint}>{zh ? "已自动作为演奏分析的目标谱；选择起始小节并录音即可。" : "Automatically selected as the target score. Choose a starting measure and record."}</p>}
-          {!omrJob.result.compatible && <p className={styles.error}>{zh ? "识别已完成，但当前单声部分析器暂不支持此 MusicXML：" : "Recognition completed, but this MusicXML is not supported by the monophonic analyzer: "}{omrJob.result.reason}</p>}
+          <p className={styles.hint}>{(() => { const count = instrument === "piano" ? (omrJob.result.pianoNoteCount ?? omrJob.result.noteCount) : omrJob.result.noteCount; return zh ? `已得到 ${count} 个可分析音符 · ${omrJob.result.measureCount} 小节` : `${count} analyzable notes · ${omrJob.result.measureCount} measures`; })()}</p>
+          {omrUsable(omrJob.result, instrument) && <p className={styles.hint}>{zh ? "已自动作为演奏分析的目标谱；选择起始小节并录音即可。" : "Automatically selected as the target score. Choose a starting measure and record."}</p>}
+          {!omrUsable(omrJob.result, instrument) && <p className={styles.error}>{zh ? "识别已完成，但当前分析器暂不支持此 MusicXML：" : "Recognition completed, but the analyzer does not support this MusicXML: "}{instrument === "piano" ? (omrJob.result.pianoReason ?? omrJob.result.reason) : omrJob.result.reason}</p>}
           <button className={styles.omrButton} onClick={() => setShowOsmd(true)}>{zh ? "预览识别乐谱（大窗口 · 可转调 · 可下载）" : "Preview recognized score (large · transpose · download)"}</button>
           {showOsmd && <ScorePreviewDialog musicXml={omrJob.result.musicXml} filename={omrPdf?.name || pdfName || "score"} zh={zh} onClose={() => setShowOsmd(false)} />}
         </div>}
@@ -977,12 +1008,12 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
               <span className={styles.takeName}>{take.name}</span>
             </label>
             <div className={styles.takeRow}>
-              <button className={`${styles.omrButton} ${styles.analyzeBtn}`} disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false} onClick={() => void analyzeTake(take)}>
+              <button className={`${styles.omrButton} ${styles.analyzeBtn}`} disabled={busyTakeId != null || recording || !xmlFile || (omrJob?.result != null && !omrUsable(omrJob.result, instrument))} onClick={() => void analyzeTake(take)}>
                 {busyTakeId === take.id ? (zh ? "分析中…" : "Analyzing…") : (zh ? "分析这一遍" : "Analyze")}</button>
               {busyTakeId === take.id && <button className={styles.omrButton} onClick={() => cancelAnalysis(take.id)}>{zh ? "取消分析" : "Cancel"}</button>}
               <button className={styles.omrButton}
-                disabled={busyTakeId != null || recording || !xmlFile || omrJob?.result?.compatible === false || instrument === "piano" || take.firstBeatAudioSec != null}
-                title={instrument === "piano" ? (zh ? "自动定位暂不支持钢琴" : "Excerpt location is not available for piano") : take.firstBeatAudioSec != null ? (zh ? "已同步录音不能自动定位" : "Synced takes cannot use automatic excerpt location") : (zh ? "忽略起始小节，自动找出录音在谱上的位置" : "Ignores the start measure and finds where the take sits in the score")}
+                disabled={busyTakeId != null || recording || !xmlFile || (omrJob?.result != null && !omrUsable(omrJob.result, instrument)) || take.firstBeatAudioSec != null}
+                title={take.firstBeatAudioSec != null ? (zh ? "已同步录音不能自动定位" : "Synced takes cannot use automatic excerpt location") : (zh ? "忽略起始小节，自动找出录音在谱上的位置" : "Ignores the start measure and finds where the take sits in the score")}
                 onClick={() => void analyzeTake(take, true)}>
                 {zh ? "自动定位片段" : "Find excerpt"}</button>
               <button className={styles.omrButton} onClick={() => {
@@ -1135,6 +1166,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       {result.instrument === "piano" && <p className={styles.hint}>{result.summary.pitchScoreMethod === "note-f1"
         ? (zh ? `钢琴音符匹配分（F1）· 漏音 ${result.summary.missedNotes ?? "—"} · 多音 ${result.summary.extraNotes ?? "—"}；两者均影响分数。录音内静音仍计入覆盖范围。` : `Piano note F1 · Missed ${result.summary.missedNotes ?? "—"} · Extra ${result.summary.extraNotes ?? "—"}; both affect the score. Recorded silence remains in scope.`)
         : (zh ? "旧版钢琴音高分仅评价已匹配音符，不含漏音、多音扣分；请更新服务后重新分析。" : "Older piano scores evaluate matched notes only, without missed/extra penalties; update the service and reanalyze.")}</p>}
+      {result.instrument === "piano" && <PianoDetails result={result} zh={zh} />}
       </details>
       {pdfMeasures > 0 && !canJump && <p className={styles.error}>{zh ? `谱面有 ${pdfMeasures} 小节、MusicXML 有 ${scoreMeasures} 小节；请核对后再映射到 PDF。` : `PDF has ${pdfMeasures} measures; MusicXML has ${scoreMeasures}. Verify alignment before mapping.`}</p>}
       {(result.suggestedMeasureSync?.length ?? 0) > 0 && canJump && onApplyMeasureSync && <div>

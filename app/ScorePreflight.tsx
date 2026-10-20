@@ -4,21 +4,21 @@ import { useEffect, useState } from "react";
 import { inspectScoreXml, midiName, preflightMessage, type ScorePreflight as Preflight } from "@/lib/analysis-preflight";
 import styles from "./performance.module.css";
 
-export default function ScorePreflight({ file, zh }: { file: File | null; zh: boolean }) {
-  const [state, setState] = useState<{ file: File; report: Preflight | null } | null>(null);
+export default function ScorePreflight({ file, zh, instrument }: { file: File | null; zh: boolean; instrument?: string }) {
+  const [state, setState] = useState<{ file: File; instrument?: string; report: Preflight | null } | null>(null);
   useEffect(() => {
     if (!file) return;
     let active = true;
     const oversized = file.size > 1_000_000;
     (oversized ? Promise.resolve("") : file.text()).then((xml) => {
-      const report = inspectScoreXml(xml);
+      const report = inspectScoreXml(xml, instrument);
       if (oversized) report.errors = ["too_large"];
-      if (active) setState({ file, report });
-    }).catch(() => { if (active) setState({ file, report: null }); });
+      if (active) setState({ file, instrument, report });
+    }).catch(() => { if (active) setState({ file, instrument, report: null }); });
     return () => { active = false; };
-  }, [file]);
+  }, [file, instrument]);
   if (!file) return null;
-  const ready = state?.file === file;
+  const ready = state?.file === file && state?.instrument === instrument;
   const report = ready ? state.report : null;
   return <section className={styles.quality} aria-label={zh ? "谱面预检" : "Score preflight"} aria-live="polite">
     <h3>{zh ? "谱面预检" : "Score preflight"}</h3>

@@ -4,7 +4,9 @@ export type ScorePreflight = {
   meter: string | null; warnings: string[]; errors: string[];
 };
 
-export function inspectScoreXml(xml: string): ScorePreflight {
+export function inspectScoreXml(xml: string, instrument?: string): ScorePreflight {
+  // Piano has its own polyphonic parser: chords, grand staff, voices and repeats are fine.
+  const piano = instrument === "piano";
   const report: ScorePreflight = { measures: 0, notes: 0, minMidi: null, maxMidi: null, meter: null, warnings: [], errors: [] };
   if (new TextEncoder().encode(xml).byteLength > 1_000_000) {
     report.errors.push("too_large"); return report;
@@ -17,12 +19,13 @@ export function inspectScoreXml(xml: string): ScorePreflight {
   const elements = (tag: string) => Array.from(doc.getElementsByTagNameNS("*", tag));
   const text = (el: Element, tag: string) => el.getElementsByTagNameNS("*", tag)[0]?.textContent?.trim() ?? "";
   const parts = elements("part");
-  if (parts.length !== 1) report.errors.push("multiple_parts");
+  if (parts.length !== 1 && !piano) report.errors.push("multiple_parts");
   report.measures = parts[0]?.getElementsByTagNameNS("*", "measure").length ?? 0;
   if (!report.measures) report.errors.push("no_measures");
-  if (elements("backup").length || elements("forward").length || new Set(elements("voice").map((el) => el.textContent?.trim())).size > 1) report.errors.push("polyphonic");
+  if (piano) { /* polyphony and repeats handled by the piano parser */ }
+  else if (elements("backup").length || elements("forward").length || new Set(elements("voice").map((el) => el.textContent?.trim())).size > 1) report.errors.push("polyphonic");
   else if (elements("chord").length) report.warnings.push("chords");
-  if (elements("repeat").length || elements("ending").length) report.errors.push("repeats");
+  if (!piano && (elements("repeat").length || elements("ending").length)) report.errors.push("repeats");
   if (elements("transpose").length) report.errors.push("transposing");
   const meters = elements("time").map((el) => `${text(el, "beats")}/${text(el, "beat-type")}`);
   report.meter = meters[0] ?? null;
@@ -62,7 +65,8 @@ export function inspectScoreXml(xml: string): ScorePreflight {
     report.maxMidi = Math.max(report.maxMidi ?? midi, midi);
   }
   if (!report.notes) report.errors.push("no_notes");
-  if (report.minMidi != null && (report.minMidi < 36 || (report.maxMidi ?? 0) > 96)) report.warnings.push("pitch_range");
+  const [lowest, highest] = piano ? [21, 108] : [36, 96];
+  if (report.minMidi != null && (report.minMidi < lowest || (report.maxMidi ?? 0) > highest)) report.warnings.push("pitch_range");
   return report;
 }
 

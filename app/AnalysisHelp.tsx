@@ -4,8 +4,8 @@ const topics = [
   {
     title: ["1 · 准备谱面和录音", "1 · Prepare the score and audio"],
     text: [
-      "先打开“演奏分析”，上传 MusicXML（不超过 1 MB），或把 PDF 识别为 MusicXML（PDF 不超过 15 MB）。PDF 上能看到小节线，不代表已经识别出音符。请核对调号、升降号、休止符和小节数，再选择乐器。当前谱面解析只接受单声部、实音、顺序谱；和弦、多声部、移调记谱与中途变拍暂不支持，反复和跳房子须先展开。钢琴也受这个谱面限制。",
-      "Open Analyze and upload MusicXML (up to 1 MB), or recognize a PDF into MusicXML (PDF up to 15 MB). Detecting bar lines on a PDF does not recognize its notes. Check keys, accidentals, rests and measure counts, then choose the instrument. The current score parser requires a single voice, concert pitch and a linear score. Chords, multiple voices, transposing notation and meter changes are unsupported; expand repeats and endings first. These score restrictions also apply to piano.",
+      "先打开“演奏分析”，上传 MusicXML（不超过 1 MB），或把 PDF 识别为 MusicXML（PDF 不超过 15 MB）。PDF 上能看到小节线，不代表已经识别出音符。请核对调号、升降号、休止符和小节数，再选择乐器。当前谱面解析只接受单声部、实音、顺序谱；和弦、多声部、移调记谱与中途变拍暂不支持，反复和跳房子须先展开。钢琴有独立的复音解析器，不受这些限制（见第 6 节）。",
+      "Open Analyze and upload MusicXML (up to 1 MB), or recognize a PDF into MusicXML (PDF up to 15 MB). Detecting bar lines on a PDF does not recognize its notes. Check keys, accidentals, rests and measure counts, then choose the instrument. The current score parser requires a single voice, concert pitch and a linear score. Chords, multiple voices, transposing notation and meter changes are unsupported; expand repeats and endings first. Piano has its own polyphonic parser without these restrictions (see section 6).",
     ],
   },
   {
@@ -37,10 +37,10 @@ const topics = [
     ],
   },
   {
-    title: ["6 · 钢琴目前的限制", "6 · Current piano limitations"],
+    title: ["6 · 钢琴分析", "6 · Piano analysis"],
     text: [
-      "钢琴依赖独立音符转录服务，使用与弦乐不同的音符匹配分（F1）：200 × 正确匹配数 ÷（覆盖范围内谱面音符数 + 演奏音符数），漏音和多音都会降低分数，错音可能体现为一个漏音加一个多音。新版按 WAV 文件实际结束时间裁去后续谱面音符；录音仍在继续时的静音不会被裁掉，其中应弹未弹的音仍计漏音。首音作为时间锚不计入节奏分。钢琴尚不支持自动片段定位或任意多声部谱，分数依赖转录质量，不是连续音分音准测量，不能与弦乐直接比较。旧版报告仍可能使用未计漏音、多音的旧评分，请重新分析并确认服务版本。",
-      "Piano uses a separate transcription service and a note-matching F1 score: 200 × correct matches ÷ (score notes in the covered passage + performed notes). Missed and extra notes both reduce it; a wrong pitch may appear as one miss plus one extra. The new version trims later score notes at the actual WAV end. Silence while recording continues is retained, so missing notes during that silence still count. The first note anchors timing and is excluded from rhythm scoring. Piano still lacks automatic excerpt location and general multi-voice score support. Scores depend on transcription quality, do not measure continuous cents-level intonation and cannot be compared directly with strings. Older reports may still use the previous score without missed/extra penalties; reanalyze and check the service version.",
+      "钢琴谱可以是标准双谱表：和弦、多声部、延音线、反复与跳房子都直接支持（反复会自动判断你是否弹了）。录音先经独立转录服务变成音符，再按录音自身的速度与谱面对齐，渐快渐慢不算错；也可以用“自动定位”找出片段在谱上的位置。音高分是音符匹配分（F1）：200 × 正确音数 ÷（覆盖范围内谱面音符数 + 演奏音符数），漏音、错音、多音都会扣分；错音会报出你弹成了哪个音。节奏分只看相对于局部速度的不均匀。另外报告和弦是否齐奏、左右手谁先谁后。同一个音在多个小节被一致地弹高或弹低，更可能是谱面（尤其 PDF 识别）有误，报告会提示核对。分数依赖转录质量，不能与弦乐直接比较；暂不支持拍号变化。",
+      "Piano scores can be standard grand-staff notation: chords, multiple voices, ties, repeats and endings are supported (whether you played the repeat is detected). The recording is transcribed to notes by a separate service and aligned at your own tempo, so speeding up or slowing down is not an error; Locate excerpt finds a passage anywhere in the score. The pitch score is note F1: 200 × correct notes ÷ (score notes in the covered passage + performed notes); missed, wrong and extra notes all reduce it, and wrong notes show the pitch you played. Rhythm only measures unevenness against your local tempo. The report also shows chord evenness and which hand leads. When the same note is consistently played higher or lower in many measures, the score itself (especially a PDF recognition) is more likely wrong and the report asks you to check it. Scores depend on transcription quality and are not comparable with strings; meter changes are not supported yet.",
     ],
   },
   {

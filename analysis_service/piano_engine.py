@@ -11,11 +11,18 @@ import time
 import urllib.request
 import uuid
 
-from .engine import parse_score, read_wav
+from collections import Counter, defaultdict
+
+import numpy as np
+
+from .engine import read_wav
+from .piano_align import align, smooth_map
+from .piano_score import has_repeats, parse_piano_score
 from .validation import validate_instrument, validate_bpm
 
-VERSION = "piano-midi-0.3"
-MATCH_WINDOW_SEC = 0.30
+VERSION = "piano-align-0.4"
+SMOOTH_HALF_WINDOW_BEATS = 2.0   # tempo shaping slower than this is rubato, faster is rhythm
+CHORD_UNEVEN_MS = 50             # chord notes spread wider than this sound split
 # 5090 transcription service (Tailscale). Override with env; old public IP is dead (CGNAT).
 PIANO_API_URL = os.environ.get("PIANO_API_URL", "http://100.88.202.126:7777").rstrip("/")
 POLL_TIMEOUT_SEC = 400
@@ -80,113 +87,202 @@ def transcribe_notes(wav: bytes) -> list | None:
         return None
 
 
-def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1) -> dict:
+def _candidates(xml: str, start_measure: int):
+    """Score readings to try: unfolded repeats, and as printed when the score has repeats."""
+    for unfold in ([True, False] if has_repeats(xml) else [True]):
+        spans: list = []
+        notes = parse_piano_score(xml, unfold=unfold, spans=spans)
+        if start_measure > 0:
+            starts = [b for m, b, _e in spans if m == start_measure]
+            if not starts:
+                continue
+            notes = [n for n in notes if n["onsetBeat"] >= starts[0] - 1e-6]
+            spans = [s for s in spans if s[1] >= starts[0] - 1e-6]
+        if notes:
+            yield unfold, notes, spans
+
+
+def _scope(notes, r, audio_sec: float, auto: bool):
+    """Score notes this take is judged on: from the start measure (or the located start) to the
+    last matched group, plus later notes the recording still had time for."""
+    played = sorted(set(r["match"]) | set(r["wrong"]))
+    if not played:
+        return []
+    first = played[0] if auto else 0
+    last = played[-1]
+    first_beat = notes[first]["onsetBeat"]
+    last_beat = notes[last]["onsetBeat"]
+    exp = r["expected"]
+    return [k for k, n in enumerate(notes)
+            if n["onsetBeat"] >= first_beat - 1e-6 and (n["onsetBeat"] <= last_beat + 1e-6 or (not auto and exp[k] < audio_sec))]
+
+
+def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf: list | None = None) -> dict:
+    """start_measure 0 = locate the excerpt automatically. perf: pre-transcribed events (tests/benchmarks)."""
     validate_instrument("piano", ["piano"])
     validate_bpm(bpm, 30, 200)
     signal, rate = read_wav(wav)
     audio_sec = len(signal) / rate
-    score_notes = [n for n in parse_score(xml) if n["measure"] >= start_measure]
-    if not score_notes:
-        raise ValueError("开始小节没有可演奏音符")
-    perf = transcribe_notes(wav)
-    if not perf:
-        raise ValueError("钢琴转录失败，请检查录音是否为清晰的独奏钢琴")
-    perf = sorted((e for e in perf if 0 <= e[0] < audio_sec), key=lambda e: (e[0], e[2]))
+    if perf is None:
+        perf = transcribe_notes(wav)
+        if not perf:
+            raise ValueError("钢琴转录失败，请检查录音是否为清晰的独奏钢琴")
+    perf = sorted((tuple(e) for e in perf if 0 <= e[0] < audio_sec), key=lambda e: (e[0], e[2]))
     if not perf:
         raise ValueError("钢琴转录未返回录音范围内的音符")
-    sec_per_beat = 60.0 / bpm
-    # Anchor on the first transcribed onset that plays the opening pitch, so a
-    # leading resonance ghost (different pitch) cannot drag the whole grid.
-    first_pitch = score_notes[0]["pitchMidi"]
-    anchor_onset = next((o for o, _a, p, _v in perf if int(round(p)) == first_pitch), perf[0][0])
-    start = anchor_onset - score_notes[0]["onsetBeat"] * sec_per_beat
-    # Use the WAV end, not the last detected note: recorded silence can
-    # contain genuinely missed notes and must remain in the denominator.
-    original_count = len(score_notes)
-    score_notes = [n for n in score_notes if start + n["onsetBeat"] * sec_per_beat < audio_sec]
-    used = [False] * len(perf)
-    aligned = []
-    pitch_errors, timing_errors = [], []
-    extra = 0
-    for idx, note in enumerate(score_notes):
-        expected = start + note["onsetBeat"] * sec_per_beat
-        best, best_dt, best_vel = -1, MATCH_WINDOW_SEC, -1.0
-        for j, (onset, _off, pitch, vel) in enumerate(perf):
-            if used[j] or int(round(pitch)) != note["pitchMidi"]:
-                continue
-            dt = abs(onset - expected)
-            if dt > MATCH_WINDOW_SEC:
-                continue
-            # Closest onset wins; ties (pedal blur doubles) go to the stronger strike.
-            if dt < best_dt - 1e-9 or (abs(dt - best_dt) <= 1e-9 and vel > best_vel):
-                best, best_dt, best_vel = j, dt, vel
-        if best < 0:
-            aligned.append({**note, "id": f"n{idx + 1}", "expectedSec": round(expected, 3),
-                            "performedSec": None, "pitchErrorCents": None, "timingErrorMs": None,
+    auto = start_measure == 0
+    best = None
+    for unfold, notes, spans in _candidates(xml, start_measure):
+        try:
+            r = align(notes, perf, free_score_start=auto, sec_per_beat=60.0 / bpm)
+        except ValueError:
+            continue
+        scope = _scope(notes, r, audio_sec, auto)
+        lo, hi = r["window_sec"]
+        heard = sum(lo <= e[0] <= hi for e in perf)
+        quality = 2 * len(r["match"]) / max(1, len(scope) + heard)
+        if best is None or quality > best[0]:
+            best = (quality, unfold, notes, spans, r, scope)
+    if best is None:
+        raise ValueError("开始小节没有可演奏音符" if start_measure > 0 else "录音与谱面对不上")
+    _q, unfold, notes, spans, r, scope = best
+    if not scope:
+        raise ValueError("录音与谱面对不上：没有匹配到谱面音符")
+    match, wrong = r["match"], r["wrong"]
+    smooth = smooth_map(r["tempo"], SMOOTH_HALF_WINDOW_BEATS)
+    in_scope = set(scope)
+
+    aligned, residuals = [], []
+    first_group_beat = notes[scope[0]]["onsetBeat"]
+    for idx, k in enumerate(scope):
+        n = notes[k]
+        expected = float(smooth(n["onsetBeat"]))
+        base = {**n, "id": f"n{idx + 1}", "expectedSec": round(expected, 3)}
+        if k in match or k in wrong:
+            j = match.get(k, wrong.get(k))
+            onset, _off, pitch, vel = perf[j]
+            played = int(round(pitch))
+            cents = (played - n["pitchMidi"]) * 100
+            first = abs(n["onsetBeat"] - first_group_beat) < 1e-6
+            delta = round((onset - expected) * 1000)
+            spb = smooth.sec_per_beat(n["onsetBeat"])
+            thr = min(120, max(50, 150 * spb))
+            timing = "unscored" if first else "late" if delta > thr else "early" if delta < -thr else "correct"
+            if not first and k in match:
+                residuals.append(delta)
+            pitch_status = "correct" if k in match else ("sharp" if cents > 0 else "flat")
+            status = "wrong_pitch" if k in wrong else (timing if timing in ("late", "early") else "correct")
+            aligned.append({**base, "performedSec": round(onset, 3), "playedMidi": played,
+                            "pitchErrorCents": cents, "timingErrorMs": None if first else delta,
+                            "confidence": round(min(1.0, vel / 127.0), 2), "pitchStatus": pitch_status,
+                            "timingStatus": timing, "matchStatus": "matched", "status": status})
+        else:
+            aligned.append({**base, "performedSec": None, "pitchErrorCents": None, "timingErrorMs": None,
                             "confidence": 0.0, "pitchStatus": "uncertain", "timingStatus": "uncertain",
                             "matchStatus": "missed", "status": "missed"})
+
+    # Extras: unused performed notes inside the played span. A same-pitch onset right after a used
+    # one is the transcriber splitting a held note, not a second strike.
+    used = {match[k] for k in scope if k in match} | {wrong[k] for k in scope if k in wrong}
+    used_times = [perf[j][0] for j in used]
+    lo_t, hi_t = min(used_times) - 0.3, max(used_times) + 0.5
+    by_pitch_used = defaultdict(list)
+    for j in used:
+        by_pitch_used[int(round(perf[j][2]))].append(perf[j][0])
+    extra = 0
+    for j, (on, _off, p, _v) in enumerate(perf):
+        if j in used or not lo_t <= on <= hi_t:
             continue
-        used[best] = True
-        onset, _off, pitch, vel = perf[best]
-        cents = round((pitch - note["pitchMidi"]) * 100, 1)
-        delta = round((onset - expected) * 1000)
-        pitch_errors.append(abs(cents))
-        if idx > 0:
-            timing_errors.append(delta)
-        pitch_status = "correct" if abs(cents) <= 50 else ("sharp" if cents > 0 else "flat")
-        timing_status = "unscored" if idx == 0 else "late" if delta > 80 else ("early" if delta < -80 else "correct")
-        if pitch_status != "correct":
-            status = "wrong_pitch"
-        else:
-            status = timing_status if timing_status in ("late", "early") else "correct"
-        aligned.append({**note, "id": f"n{idx + 1}", "expectedSec": round(expected, 3),
-                        "performedSec": round(onset, 3), "pitchErrorCents": cents,
-                        "timingErrorMs": delta if idx > 0 else None, "confidence": round(min(1.0, vel / 127.0), 2),
-                        "pitchStatus": pitch_status, "timingStatus": timing_status,
-                        "matchStatus": "matched", "status": status})
-    # Extras only count inside the excerpt window: pedal resonance and notes from
-    # outside the practiced passage must not inflate the score.
-    last_expected = start + score_notes[-1]["onsetBeat"] * sec_per_beat
-    for j, (onset, _off, _p, _v) in enumerate(perf):
-        if not used[j] and (anchor_onset - 0.5) <= onset <= (last_expected + 1.0):
-            extra += 1
-    correct = sum(n["pitchStatus"] == "correct" for n in aligned)
-    wrong = sum(n["pitchStatus"] in ("sharp", "flat") for n in aligned)
-    # Note F1 balances recall (missed notes) and precision (extra notes).
-    # Events outside the practiced window do not enter either denominator.
-    performed_count = len(pitch_errors) + extra
-    pitch_score = round(200 * correct / (len(score_notes) + performed_count))
+        if any(0 < on - t < 0.1 for t in by_pitch_used[int(round(p))]):
+            continue
+        extra += 1
+
+    correct = sum(1 for k in scope if k in match)
+    wrong_n = sum(1 for k in scope if k in wrong)
+    missed = len(scope) - correct - wrong_n
+    performed = correct + wrong_n + extra
+    pitch_score = round(200 * correct / (len(scope) + performed))
+
     rhythm_score = timing_accuracy = stability = spread = offset = None
-    if len(timing_errors) >= 3 and len(timing_errors) / max(1, len(score_notes) - 1) >= .6:
-        import numpy as np
-        arr = np.array(timing_errors, dtype=float)
+    if len(residuals) >= 3 and len(residuals) / max(1, len(scope) - 1) >= .5:
+        arr = np.array(residuals, dtype=float)
         offset = round(float(np.median(arr)))
         spread = round(float(np.median(np.abs(arr - offset))))
         stability = round(max(0, 100 - spread * .55))
         timing_accuracy = round(max(0, 100 - float(np.median(np.abs(arr))) * .4))
         rhythm_score = round(max(0, 100 - spread * .45 - abs(offset) * .3))
-    import xml.etree.ElementTree as ET
-    part = ET.fromstring(xml).find("./{*}part")
-    measure_count = len(part.findall("./{*}measure")) if part is not None else 0
+
+    # Chord evenness and hand coordination, from groups with two or more matched notes.
+    groups = defaultdict(list)
+    for k in scope:
+        if k in match:
+            groups[round(notes[k]["onsetBeat"], 4)].append(k)
+    chord_spreads, hand_offsets, uneven_measures = [], [], Counter()
+    for ks in groups.values():
+        if len(ks) < 2 or any(notes[k].get("arpeggiate") for k in ks):
+            continue
+        ons = [perf[match[k]][0] for k in ks]
+        sp = (max(ons) - min(ons)) * 1000
+        chord_spreads.append(sp)
+        if sp > CHORD_UNEVEN_MS:
+            uneven_measures[notes[ks[0]]["measure"]] += 1
+        rh = [perf[match[k]][0] for k in ks if notes[k]["staff"] == 1]
+        lh = [perf[match[k]][0] for k in ks if notes[k]["staff"] == 2]
+        if rh and lh:
+            hand_offsets.append((np.median(rh) - np.median(lh)) * 1000)
+
+    # Tempo: per measure from the smoothed map.
+    lo_beat, hi_beat = notes[scope[0]]["onsetBeat"], notes[scope[-1]]["onsetBeat"]
+    intervals, tempi = [], []
+    for m, b0, b1 in spans:
+        if b1 <= lo_beat - 1e-6 or b0 > hi_beat + 1e-6:
+            continue
+        s0, s1 = float(smooth(b0)), float(smooth(b1))
+        intervals.append({"measure": m, "startSec": round(max(0.0, s0), 3), "endSec": round(max(0.0, s1), 3)})
+        if s1 - s0 > 0.05:
+            tempi.append(60 * (b1 - b0) / (s1 - s0))
+    detected_bpm = round(float(np.median(tempi))) if tempi else None
+    tempo_var = round(float(np.std(tempi) / np.mean(tempi) * 100), 1) if len(tempi) >= 3 else None
+
+    # Same wrong pitch, same offset, in many places: more likely the score (OMR, missing accidental).
+    suspects = defaultdict(list)
+    for k in scope:
+        if k in wrong:
+            d = int(round(perf[wrong[k]][2])) - notes[k]["pitchMidi"]
+            suspects[(notes[k]["pitchMidi"] % 12, d)].append(notes[k]["measure"])
+    score_suspects = [{"pitchClass": pc, "semitones": d, "count": len(ms), "measures": sorted(set(ms))[:12]}
+                      for (pc, d), ms in suspects.items() if len(ms) >= 4 and len(set(ms)) >= 2]
+
+    measure_count = max((m for m, _b, _e in spans), default=0)
+    voiced = correct + wrong_n
     return {"version": VERSION, "instrument": "piano", "bpm": bpm, "mode": "note-aligned-polyphonic",
             "summary": {"pitchScore": pitch_score, "intonationScore": None,
-                        "correctPitchNotes": correct, "wrongPitchNotes": wrong,
-                        "missedNotes": sum(n["status"] == "missed" for n in aligned),
-                        "extraNotes": extra, "performedNoteCount": performed_count,
+                        "correctPitchNotes": correct, "wrongPitchNotes": wrong_n,
+                        "missedNotes": missed, "extraNotes": extra, "performedNoteCount": performed,
                         "pitchScoreMethod": "note-f1",
-                        "truncatedByAudioEnd": len(score_notes) < original_count,
+                        "truncatedByAudioEnd": scope[-1] < len(notes) - 1,
                         "rhythmScore": rhythm_score, "timingAccuracyScore": timing_accuracy,
                         "rhythmStabilityScore": stability, "timingOffsetMs": offset,
                         "timingSpreadMs": spread,
                         "measureCount": measure_count,
-                        "startMeasure": score_notes[0]["measure"],
-                        "endMeasure": score_notes[-1]["measure"],
-                        "noteCount": len(score_notes), "voicedNotes": len(pitch_errors),
-                        "timedNotes": len(timing_errors),
-                        "confidence": "medium" if len(pitch_errors) / len(score_notes) >= .8 else "low",
-                        "syncMode": "legacy", "recordedFirstBeatSec": None,
+                        "startMeasure": notes[scope[0]]["measure"],
+                        "endMeasure": notes[scope[-1]]["measure"],
+                        "noteCount": len(scope), "voicedNotes": voiced,
+                        "timedNotes": len(residuals),
+                        "confidence": "medium" if voiced / len(scope) >= .8 else "low",
+                        "syncMode": "piano-align", "recordedFirstBeatSec": None,
                         "estimatedLatencyMs": None, "coveredSec": round(audio_sec, 3),
-                        "sensors": ["piano-transcribe"], "detectedBpm": None},
+                        "sensors": ["piano-transcribe"], "detectedBpm": detected_bpm,
+                        "tempoVariationPct": tempo_var,
+                        "autoLocated": auto, "repeatsUnfolded": unfold and has_repeats(xml),
+                        "chordCount": len(chord_spreads),
+                        "chordSpreadMs": round(float(np.median(chord_spreads))) if chord_spreads else None,
+                        "unevenChords": sum(s > CHORD_UNEVEN_MS for s in chord_spreads),
+                        "unevenChordMeasures": [m for m, _c in uneven_measures.most_common(8)],
+                        "handOffsetMs": round(float(np.median(hand_offsets))) if len(hand_offsets) >= 3 else None,
+                        "scoreSuspects": score_suspects},
+            "measureIntervals": intervals,
             "notes": aligned,
-            "limitations": ["仅支持独奏钢琴；音高分为音符 F1，漏音和多音均影响分数；多音不逐个列出。",
-                            "以首个转录起音为时间零点；首音不参与节奏分母。"]}
+            "limitations": ["仅支持独奏钢琴；音高分为音符 F1，漏音、错音和多音都会扣分。",
+                            "按录音自身的速度对齐，渐快渐慢不算错；节奏分只看相对于局部速度的不均匀。",
+                            "同一错音在多个小节重复出现时，更可能是谱面（OMR）错误，请核对 scoreSuspects。"]}

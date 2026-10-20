@@ -166,8 +166,15 @@ def recognize(pdf: bytes, filename: str, prepend_rest_beats: int | None = None,
     except ValueError as exc:
         compatible, reason = False, str(exc)
         notes = []
+    from .piano_score import parse_piano_score
+    try:
+        piano_notes = len(parse_piano_score(xml))
+        piano_compatible, piano_reason = True, None
+    except ValueError as exc:
+        piano_notes, piano_compatible, piano_reason = 0, False, str(exc)
     first_part = ET.fromstring(xml).find("./{*}part")
     measure_count = len(first_part.findall("./{*}measure")) if first_part is not None else 0
     return {"musicXml": xml, "compatible": compatible, "reason": reason,
+            "pianoCompatible": piano_compatible, "pianoReason": piano_reason, "pianoNoteCount": piano_notes,
             "noteCount": len(notes), "measureCount": measure_count,
             "restoredFirstRest": prepend_rest_beats is not None}

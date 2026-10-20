@@ -27,7 +27,9 @@ class PianoTests(unittest.TestCase):
                 *[(i + .12, 69 if i < 6 else 71) for i in range(10)])):
             result = piano_engine.analyze_piano(recording((69,) * 10), score((69,) * 10), 60)
         summary = result["summary"]
-        self.assertEqual((summary["missedNotes"], summary["extraNotes"]), (4, 4))
+        # 0.4: a nearby different pitch is a wrong note (with the played pitch), not miss + extra.
+        self.assertEqual((summary["wrongPitchNotes"], summary["missedNotes"], summary["extraNotes"]), (4, 0, 0))
+        self.assertEqual({n["playedMidi"] for n in result["notes"][6:]}, {71})
         self.assertEqual(summary["pitchScore"], 60)
         self.assertEqual(summary["pitchScoreMethod"], "note-f1")
 
@@ -60,11 +62,12 @@ class PianoTests(unittest.TestCase):
         self.assertEqual(result["summary"]["noteCount"], 2)
         self.assertEqual(result["summary"]["pitchScore"], 100)
 
-    def test_late_same_pitch_cannot_match_outside_window(self):
+    def test_late_note_is_matched_as_late(self):
+        # Too few notes to infer the tempo: the requested BPM sets the grid, the late note is late.
         with patch.object(piano_engine, "transcribe_notes", return_value=fake_perf((.12, 69), (1.8, 71))):
             result = piano_engine.analyze_piano(recording(), score(), 60)
-        self.assertEqual(result["notes"][1]["status"], "missed")
-        self.assertEqual(result["summary"]["extraNotes"], 1)
+        self.assertEqual(result["notes"][1]["status"], "late")
+        self.assertEqual(result["summary"]["extraNotes"], 0)
 
     def test_invalid_wav_rejected_before_transcription(self):
         with patch.object(piano_engine, "transcribe_notes") as sensor:
@@ -96,11 +99,11 @@ class PianoTests(unittest.TestCase):
         finally:
             del piano_engine.transcribe_notes
         by_id = {n["id"]: n for n in result["notes"]}
-        self.assertEqual(by_id["n3"]["status"], "missed")
+        # C5 played as C#5: wrong note with the played pitch; E5 never played: missed.
+        self.assertEqual((by_id["n3"]["status"], by_id["n3"]["playedMidi"]), ("wrong_pitch", 73))
         self.assertEqual(by_id["n5"]["status"], "missed")
-        self.assertEqual(result["summary"]["missedNotes"], 2)
-        # stray C#5 (73) matches nothing -> extra
-        self.assertEqual(result["summary"]["extraNotes"], 1)
+        self.assertEqual(result["summary"]["missedNotes"], 1)
+        self.assertEqual(result["summary"]["extraNotes"], 0)
 
     def test_extras_outside_excerpt_window_are_ignored(self):
         piano_engine.transcribe_notes = lambda wav: fake_perf(
