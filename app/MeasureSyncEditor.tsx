@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 
 export type MeasureMarker = { measure: number; audioSec: number };
-export type SyncedAudio = { url: string; name: string; markers: MeasureMarker[]; measureCount: number };
+// youtube: video id when the score player plays a YouTube video (audio comes from the analysis service).
+export type SyncedAudio = { url: string; name: string; markers: MeasureMarker[]; measureCount: number; youtube?: string };
 
 export function validateMarkers(markers: MeasureMarker[], duration: number, measures: number): string | null {
   if (!Number.isFinite(duration) || duration <= 0) return "Wait for audio metadata / 请等待音频加载";

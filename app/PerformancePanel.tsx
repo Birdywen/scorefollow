@@ -17,6 +17,11 @@ import { useAnalysisJob } from "./hooks/useAnalysisJob";
 import ScorePreflight from "./ScorePreflight";
 import AnalysisQuality, { type Quality } from "./AnalysisQuality";
 import { inspectScoreXml, midiName, preflightMessage } from "@/lib/analysis-preflight";
+import { TAKE_MAX_SEC, parseYouTube, youTubeExcerpt } from "@/lib/youtube";
+
+/** Plays a YouTube section in the score player and records the tab audio (no download). */
+export type CaptureYouTube = (req: { link?: string; startSec: number; lengthSec: number; onProgress?: (sec: number) => void }) =>
+  Promise<{ blob: Blob; videoAtZero: number; name: string }>;
 import { followAnchors, type FollowOnset } from "@/lib/follow-anchors";
 
 type Note = {
@@ -265,10 +270,11 @@ function analysisSignature(input: {
     String(input.bpm), String(input.startMeasure), input.syncMode, input.syncData].join("\n"));
 }
 
-export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio, onApplyMeasureSync, onFollowTake }: {
+export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio, onApplyMeasureSync, onFollowTake, captureYouTube, youtubeLink }: {
   lang: "zh" | "en"; pdfMeasures: number; pdfName: string; pdfBytes: () => ArrayBuffer | null;
   onJump: (measure: number) => void; onClose: () => void;
   getSyncedAudio?: () => SyncedAudio | null;
+  captureYouTube?: CaptureYouTube; youtubeLink?: string;
   onApplyMeasureSync?: (markers: { measure: number; audioSec: number }[]) => string | null;
   onFollowTake?: (take: { name: string; url: string; starts: { measure: number; startSec: number }[]; onsets?: FollowOnset[] }) => string | { warning: string } | null;
 }) {
@@ -303,6 +309,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   const [busyTakeId, setBusyTakeId] = useState<string | null>(null);
   const [startingRecording, setStartingRecording] = useState(false);
   const [error, setError] = useState("");
+  const [ytOpen, setYtOpen] = useState(false);
+  const [ytLink, setYtLink] = useState("");
+  const [ytStart, setYtStart] = useState("");
+  const [ytLength, setYtLength] = useState("60");
+  const [ytBusy, setYtBusy] = useState("");
   const [syncMsg, setSyncMsg] = useState("");
   const [syncWarn, setSyncWarn] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
@@ -1017,7 +1028,35 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           : <button onClick={stopSyncRecording}>{zh ? "■ 停止并保存" : "■ Stop & keep"}</button>}
         <label className={styles.upload}>{zh ? "上传录音为一遍" : "Upload as take"}<input type="file" accept="audio/*,.wav,.m4a,.mp3,.webm" hidden
           onChange={(e) => { const file = e.target.files?.[0]; if (file) void addTakeBlob(file, { startMeasure, bpm, beatsPerMeasure, countInBeats, firstBeatAudioSec: null, sessionId: "upload" }, file.name); e.target.value = ""; }} /></label>
+        {captureYouTube && <button type="button" aria-expanded={ytOpen} disabled={!!ytBusy} onClick={() => setYtOpen((v) => !v)}>▶ {zh ? "YouTube 链接为一遍" : "YouTube link as take"}</button>}
       </div>
+      {ytOpen && captureYouTube && <form className={styles.ytForm} onSubmit={async (e) => {
+        e.preventDefault();
+        const link = ytLink.trim() || youtubeLink || "";
+        const yt = parseYouTube(link);
+        if (!yt) { setError(zh ? "无法识别的 YouTube 链接或视频 ID" : "Not a YouTube link or 11-character video id"); return; }
+        const start = ytStart.trim() ? Number(ytStart) : yt.start;
+        const length = Number(ytLength);
+        if (!(start >= 0) || !(length >= 1 && length <= TAKE_MAX_SEC)) { setError(zh ? `开始须 ≥ 0 秒，长度 1–${TAKE_MAX_SEC} 秒` : `Start must be ≥ 0 s, length 1–${TAKE_MAX_SEC} s`); return; }
+        setError("");
+        setYtBusy(zh ? `录制 YouTube 声音中(${length} 秒)…` : `Recording YouTube audio (${length} s)…`);
+        try {
+          const rec = await captureYouTube({ link, startSec: start, lengthSec: length,
+            onProgress: (t) => setYtBusy(zh ? `录制 YouTube 声音中 ${Math.round(t)}/${length} 秒…` : `Recording YouTube audio ${Math.round(t)}/${length} s…`) });
+          await addTakeBlob(rec.blob, { startMeasure, bpm, beatsPerMeasure, countInBeats, firstBeatAudioSec: null, sessionId: "youtube" }, rec.name);
+          setYtOpen(false);
+        } catch (exc) { setError(exc instanceof Error ? exc.message : String(exc)); }
+        finally { setYtBusy(""); }
+      }}>
+        <input type="text" inputMode="url" value={ytLink} onChange={(e) => setYtLink(e.target.value)} placeholder={youtubeLink || "https://youtu.be/…"} aria-label="YouTube link" />
+        <label>{zh ? "开始(秒)" : "Start (s)"} <input type="number" min={0} step={1} value={ytStart} onChange={(e) => setYtStart(e.target.value)} placeholder={zh ? "按链接" : "from link"} /></label>
+        <label>{zh ? "长度(秒)" : "Length (s)"} <input type="number" min={1} max={TAKE_MAX_SEC} step={1} value={ytLength} onChange={(e) => setYtLength(e.target.value)} /></label>
+        <button type="submit" disabled={!!ytBusy || !(ytLink.trim() || youtubeLink)}>{zh ? "录制为一遍" : "Record as take"}</button>
+        <p className={styles.hint}>{zh
+          ? "不下载：视频在谱面播放器里实时播放，同时录下本标签页的声音。浏览器询问时选“此标签页”并勾选“共享标签页音频”（电脑版 Chrome/Edge）。"
+          : "No download: the video plays in the score player while this tab's sound is recorded. When asked, pick this tab and turn on \"Share tab audio\" (desktop Chrome/Edge)."}</p>
+      </form>}
+      {ytBusy && <p role="status" className={styles.hint}>{ytBusy}</p>}
       {selected && <section className={styles.quality} aria-label={zh ? "音频预检" : "Audio preflight"}>
         <p title={zh ? "静音、削波、音高与谱面匹配将在分析时检查" : "Silence, clipping, pitch and score matching are checked during analysis"}>
           <b>{zh ? "音频预检" : "Audio preflight"}</b> · {selected.durationSec}s · {selected.blob?.type || (zh ? "未知格式" : "Unknown format")} · {zh ? "最长 180 秒" : "max 180 s"}</p>
@@ -1078,15 +1117,29 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           }
         }}
       />}
-      {getSyncedAudio && <button className={`${styles.omrButton} ${styles.wrapBtn}`} disabled={busyTakeId != null || recording} onClick={async () => {
+      {getSyncedAudio && <button className={`${styles.omrButton} ${styles.wrapBtn}`} disabled={busyTakeId != null || recording || !!ytBusy} onClick={async () => {
         try {
           const source = getSyncedAudio();
           if (!source || !source.markers.length) throw new Error("Load audio and create B-sync markers in the score player first / 请先在谱面播放器加载音频并用 B 同步");
+          if (source.youtube) {
+            if (!captureYouTube) throw new Error("YouTube capture unavailable");
+            const ex = youTubeExcerpt(source.markers);
+            setYtBusy(zh ? `录制 YouTube 声音中(${ex.lengthSec} 秒)…` : `Recording YouTube audio (${ex.lengthSec} s)…`);
+            const rec = await captureYouTube({ startSec: ex.startSec, lengthSec: ex.lengthSec,
+              onProgress: (t) => setYtBusy(zh ? `录制 YouTube 声音中 ${Math.round(t)}/${ex.lengthSec} 秒…` : `Recording YouTube audio ${Math.round(t)}/${ex.lengthSec} s…`) });
+            // B-sync markers are in video time; shift them to the recording's time.
+            const markers = source.markers.map((m) => ({ measure: m.measure, audioSec: Math.round((m.audioSec - rec.videoAtZero) * 1000) / 1000 }))
+              .filter((m) => m.audioSec >= 0 && m.audioSec < ex.lengthSec + 1);
+            if (!markers.length) throw new Error(zh ? "录音没有覆盖 B 同步点" : "The recording doesn't cover the B-sync markers");
+            await addTakeBlob(rec.blob, { startMeasure: markers[0].measure, bpm, beatsPerMeasure, countInBeats: 0, firstBeatAudioSec: null, sessionId: "imported-B-sync", measureSync: markers }, rec.name);
+            setError("");
+            return;
+          }
           const response = await fetch(source.url);
           if (!response.ok) throw new Error("Cannot load synced audio");
           await addTakeBlob(await response.blob(), { startMeasure: source.markers[0].measure, bpm, beatsPerMeasure, countInBeats: 0, firstBeatAudioSec: null, sessionId: "imported-B-sync", measureSync: source.markers }, source.name);
           setError("");
-        } catch (exc) { setError(String(exc)); }
+        } catch (exc) { setError(String(exc)); } finally { setYtBusy(""); }
       }}>{zh ? "导入谱面播放器的音频及 B 同步" : "Import score-player audio + B sync"}</button>}
       {selected?.blob && <div className={styles.preview}><span>{selected.name}</span><audio key={selected.id} ref={player} controls src={selected.url}
         onEnded={() => { playbackRange.current = null; setPlayingMeasure(null); }}

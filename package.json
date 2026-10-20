@@ -13,7 +13,8 @@
     "practice-sync": "node scripts/practice-sync-regression.mjs",
     "analysis-guard": "node scripts/analysis-guard-regression.mjs",
     "follow-anchors": "node scripts/follow-anchors-regression.mjs",
-    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run practice-sync && npm run follow-anchors && npm run analysis-test && npm run build"
+    "youtube": "node scripts/youtube-regression.mjs",
+    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run practice-sync && npm run follow-anchors && npm run youtube && npm run analysis-test && npm run build"
   },
   "dependencies": {
     "next": "16.3.5",

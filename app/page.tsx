@@ -38,6 +38,8 @@ import PerformancePanel from "./PerformancePanel";
 import AnalysisHelp from "./AnalysisHelp";
 import MetroDock from "./MetroDock";
 import TunerPanel from "./TunerPanel";
+import YouTubeStrip from "./YouTubeStrip";
+import { YouTubeMedia, captureTabAudio, parseYouTube, recordPlayback, youTubeUrl } from "@/lib/youtube";
 import {
   type Lang, STR, cloneBars, bufToB64, type PageCrop, cropCanvasRows, cropPageMargins,
   applyPageCrop, copyCanvas, releaseCanvas, pdfPageUsesLargeRaster,
@@ -86,7 +88,7 @@ export default function ScoreFollowPage() {
   const analysisRasterModeRef = useRef("");
   const displayRasterModeRef = useRef("");
   const renderCacheStatsRef = useRef<RenderCacheStats>({ analysisRasterHits: 0, analysisRasterMisses: 0, displayHits: 0, displayMisses: 0 });
-  const mediaRef = useRef<HTMLAudioElement | HTMLVideoElement | null>(null);
+  const mediaRef = useRef<HTMLAudioElement | HTMLVideoElement | YouTubeMedia | null>(null);
   const pdfDocRef = useRef<any>(null);
   const pdfNameRef = useRef("");
   const pageNumRef = useRef(1);
@@ -138,7 +140,10 @@ export default function ScoreFollowPage() {
   const [pageNum, setPageNum] = useState(1);
   const [pdfName, setPdfName] = useState("");
   const [mediaURL, setMediaURL] = useState("");
-  const [mediaKind, setMediaKind] = useState<"audio" | "video">("audio");
+  const [mediaKind, setMediaKind] = useState<"audio" | "video" | "youtube">("audio");
+  const [ytOpen, setYtOpen] = useState(false);
+  const [ytText, setYtText] = useState("");
+  const [ytErr, setYtErr] = useState("");
   const [speed, setSpeed] = useState(1);
   const [playing, setPlaying] = useState(false);
   // 节拍器走带状态(引擎 synpdf:metro-state 广播驱动; 无音频时主▶按钮即节拍器开关)
@@ -351,6 +356,16 @@ export default function ScoreFollowPage() {
   }, []);
   const [chromeOpen, setChromeOpen] = useState(true);
   const [mediaName, setMediaName] = useState("");
+  // YouTube as the media source (synpdf's yubvid): accepts a link or a bare 11-char id.
+  const loadYouTube = useCallback((input: string): boolean => {
+    const yt = parseYouTube(input);
+    if (!yt) return false;
+    setMediaURL(youTubeUrl(yt.id, yt.start));
+    setMediaName(`youtube:${yt.id}`);
+    setMediaKind("youtube");
+    setStatus(`YouTube ${yt.id} 载入中 / loading…`);
+    return true;
+  }, []);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const camInputRef = useRef<HTMLInputElement>(null);
@@ -2498,7 +2513,10 @@ export default function ScoreFollowPage() {
     if (includePdf && pdfBytesRef.current && (opt as unknown as Record<string, number>).wpdf !== 0) {
       L.push(`pdf_data = ${bin2txt(pdfBytesRef.current)};`);
     }
-    L.push(`media_file = ${JSON.stringify(mediaName || "")};`);
+    // synpdf convention: a YouTube source is saved as opt.yubvid with an empty media_file.
+    const yubvid = mediaName.startsWith("youtube:") ? mediaName.slice(8) : "";
+    if (yubvid) optSnap.yubvid = yubvid;
+    L.push(`media_file = ${JSON.stringify(yubvid ? "" : mediaName || "")};`);
     L.push(`msc_tracks = "";`);
     L.push(`offset_js = 0.00;`);
     L.push(`opt = ${JSON.stringify(optSnap)};`);
@@ -2689,6 +2707,8 @@ export default function ScoreFollowPage() {
       setHomrGateInfo(`HoMR门·${homrGateData.pages.length}页·${nn}音符`);
     }
     const mediaWant = getStr("media_file");
+    const yubvid = typeof optAll?.yubvid === "string" ? optAll.yubvid : "";
+    if (yubvid) loadYouTube(yubvid);
     const applyNums = (o: Record<string, unknown> | null) => {
       if (!o) return;
       for (const [k, val] of Object.entries(o)) {
@@ -2940,8 +2960,8 @@ export default function ScoreFollowPage() {
     setStatus(`loaded preload ${name} · ${adopted} 页小节线已采用 · ${wijzerRef.current.times.length} sync points` +
       (pdfBytes ? " · PDF内嵌" : "") +
       (restored.length ? ` · 预设已恢复(${restored.join("+")})` : "") +
-      (mediaWant && !mediaURL ? ` · 请载入音频 ${mediaWant}` : ""));
-  }, [renderPage, mediaURL]);
+      (yubvid ? ` · YouTube ${yubvid}` : mediaWant && !mediaURL ? ` · 请载入音频 ${mediaWant}` : ""));
+  }, [renderPage, mediaURL, loadYouTube]);
 
   const loadPreload = useCallback((f: File) => {
     f.text().then((txt) => void loadPreloadText(txt, f.name)).catch(() => { setScorePhase("error"); setStatus("preload 文件读取失败"); });
@@ -3145,6 +3165,9 @@ export default function ScoreFollowPage() {
     if (["wood", "clave", "beep", "digital", "snare", "voice_zh", "voice_en"].includes(sound)) cfg.sound = sound;
     const speedRaw = (params.get("speed") || "").trim();
     if (/^\d+(\.\d+)?$/.test(speedRaw)) setSpeed(Math.min(4, Math.max(0.1, Number(speedRaw))));
+    // ?yt=<link or id> (or synpdf's ?yubvid=<id>) plays that YouTube video with the preload
+    const yt = params.get("yt") || params.get("yubvid") || "";
+    if (yt) loadYouTube(yt);
     if (!Object.keys(cfg).length) return;
     // 引擎可能稍后才挂载: 先试一次, 不成则跟 metro-state 重试(约 3 秒)
     let tries = 0;
@@ -3163,7 +3186,7 @@ export default function ScoreFollowPage() {
       if (tries < 6) window.setTimeout(push, 500);
     };
     push();
-  }, []);
+  }, [loadYouTube]);
 
   // 一键推送公开谱库: fixed preload → 本站 Score/ 目录(经 sf-report-upload.php target=score),
   // 落盘即公开可 fetch, 索引页 /scores/ 自动收录, 返回可分享链接并复制。
@@ -3365,7 +3388,18 @@ export default function ScoreFollowPage() {
             <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); pdfInputRef.current?.click(); }}>{pdfName ? "✓" : "📄"} {tx("loadPdf")}{pdfName ? ` · ${pdfName.length > 18 ? pdfName.slice(0, 16) + "…" : pdfName}` : ""}</button>
             <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); imgInputRef.current?.click(); }}>🖼 {tx("loadImage")}</button>
             <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); void openCamera(); }}>📷 {tx("takePhoto")}</button>
-            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); mediaInputRef.current?.click(); }}>{mediaURL ? "✓" : "🎵"} {tx("loadMedia")}</button>
+            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); mediaInputRef.current?.click(); }}>{mediaURL && mediaKind !== "youtube" ? "✓" : "🎵"} {tx("loadMedia")}</button>
+            <button role="menuitem" className={styles.openItem} aria-expanded={ytOpen} onClick={() => { setYtOpen((v) => !v); setYtErr(""); }}>{mediaKind === "youtube" && mediaURL ? "✓" : "▶"} {tx("loadYoutube")}</button>
+            {ytOpen && <form className={styles.ytForm} onSubmit={(e) => {
+              e.preventDefault();
+              if (loadYouTube(ytText)) { setYtOpen(false); setOpenMenu(false); setYtText(""); }
+              else setYtErr(lang === "zh" ? "无法识别的 YouTube 链接或视频 ID" : "Not a YouTube link or 11-character video id");
+            }}>
+              <input autoFocus type="text" inputMode="url" value={ytText} onChange={(e) => { setYtText(e.target.value); setYtErr(""); }}
+                placeholder="https://youtu.be/…" aria-label={tx("loadYoutube")} aria-invalid={!!ytErr} />
+              <button type="submit" disabled={!ytText.trim()}>{lang === "zh" ? "载入" : "Load"}</button>
+              {ytErr && <span className={styles.ytErr} role="alert">{ytErr}</span>}
+            </form>}
             <div className={styles.menuSep} role="separator" />
             <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); preloadInputRef.current?.click(); }}>📥 {tx("loadPreload")} · {tx("expertDev")}</button>
           </div>}
@@ -3691,9 +3725,38 @@ export default function ScoreFollowPage() {
 
        <div className={styles.workspace}>
         {performanceOpen && <PerformancePanel lang={lang} pdfMeasures={barsTotal} pdfName={pdfName} pdfBytes={() => pdfBytesRef.current}
+          youtubeLink={mediaKind === "youtube" ? mediaURL : ""}
+          captureYouTube={async ({ link, startSec, lengthSec, onProgress }) => {
+            // Ask for tab audio first, while the click still counts as a user gesture.
+            const stream = await captureTabAudio();
+            try {
+              const want = link ? parseYouTube(link) : null;
+              if (link && !want) throw new Error(lang === "zh" ? "无法识别的 YouTube 链接" : "Not a YouTube link");
+              const cur = mediaRef.current;
+              if (want && !(cur instanceof YouTubeMedia && cur.id === want.id)) loadYouTube(link!);
+              let media: YouTubeMedia | null = null;
+              for (let i = 0; i < 100 && !media; i++) {
+                const m = mediaRef.current;
+                if (m instanceof YouTubeMedia && m.isReady && (!want || m.id === want.id)) media = m;
+                else await new Promise((r) => setTimeout(r, 200));
+              }
+              if (!media) throw new Error(lang === "zh" ? "YouTube 播放器未就绪" : "YouTube player not ready");
+              const rec = await recordPlayback(stream, media, startSec, lengthSec, { onProgress });
+              return { ...rec, name: `YouTube ${media.id} @${Math.round(startSec)}s` };
+            } finally {
+              stream.getTracks().forEach((t) => t.stop());
+            }
+          }}
           getSyncedAudio={() => {
             if (!mediaURL) return null;
             doPause();
+            // YouTube: the panel gets the audio excerpt from the analysis service.
+            if (mediaKind === "youtube") {
+              const yt = parseYouTube(mediaURL);
+              if (!yt) return null;
+              return { url: "", youtube: yt.id, name: mediaName, measureCount: barsTotal,
+                markers: wijzerRef.current.times.map((entry) => ({ measure: entry.mix + 1, audioSec: entry.t })) };
+            }
             return { url: mediaURL, name: mediaName || "Synced audio", measureCount: barsTotal,
               markers: wijzerRef.current.times.map((entry) => ({ measure: entry.mix + 1, audioSec: entry.t })) };
           }}
@@ -3865,6 +3928,24 @@ export default function ScoreFollowPage() {
       {mediaURL && mediaKind === "video" && (
         <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={(e) => { if (playing && !e.currentTarget.paused) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
       )}
+      {mediaURL && mediaKind === "youtube" && (() => {
+        const yt = parseYouTube(mediaURL);
+        return yt && <YouTubeStrip className={styles.mediaStrip} id={yt.id} start={yt.start}
+          onMedia={(m) => {
+            if (m) mediaRef.current = m;
+            else if (mediaRef.current instanceof YouTubeMedia) mediaRef.current = null;
+          }}
+          onReady={() => setStatus(`YouTube ${yt.id} ✓`)}
+          onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }}
+          onError={(code) => {
+            doPause();
+            // 101/150/152: the owner disabled embedding, or YouTube wants a sign-in (bot check).
+            setStatus(code === 101 || code === 150 || code === 152
+              ? `YouTube 拒绝在此播放(视频禁止嵌入或需要登录) / YouTube refused playback here (embedding disabled or sign-in required) [${code}]`
+              : code === -1 ? "YouTube 播放器载入失败(网络?) / YouTube player failed to load"
+              : `YouTube 错误 ${code}: 视频不存在或不可用 / video unavailable`);
+          }} />;
+      })()}
       {mediaURL && mediaKind === "audio" && (
         <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={(e) => { if (playing && !e.currentTarget.paused) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
       )}

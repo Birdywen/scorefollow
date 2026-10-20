@@ -10,6 +10,7 @@ export const STR: Record<string, { zh: string; en: string }> = {
   loadImage: { zh: "载入图片谱", en: "Load image score" },
   takePhoto: { zh: "拍照录谱", en: "Snap score photo" },
   loadMedia: { zh: "载入音频/视频", en: "Load audio/video" },
+  loadYoutube: { zh: "YouTube 链接", en: "YouTube link" },
   settings: { zh: "设置", en: "Settings" },
   open: { zh: "打开", en: "Open" },
   play: { zh: "▶ 播放", en: "▶ Play" },

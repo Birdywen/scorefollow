@@ -24,6 +24,10 @@
 .check input { flex: 0 0 auto; margin-top: 2px; }
 
 /* 按钮 */
+.ytForm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.ytForm > input { flex: 1 1 220px; min-width: 0; min-height: 36px; padding: 0 8px; border: 1px solid var(--sf-border); border-radius: 8px; background: var(--sf-surface); color: var(--sf-ink); font: inherit; }
+.ytForm label input { width: 72px; min-height: 32px; margin-left: 4px; }
+.ytForm button { min-height: 36px; padding: 0 14px; border: 1px solid var(--sf-border); border-radius: 10px; background: var(--sf-surface); color: var(--sf-ink); font: inherit; cursor: pointer; }
 .omrButton, .actions button, .upload { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 6px 12px; border: 1px solid var(--sf-border); border-radius: 10px; background: var(--sf-surface); color: var(--sf-ink); font: inherit; cursor: pointer; }
 .omrButton:disabled, .actions button:disabled { opacity: .5; cursor: not-allowed; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
