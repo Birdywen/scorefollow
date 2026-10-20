@@ -1,7 +1,7 @@
 import styles from "./performance.module.css";
 
 export type Quality = {
-  version: string; outcome: "complete" | "complete_with_rescue" | "partial" | "insufficient_evidence" | "score_audio_mismatch";
+  version: string; outcome: "complete" | "complete_with_rescue" | "partial" | "insufficient_evidence" | "score_audio_mismatch" | "score_unreliable";
   issues: string[]; pitchCoverage: number; timingCoverage: number; followReady: boolean;
   overallScore?: number | null; pitchMatchRate?: number | null; overallWeights?: { pitch: number; rhythm: number };
 };
@@ -30,6 +30,7 @@ export default function AnalysisQuality({ summary: s, quality, diagnostics, vers
     complete: ["结果可用", "Results available"], complete_with_rescue: ["已自动补救，请核对", "Auto-corrected; review alignment"],
     partial: rangeOnly ? [`已评第 ${s.startMeasure ?? "—"}–${s.endMeasure ?? "—"} 小节`, `Scored measures ${s.startMeasure ?? "—"}–${s.endMeasure ?? "—"}`] : ["部分结果，需要核对", "Partial results; review needed"], insufficient_evidence: ["证据不足，未能评分", "Insufficient evidence to score"],
     score_audio_mismatch: ["输入可能不匹配", "Score and recording may not match"],
+    score_unreliable: ["谱面不可靠，未评分", "Score unreliable; not graded"],
   };
   const reasons: Record<string, [string, string]> = {
     octave: ["八度修正", "Octave correction"], tempo: ["速度修正", "Tempo correction"],
@@ -53,7 +54,8 @@ export default function AnalysisQuality({ summary: s, quality, diagnostics, vers
     {s.clipped && <p>{zh ? "录音存在削波，请降低输入音量。" : "Clipping detected; reduce the recording input level."}</p>}
     {(quality?.issues ?? []).includes("pitch_tracking_unreliable") && <p>{zh ? "部分音高没有测准（偏差过大的音已灰显，不计入音准分），建议回听这些小节或重录。" : "Some pitches could not be measured reliably (extreme deviations are greyed out and not scored); replay those measures or record again."}</p>}
     {(quality?.issues ?? []).includes("tempo_timing_unreliable") && <p>{zh ? "录音中速度变化较大，后段时间对不上，节奏分仅供参考；可用下方手动小节同步后重分析。" : "Tempo varied a lot in this take, so later notes drift off the timeline and the rhythm score is indicative only. Use manual measure sync below and analyze again."}</p>}
-    <p>{(status === "partial" && !rangeOnly) || status === "insufficient_evidence"
+    {(quality?.issues ?? []).includes("score_unreliable") && <p role="status">{zh ? "谱面（多为 PDF 识别结果）有明显错误，相应分数已拒绝给出；具体依据见下方钢琴报告的“谱面检查”。" : "The score (often a PDF recognition result) has clear errors, so the affected scores were withheld; see “Score check” in the piano report for the evidence."}</p>}
+    <p>{(status === "partial" && !rangeOnly) || status === "insufficient_evidence" || status === "score_unreliable"
       ? (zh ? "请核对谱面、乐器和起始小节；必要时使用下方手动小节同步后重分析。" : "Check the score, instrument and starting measure; use manual measure sync below and analyze again if needed.")
       : (zh ? "分数不代表对齐质量；走谱前请回听首尾小节，确认时间边界。" : "Scores do not prove alignment quality; replay the first and last measures before following the take.")}</p>
     {quality && <p>{quality.followReady ? (zh ? "已有可用走谱时间轴，请先核对。" : "A follow timeline is available; verify it first.") : (zh ? "走谱时间轴尚未可靠确认，请先同步小节。" : "The follow timeline needs confirmation; sync the measures first.")}</p>}

@@ -23,15 +23,32 @@ class PianoTests(unittest.TestCase):
         self.addCleanup(sensor_patch.stop)
 
     def test_wrong_notes_reduce_f1(self):
+        written = (69, 71, 72, 74, 76, 74, 72, 71, 69, 71)
+        played = {2: 73, 5: 75, 8: 70}
+        with patch.object(piano_engine, "transcribe_notes", return_value=fake_perf(
+                *[(i + .12, played.get(i, m)) for i, m in enumerate(written)])):
+            result = piano_engine.analyze_piano(recording(written), score(written), 60)
+        summary = result["summary"]
+        # A nearby different pitch is a wrong note (with the played pitch), not miss + extra.
+        self.assertEqual((summary["wrongPitchNotes"], summary["missedNotes"], summary["extraNotes"]), (3, 0, 0))
+        self.assertEqual([result["notes"][i]["playedMidi"] for i in played], list(played.values()))
+        self.assertEqual(summary["pitchScore"], 70)
+        self.assertEqual(summary["pitchScoreMethod"], "evidence-f1")
+        self.assertEqual(summary["scoreCheck"]["pitch"], "ok")
+
+    def test_every_written_note_played_otherwise_is_a_score_conflict(self):
+        # Every A from m7 on sounds as B: a lost accidental looks exactly like this. Not scored, with evidence.
         with patch.object(piano_engine, "transcribe_notes", return_value=fake_perf(
                 *[(i + .12, 69 if i < 6 else 71) for i in range(10)])):
             result = piano_engine.analyze_piano(recording((69,) * 10), score((69,) * 10), 60)
         summary = result["summary"]
-        # 0.4: a nearby different pitch is a wrong note (with the played pitch), not miss + extra.
-        self.assertEqual((summary["wrongPitchNotes"], summary["missedNotes"], summary["extraNotes"]), (4, 0, 0))
-        self.assertEqual({n["playedMidi"] for n in result["notes"][6:]}, {71})
-        self.assertEqual(summary["pitchScore"], 60)
-        self.assertEqual(summary["pitchScoreMethod"], "note-f1")
+        ev = summary["scoreCheck"]["evidence"]
+        self.assertEqual((ev[0]["kind"], ev[0]["count"], ev[0]["measures"]), ("systematic_pitch", 4, [7, 8, 9, 10]))
+        self.assertIn("录音里都是 B", ev[0]["zh"])
+        self.assertEqual({n["status"] for n in result["notes"][6:]}, {"excluded"})
+        # 4 of 10 notes doubtful is over the 30% limit: no pitch score at all, and the reason says so.
+        self.assertEqual((summary["scoreCheck"]["pitch"], summary["pitchScore"]), ("refused", None))
+        self.assertEqual(ev[-1]["kind"], "too_many_excluded")
 
     def test_audio_end_clips_score_but_silent_tail_does_not(self):
         events = fake_perf((.12, 69), (1.12, 71))
@@ -88,7 +105,7 @@ class PianoTests(unittest.TestCase):
         self.assertEqual(result["summary"]["pitchScore"], 100)
         self.assertEqual(result["summary"]["timedNotes"], 4)
         self.assertIsNone(result["notes"][0]["timingErrorMs"])
-        self.assertEqual(result["summary"]["sensors"], ["piano-transcribe"])
+        self.assertEqual(result["summary"]["sensors"], ["piano-transcribe"])  # a sine is no piano: no audio check
         self.assertTrue(all(n["status"] == "correct" for n in result["notes"]))
 
     def test_wrong_and_missed_notes(self):

@@ -66,7 +66,7 @@ export function isScoredPitch(note: VisualNote): boolean {
     if (detected < 36 || detected > 96) return false;
   }
   if (note.pitchStatus) return ["correct", "sharp", "flat"].includes(note.pitchStatus);
-  return !["uncertain", "octave_uncertain", "outlier", "missed"].includes(note.status);
+  return !["uncertain", "octave_uncertain", "outlier", "missed", "excluded"].includes(note.status);
 }
 
 export function pitchFrequency(notes: VisualNote[]) {

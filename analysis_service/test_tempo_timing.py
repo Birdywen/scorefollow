@@ -20,7 +20,7 @@ class TempoTimingTests(unittest.TestCase):
         self.assertEqual(q["outcome"], "partial")
         self.assertIsNone(q["overallScore"])
         self.assertEqual(q["version"], QUALITY_VERSION)
-        self.assertEqual(QUALITY_VERSION, "evidence-2")
+        self.assertEqual(QUALITY_VERSION, "evidence-3")
 
     def test_tempo_mismatch_with_good_rhythm_stays_complete(self):
         q = assess_quality(result(tempoMismatch=True, rhythmScore=74))

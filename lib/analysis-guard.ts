@@ -31,7 +31,7 @@ export function isValidAnalysisResult(r: unknown): boolean {
     if (!o.quality || typeof o.quality !== "object") return false;
     const q = o.quality as Record<string, unknown>;
     if (typeof q.version !== "string" || !q.version ||
-        !["complete", "complete_with_rescue", "partial", "insufficient_evidence", "score_audio_mismatch"].includes(String(q.outcome)) ||
+        !["complete", "complete_with_rescue", "partial", "insufficient_evidence", "score_audio_mismatch", "score_unreliable"].includes(String(q.outcome)) ||
         (q.overallScore !== undefined && q.overallScore !== null && !(typeof q.overallScore === "number" && Number.isFinite(q.overallScore) && q.overallScore >= 0 && q.overallScore <= 100)) ||
         !Array.isArray(q.issues) || !q.issues.every((issue) => typeof issue === "string") ||
         typeof q.followReady !== "boolean") return false;

@@ -8,7 +8,8 @@ OVERALL_WEIGHTS = {"pitch": 0.5, "rhythm": 0.5}
 PITCH_UNRELIABLE_RATIO = 0.2
 # evidence-2: 速度不一致且节奏分低于此值, 视为时间映射漂移 (partial, 不出综合分)。
 TEMPO_RHYTHM_FLOOR = 60
-QUALITY_VERSION = "evidence-2"
+# evidence-3: 钢琴谱面检查拒评 (scoreCheck refused) -> issue score_unreliable; 两项都拒评时 outcome score_unreliable。
+QUALITY_VERSION = "evidence-3"
 
 
 def assess_quality(result: dict) -> dict:
@@ -37,6 +38,10 @@ def assess_quality(result: dict) -> dict:
         rhythm_now = summary.get("rhythmScore")
         if rhythm_now is not None and rhythm_now < TEMPO_RHYTHM_FLOOR:
             issues.append("tempo_timing_unreliable")
+    check = summary.get("scoreCheck") or {}
+    # Piano: the score itself was found unreliable for pitch and/or rhythm (evidence in scoreCheck).
+    if "refused" in (check.get("pitch"), check.get("rhythm")):
+        issues.append("score_unreliable")
     if summary.get("takeBeyondScoreAfterSec") is not None:
         issues.append("take_beyond_score")
     measured = summary.get("voicedNotes") or 0
@@ -54,7 +59,9 @@ def assess_quality(result: dict) -> dict:
     mismatch = match_rate is not None and match_rate < .4 and unverified and not summary.get("autoMeasureSync")
     if mismatch:
         issues.append("score_audio_mismatch")
-    if not scores:
+    if not scores and "score_unreliable" in issues:
+        outcome = "score_unreliable"
+    elif not scores:
         outcome = "insufficient_evidence"
     elif mismatch:
         outcome = "score_audio_mismatch"

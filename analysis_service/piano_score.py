@@ -68,8 +68,11 @@ def has_repeats(xml: str) -> bool:
     return root.find(".//{*}repeat") is not None or root.find(".//{*}ending") is not None
 
 
-def parse_piano_score(xml: str, unfold: bool = True, spans: list | None = None) -> list[dict]:
-    """spans, if given, receives [(measure, startBeat, endBeat)] in performance order (first part)."""
+def parse_piano_score(xml: str, unfold: bool = True, spans: list | None = None,
+                      issues: list | None = None) -> list[dict]:
+    """spans, if given, receives [(measure, startBeat, endBeat)] in performance order (first part).
+    issues, if given, receives {"measure", "beats", "expected"} for printed measures whose content
+    does not fill the time signature (OMR rhythm errors); pickup and final measures may be short."""
     root = validate_musicxml(xml)
     if _tag(root) != "score-partwise":
         raise ValueError("仅支持 score-partwise MusicXML")
@@ -101,6 +104,9 @@ def parse_piano_score(xml: str, unfold: bool = True, spans: list | None = None) 
             keys.append(dict(key_alter))
         beat = 0.0
         open_ties: dict[tuple, dict] = {}  # (staff, midi) -> note awaiting a tie stop
+        checked: set[int] = set()
+        last_in_voice: dict[tuple, dict] = {}   # (staff, voice) -> previous struck note
+        slur_from: dict[tuple, dict] = {}       # (staff, voice, number) -> note where a slur starts
         for mi in order:
             m = measures[mi]
             divisions, key_alter = divs[mi], keys[mi]
@@ -153,20 +159,43 @@ def parse_piano_score(xml: str, unfold: bool = True, spans: list | None = None) 
                 key = (p_index, staff, midi)
                 start_beat = beat + onset
                 held = open_ties.get(key)
+                slurs = [(sl.get("type"), sl.get("number") or "1") for sl in item.findall("./{*}notations/{*}slur")]
+                prev = last_in_voice.get((staff, voice))
+                # A slur joining two adjacent notes of the same pitch is a tie (OMR often reads ties as slurs).
+                slur_tie = not chord and prev is not None and prev["pitchMidi"] == midi and any(
+                    t == "stop" and slur_from.get((staff, voice, num)) is prev for t, num in slurs)
+                if slur_tie and abs(prev["onsetBeat"] + prev["durationBeat"] - start_beat) < 1e-3:
+                    held = prev
+                    ties = ties | {"stop"}
                 if "stop" in ties and held is not None and abs(held["onsetBeat"] + held["durationBeat"] - start_beat) < 1e-3:
                     held["durationBeat"] += length  # continuation, not a new strike
                     if "start" not in ties:
                         open_ties.pop(key, None)
+                    for t, num in slurs:
+                        if t == "start":
+                            slur_from[(staff, voice, num)] = held
                     continue
                 note = {"measure": mi + 1, "onsetBeat": round(start_beat, 6), "durationBeat": length,
                         "pitchMidi": midi, "staff": int(staff) if staff.isdigit() else 1, "voice": voice}
                 if item.find("./{*}notations/{*}arpeggiate") is not None:
                     note["arpeggiate"] = True  # written rolled chord: spread is intended
                 notes.append(note)
+                if not chord:
+                    last_in_voice[(staff, voice)] = note
+                for t, num in slurs:
+                    if t == "start":
+                        slur_from[(staff, voice, num)] = note
                 if "start" in ties:
                     open_ties[key] = note
             # A measure lasts as long as its time signature says; fall back to its content.
             length_q = _measure_quarters(measures, mi, measure_len)
+            if issues is not None and p_index == 0 and mi not in checked:
+                checked.add(mi)
+                nominal = _measure_quarters(measures, mi, 0.0)
+                edge = mi in (0, len(measures) - 1) and measure_len < nominal
+                if nominal and measure_len and abs(measure_len - nominal) > 1e-3 and not edge \
+                        and m.get("implicit") != "yes":
+                    issues.append({"measure": mi + 1, "beats": round(measure_len, 3), "expected": round(nominal, 3)})
             if spans is not None and p_index == 0:
                 spans.append((mi + 1, round(beat, 6), round(beat + length_q, 6)))
             beat += length_q

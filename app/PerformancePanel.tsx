@@ -25,7 +25,9 @@ type Note = {
   timingErrorMs: number | null; confidence: number; status: string;
   pitchStatus?: "correct" | "sharp" | "flat" | "uncertain" | "octave" | "outlier";
   timingStatus?: "correct" | "early" | "late" | "uncertain" | "unscored";
-  matchStatus?: "matched" | "uncertain";
+  matchStatus?: "matched" | "uncertain" | "audio" | "missed";
+  audioCheck?: { result: "heard" | "absent" | "unclear" | "unchecked"; p: number | null };
+  excludedReason?: string;
   chordTones?: { midi: number; cents: number | null; state: "measured" | "missing" | "unchecked" | "inseparable" | "unmeasured" }[];
 };
 type Rhythm = {
@@ -60,7 +62,15 @@ type Result = {
     // piano-align-0.4
     chordCount?: number; chordSpreadMs?: number | null; unevenChords?: number; unevenChordMeasures?: number[];
     handOffsetMs?: number | null; tempoVariationPct?: number | null; repeatsUnfolded?: boolean;
-    scoreSuspects?: { pitchClass: number; semitones: number; count: number; measures: number[] }[] };
+    scoreSuspects?: { pitchClass: number; semitones: number; count: number; measures: number[] }[];
+    // piano-align-0.5
+    uncertainNotes?: number; audioRescuedNotes?: number; ghostExtras?: number;
+    audioCheck?: { available: boolean };
+    scoreCheck?: { pitch: "ok" | "partial" | "refused"; rhythm: "ok" | "partial" | "refused"; excludedNotes: number;
+      evidence: { kind: string; measures: number[]; zh: string; en: string }[] };
+    tuning?: { offsetCents: number; referenceHz: number; stretchCentsPerOctave: number | null; spreadCents: number | null;
+      measuredKeys: number; outOfTuneKeys: { midi: number; cents: number; strikes: number }[]; tuningScore: number | null;
+      retunedForTranscription: boolean; semitoneShift: number } };
 };
 type Take = {
   measureSync?: MeasureMarker[]; syncScoreXml?: string;
@@ -74,14 +84,30 @@ type OmrResult = { musicXml: string; compatible: boolean; reason?: string | null
   pianoCompatible?: boolean; pianoReason?: string | null; pianoNoteCount?: number };
 /** Piano uses the polyphonic parser; older services only report the monophonic check. */
 const omrUsable = (r: OmrResult, instrument: string) => instrument === "piano" ? (r.pianoCompatible ?? r.compatible) : r.compatible;
-/** piano-align-0.4 extras: wrong notes with the played pitch, chord evenness, hands, score suspects. */
+/** Piano extras: score check with evidence, tuning, audio check, wrong notes, chord evenness, hands. */
 function PianoDetails({ result, zh }: { result: Result; zh: boolean }) {
   const s = result.summary;
   const wrong = result.notes.filter((n) => n.status === "wrong_pitch" && n.playedMidi != null);
-  if (s.chordCount == null && !wrong.length) return null;
+  if (s.chordCount == null && !wrong.length && !s.scoreCheck && !s.tuning) return null;
+  const check = s.scoreCheck;
+  const refused = check && (check.pitch === "refused" || check.rhythm === "refused");
+  const tun = s.tuning;
+  const sign = (v: number) => `${v > 0 ? "+" : ""}${v}`;
   const pc = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
   const hand = s.handOffsetMs;
   return <div className={styles.hint}>
+    {check && check.evidence.length > 0 && <div role="status">
+      <p className={refused ? styles.error : styles.warn}>{zh
+        ? `谱面检查：${check.pitch === "refused" ? "音准不评分" : check.pitch === "partial" ? `音准有 ${check.excludedNotes} 个音不计分` : "音准正常评分"}；${check.rhythm === "refused" ? "节奏不评分" : check.rhythm === "partial" ? "节奏部分小节不计分" : "节奏正常评分"}。依据：`
+        : `Score check: ${check.pitch === "refused" ? "pitch not scored" : check.pitch === "partial" ? `${check.excludedNotes} notes left out of pitch` : "pitch scored"}; ${check.rhythm === "refused" ? "rhythm not scored" : check.rhythm === "partial" ? "some measures left out of rhythm" : "rhythm scored"}. Evidence:`}</p>
+      <ul>{check.evidence.map((e, i) => <li key={`${e.kind}:${i}`}>{zh ? e.zh : e.en}</li>)}</ul>
+    </div>}
+    {s.audioCheck?.available && <p>{zh
+      ? `频谱核实：${s.audioRescuedNotes ?? 0} 个转录漏掉的音在录音中确认弹了（不扣分），${s.ghostExtras ?? 0} 个转录误报的音已剔除，${s.uncertainNotes ?? 0} 个拿不准（按把握程度部分计分）。`
+      : `Audio check: ${s.audioRescuedNotes ?? 0} notes the transcriber missed were confirmed in the recording (no penalty), ${s.ghostExtras ?? 0} transcriber ghosts dropped, ${s.uncertainNotes ?? 0} uncertain (partly counted).`}</p>}
+    {tun && <p>{zh
+      ? `钢琴调律：A4 ≈ ${tun.referenceHz} Hz（${sign(tun.offsetCents)} 音分${tun.semitoneShift ? `，整体${tun.semitoneShift < 0 ? "低" : "高"}约 ${Math.abs(tun.semitoneShift)} 个半音` : ""}）${tun.stretchCentsPerOctave != null ? `，伸展 ${sign(tun.stretchCentsPerOctave)} 音分/八度` : ""}${tun.tuningScore != null ? `，调律分 ${tun.tuningScore}（测了 ${tun.measuredKeys} 个键）` : "，可测的键太少"}${tun.outOfTuneKeys.length ? `；跑调的键：${tun.outOfTuneKeys.slice(0, 6).map((k) => `${midiName(k.midi)} ${sign(k.cents)} 音分`).join("、")}` : ""}。整体音高与调律都不影响音准分${tun.retunedForTranscription ? "（转录前已把录音校正到 A440）" : ""}。`
+      : `Piano tuning: A4 ≈ ${tun.referenceHz} Hz (${sign(tun.offsetCents)} cents${tun.semitoneShift ? `, about ${Math.abs(tun.semitoneShift)} semitone ${tun.semitoneShift < 0 ? "low" : "high"}` : ""})${tun.stretchCentsPerOctave != null ? `, stretch ${sign(tun.stretchCentsPerOctave)} cents/octave` : ""}${tun.tuningScore != null ? `, tuning score ${tun.tuningScore} (${tun.measuredKeys} keys measured)` : ", too few keys to measure"}${tun.outOfTuneKeys.length ? `; out-of-tune keys: ${tun.outOfTuneKeys.slice(0, 6).map((k) => `${midiName(k.midi)} ${sign(k.cents)} cents`).join(", ")}` : ""}. Neither the overall pitch nor the tuning affects the pitch score${tun.retunedForTranscription ? " (the take was retuned to A440 before transcription)" : ""}.`}</p>}
     {s.wrongPitchNotes != null && <p>{zh ? `错音 ${s.wrongPitchNotes}` : `Wrong notes ${s.wrongPitchNotes}`}{wrong.length > 0 && ": " + wrong.slice(0, 8).map((n) => zh
       ? `第 ${n.measure} 小节 ${midiName(n.pitchMidi)} 弹成 ${midiName(n.playedMidi!)}`
       : `m${n.measure} ${midiName(n.pitchMidi)} played as ${midiName(n.playedMidi!)}`).join(" · ")}{wrong.length > 8 ? " …" : ""}</p>}
@@ -93,7 +119,7 @@ function PianoDetails({ result, zh }: { result: Result; zh: boolean }) {
       : `Hands: ${Math.abs(hand) < 15 ? "together" : hand < 0 ? `right hand ${-hand} ms early` : `right hand ${hand} ms late`}`}</p>}
     {s.tempoVariationPct != null && <p>{zh ? `速度起伏（小节间）：${s.tempoVariationPct}%；渐快渐慢不计入节奏分` : `Tempo variation between measures: ${s.tempoVariationPct}%; gradual tempo changes are not counted against rhythm`}</p>}
     {s.repeatsUnfolded && <p>{zh ? "已按反复展开对齐。" : "Aligned with repeats unfolded."}</p>}
-    {s.scoreSuspects?.map((x) => <p className={styles.error} key={`${x.pitchClass}:${x.semitones}`}>{zh
+    {!check && s.scoreSuspects?.map((x) => <p className={styles.error} key={`${x.pitchClass}:${x.semitones}`}>{zh
       ? `谱面可能有误：${pc[x.pitchClass]} 在第 ${x.measures.join("、")} 小节共 ${x.count} 次都被弹成${x.semitones > 0 ? "高" : "低"} ${Math.abs(x.semitones)} 个半音；若是 PDF 识别的谱，请核对调号和临时记号。`
       : `Possible score error: ${pc[x.pitchClass]} was played ${Math.abs(x.semitones)} semitone(s) ${x.semitones > 0 ? "higher" : "lower"} ${x.count} times (m${x.measures.join(", ")}); if the score came from PDF recognition, check key signature and accidentals.`}</p>)}
   </div>;
@@ -1163,7 +1189,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         ? `检测速度约 ${result.summary.detectedBpm ?? "—"} BPM，与设定速度差别较大；${result.summary.autoMeasureSync ? "已按自动小节边界评分" : "请核对速度与拍点口径"}`
         : `Detected tempo ≈ ${result.summary.detectedBpm ?? "—"} BPM differs strongly from the set tempo; ${result.summary.autoMeasureSync ? "scored against auto measure boundaries" : "check the tempo and beat unit"}`}</p>}
       {result.summary.startMeasure && <p className={styles.hint}>{zh ? `本次分析：第 ${result.summary.startMeasure}–${result.summary.endMeasure} 小节` : `Analyzed measures ${result.summary.startMeasure}–${result.summary.endMeasure}`}{result.instrument !== "piano" || result.summary.pitchScoreMethod === "note-f1" ? (zh ? "（录音结束后的谱面音符不计分）" : "; score notes beyond the recording end were excluded.") : (zh ? "（旧版钢琴未裁去录音结束后的谱面音符）" : "; this older piano report includes score notes beyond the recording end.")}</p>}
-      {result.instrument === "piano" && <p className={styles.hint}>{result.summary.pitchScoreMethod === "note-f1"
+      {result.instrument === "piano" && <p className={styles.hint}>{result.summary.pitchScoreMethod === "evidence-f1"
+        ? (zh ? `钢琴音符匹配分（按证据加权）· 漏音 ${result.summary.missedNotes ?? "—"} · 多音 ${result.summary.extraNotes ?? "—"} · 拿不准 ${result.summary.uncertainNotes ?? 0}；转录与谱面不一致时回到频谱核实，确认没弹的才扣分。` : `Piano note F1, evidence-weighted · Missed ${result.summary.missedNotes ?? "—"} · Extra ${result.summary.extraNotes ?? "—"} · Uncertain ${result.summary.uncertainNotes ?? 0}; disagreements are re-checked in the audio and only confirmed mistakes cost points.`)
+        : result.summary.pitchScoreMethod === "note-f1"
         ? (zh ? `钢琴音符匹配分（F1）· 漏音 ${result.summary.missedNotes ?? "—"} · 多音 ${result.summary.extraNotes ?? "—"}；两者均影响分数。录音内静音仍计入覆盖范围。` : `Piano note F1 · Missed ${result.summary.missedNotes ?? "—"} · Extra ${result.summary.extraNotes ?? "—"}; both affect the score. Recorded silence remains in scope.`)
         : (zh ? "旧版钢琴音高分仅评价已匹配音符，不含漏音、多音扣分；请更新服务后重新分析。" : "Older piano scores evaluate matched notes only, without missed/extra penalties; update the service and reanalyze.")}</p>}
       {result.instrument === "piano" && <PianoDetails result={result} zh={zh} />}
