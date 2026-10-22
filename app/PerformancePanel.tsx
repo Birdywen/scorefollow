@@ -274,8 +274,8 @@ function analysisSignature(input: {
     String(input.bpm), String(input.startMeasure), input.syncMode, input.syncData].join("\n"));
 }
 
-export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio, onApplyMeasureSync, onFollowTake, captureYouTube, youtubeLink }: {
-  lang: "zh" | "en"; pdfMeasures: number; pdfName: string; pdfBytes: () => ArrayBuffer | null;
+export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio, onApplyMeasureSync, onFollowTake, captureYouTube, youtubeLink }: {
+  lang: "zh" | "en"; dev?: boolean; pdfMeasures: number; pdfName: string; pdfBytes: () => ArrayBuffer | null;
   onJump: (measure: number) => void; onClose: () => void;
   getSyncedAudio?: () => SyncedAudio | null;
   captureYouTube?: CaptureYouTube; youtubeLink?: string;
@@ -291,6 +291,9 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
     if (saved && (local || (!oldLocal && !oldOrigin))) return saved;
     return local ? LOCAL_API : `${location.origin}${BASE}/analysis`;
   });
+  // The service box is a developer tool; it also shows (and stays) once the address is missing.
+  const [serviceOpen, setServiceOpen] = useState(false);
+  useEffect(() => { if (!api.trim()) setServiceOpen(true); }, [api]);
   const [xmlFile, setXmlFile] = useState<File | null>(null);
   const [omrPdf, setOmrPdf] = useState<File | null>(null);
   const [omrJob, setOmrJob] = useState<OmrJob | null>(null);
@@ -1280,11 +1283,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       </details>
     </section>
     </ReportDialog>}
-    <details className={styles.fold}>
+    {(dev || serviceOpen) && <details className={styles.fold} open={serviceOpen || undefined}>
       <summary>{zh ? "服务设置" : "Service"}</summary>
       <label className={styles.field}>{zh ? "分析服务地址" : "Analysis API URL"}
         <input type="url" placeholder="https://analysis.example.com" value={api} disabled={omrActive || recording || busyTakeId != null} onChange={(e) => setApi(e.target.value)} /></label>
       {!api.trim() && <p className={styles.hint}>{zh ? `请输入分析服务地址；本站可使用同源 ${BASE}/analysis。` : `Enter the analysis API URL; this site uses ${BASE}/analysis.`}</p>}
-    </details>
+    </details>}
   </aside>;
 }

@@ -18,7 +18,8 @@
     "score-edit": "node scripts/score-edit-regression.mjs && node scripts/score-abc-regression.mjs",
     "voice-fill-ui": "node scripts/verify-voice-fill.mjs",
     "abc-edit-ui": "node scripts/verify-abc-edit.mjs",
-    "voice-fix-report-ui": "node scripts/verify-voice-fix-report.mjs"
+    "voice-fix-report-ui": "node scripts/verify-voice-fix-report.mjs",
+    "dev-mode-ui": "node scripts/verify-dev-mode.mjs"
   },
   "dependencies": {
     "next": "16.3.5",

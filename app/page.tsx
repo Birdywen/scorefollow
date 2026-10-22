@@ -7,6 +7,7 @@
  * + 人工小节线校正层(manualBarsByPage) / 覆盖层开关 / timing 校验。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useDevMode } from "./hooks/useDevMode";
 
 // 静态部署 basePath（next.config.ts 保持同步；root 构建时由 NEXT_PUBLIC_SF_BASE="" 覆盖）
 const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
@@ -221,6 +222,7 @@ export default function ScoreFollowPage() {
   const [showCursor, setShowCursor] = useState(true);
   const [showLowConf, setShowLowConf] = useState(true);
   const [diagnosticMode, setDiagnosticMode] = useState(false);
+  const dev = useDevMode();
   // 干净视图: 一键隐藏全部覆盖层(含 line cursor), 供 metronome 播放时用, 再按恢复
   const [cleanView, setCleanView] = useState(false);
   const cleanSavedRef = useRef<{ sys: boolean; bars: boolean; cur: boolean; low: boolean; lncsr: number } | null>(null);
@@ -3402,8 +3404,8 @@ export default function ScoreFollowPage() {
               <button type="submit" disabled={!ytText.trim()}>{lang === "zh" ? "载入" : "Load"}</button>
               {ytErr && <span className={styles.ytErr} role="alert">{ytErr}</span>}
             </form>}
-            <div className={styles.menuSep} role="separator" />
-            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); preloadInputRef.current?.click(); }}>📥 {tx("loadPreload")} · {tx("expertDev")}</button>
+            {dev && <><div className={styles.menuSep} role="separator" />
+            <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); preloadInputRef.current?.click(); }}>📥 {tx("loadPreload")} · {tx("expertDev")}</button></>}
           </div>}
         </span>
         <input ref={pdfInputRef} type="file" accept=".pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPdfFile(f); e.target.value = ""; }} />
@@ -3555,7 +3557,7 @@ export default function ScoreFollowPage() {
                <button className={`${styles.practiceBtn} ${adjustMode ? styles.practiceBtnActive : ""} ${styles.mobileOnly}`} aria-pressed={adjustMode} onClick={toggleAdjustMode} title="Bar adjust mode (J)">
                  {adjustMode ? tx("adjusting") : tx("adjust")}
                </button>
-               <button className={styles.practiceBtn} onClick={() => { setReportOpen(true); setReportMsg(""); }} title={tx("reportTitle")}>{tx("reportIssue")}</button>
+               {dev && <button className={styles.practiceBtn} onClick={() => { setReportOpen(true); setReportMsg(""); }} title={tx("reportTitle")}>{tx("reportIssue")}</button>}
                <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} aria-pressed={cleanView} onClick={toggleCleanView}>{tx("cleanView")}</button>
                <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} aria-expanded={advOpen} aria-controls="sf-control-panel" onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>
              </div>
@@ -3569,7 +3571,7 @@ export default function ScoreFollowPage() {
          <button onClick={doUndo} disabled={!undoRef.current.length}>{tx("pieUndo")}</button>
          <button onClick={doRedo} disabled={!redoRef.current.length}>{tx("pieRedo")}</button>
           <button onClick={() => { setCorrectMode(false); setSelectedBar(null); setPie(null); }}>{tx("exitCorrect")}</button>
-          <button onClick={() => { setReportOpen(true); setReportMsg(""); }}>{tx("reportIssue")}</button>
+          {dev && <button onClick={() => { setReportOpen(true); setReportMsg(""); }}>{tx("reportIssue")}</button>}
         </div>}
 
        {helpOpen && <div className={styles.helpBackdrop} onClick={() => setHelpOpen(false)}>
@@ -3732,7 +3734,7 @@ export default function ScoreFollowPage() {
       )}
 
        <div className={styles.workspace}>
-        {performanceOpen && <PerformancePanel lang={lang} pdfMeasures={barsTotal} pdfName={pdfName} pdfBytes={() => pdfBytesRef.current}
+        {performanceOpen && <PerformancePanel lang={lang} dev={dev} pdfMeasures={barsTotal} pdfName={pdfName} pdfBytes={() => pdfBytesRef.current}
           youtubeLink={mediaKind === "youtube" ? mediaURL : ""}
           captureYouTube={async ({ link, startSec, lengthSec, onProgress }) => {
             // Ask for tab audio first, while the click still counts as a user gesture.
@@ -3830,11 +3832,11 @@ export default function ScoreFollowPage() {
                <label className={`${styles.pill} ${opt.lncsr === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.lncsr === 1} onChange={(e) => applyAdv("lncsr", e.target.checked ? 1 : 0)} /> {tx("lineCursor")}</label>
                <label className={`${styles.pill} ${cleanView ? styles.pillOn : ""}`}><input type="checkbox" checked={cleanView} onChange={() => toggleCleanView()} /> {tx("cleanView")} (V)</label>
                <label className={`${styles.pill} ${correctMode ? styles.pillOn : ""}`}><input type="checkbox" checked={correctMode} onChange={(e) => { setCorrectMode(e.target.checked); setSelectedBar(null); setPie(null); }} /> {tx("correct")}</label>
-              <label className={`${styles.pill} ${diagnosticMode ? styles.pillOn : ""}`}><input type="checkbox" checked={diagnosticMode} onChange={(e) => { const on = e.target.checked; if (on && cleanView) toggleCleanView(); if (on) { setShowSystems(true); setShowBars(true); setShowCursor(true); setShowLowConf(true); } setDiagnosticMode(on); }} /> {tx("diagnostics")}</label>
+              {dev && <label className={`${styles.pill} ${diagnosticMode ? styles.pillOn : ""}`}><input type="checkbox" checked={diagnosticMode} onChange={(e) => { const on = e.target.checked; if (on && cleanView) toggleCleanView(); if (on) { setShowSystems(true); setShowBars(true); setShowCursor(true); setShowLowConf(true); } setDiagnosticMode(on); }} /> {tx("diagnostics")}</label>}
               </div>
-              <p className={styles.expertHint}>{lang === "zh" ? "诊断视图 = 全开上方四个覆盖层 + 底栏技术信息(版本/谱距/置信/耗时); 覆盖层只跟四个勾选走" : "Diagnostics = all four overlays above on + technical footer; overlays follow only the four checkboxes"}</p>
+              {dev && <p className={styles.expertHint}>{lang === "zh" ? "诊断视图 = 全开上方四个覆盖层 + 底栏技术信息(版本/谱距/置信/耗时); 覆盖层只跟四个勾选走" : "Diagnostics = all four overlays above on + technical footer; overlays follow only the four checkboxes"}</p>}
             </div>
-          <div className={styles.pcard}>
+          {dev && <div className={styles.pcard}>
              <div className={styles.pcardTitle}><span className={styles.stepNum} aria-hidden="true">2</span><span>{tx("modeSection")}</span></div>
             <div className={styles.pillRow}>
              {(["fast", "balanced", "scan"] as AnalysisProfileName[]).map((name) => (
@@ -3850,40 +3852,40 @@ export default function ScoreFollowPage() {
                  {advsRef.current[pageNum] && <button className={styles.pfileBtn} onClick={clearPageAdv}>{lang === "zh" ? "清除本页参数" : "Clear this page"}</button>}
                </p>
              )}
-           </div>
+           </div>}
           {/* 小节/阈值参数已并入下方高级(开发者)折叠区 */}
           <div className={styles.pcard}>
-             <div className={styles.pcardTitle}><span className={styles.stepNum} aria-hidden="true">3</span><span>{tx("fileSection")}</span></div>
+             <div className={styles.pcardTitle}><span className={styles.stepNum} aria-hidden="true">{dev ? 3 : 2}</span><span>{tx("fileSection")}</span></div>
             <button className={styles.pfileBtn} onClick={saveTiming}>{tx("saveTiming")}</button>
-            <button className={styles.pfileBtn} onClick={() => void savePreload()}>{tx("savePreload")}</button>
-            <div className={styles.pillRow}>
+            {dev && <button className={styles.pfileBtn} onClick={() => void savePreload()}>{tx("savePreload")}</button>}
+            {dev && <div className={styles.pillRow}>
               <input
                 style={{ width: "100%" }}
                 value={scorePath}
                 onChange={(e) => setScorePath(e.target.value)}
                 placeholder={lang === "zh" ? "公开路径：Score/书名/曲名（空=自动，发布存 fixed/auto/原文件三件套）" : "Public path: Score/book/piece (empty=auto; publishes fixed/auto/original bundle)"}
               />
-            </div>
+            </div>}
             <div className={styles.pillRow}>
-              <button className={styles.pfileBtn} disabled={scoreBusy} onClick={() => void publishToScore()}>
+              {dev && <button className={styles.pfileBtn} disabled={scoreBusy} onClick={() => void publishToScore()}>
                 {scoreBusy ? "…" : lang === "zh" ? "推送到 Score" : "Publish to Score"}
-              </button>
+              </button>}
               <a className={styles.pfileBtn} href={`${BASE}/scores/`}>
                 {lang === "zh" ? "公开谱库" : "Library"}
               </a>
             </div>
             {scoreMsg && <p role="status" className={`${styles.statusChip} ${scoreMsgTone === "error" ? styles.statusChipError : scoreMsgTone === "success" ? styles.statusChipSuccess : ""}`}>{scoreMsg}</p>}
             <label className={styles.pfileBtn}>{tx("loadTiming")} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTiming(f); }} /></label>
-            <label className={styles.pfileBtn}>{tx("loadPreload")} <input type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); }} /></label>
-            <label className={styles.pfileBtn} title={lang === "zh" ? "载入 scripts/homr-gate.py 生成的门数据(本地 HoMR 音符模板, 否决符干)" : "Load gate data from scripts/homr-gate.py (local HoMR note templates, veto stems)"}>{lang === "zh" ? "载入门数据" : "Load gate"} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadHomrGate(f); e.target.value = ""; }} /></label>
+            {dev && <label className={styles.pfileBtn}>{tx("loadPreload")} <input type="file" accept=".js" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadPreload(f); }} /></label>}
+            {dev && <label className={styles.pfileBtn} title={lang === "zh" ? "载入 scripts/homr-gate.py 生成的门数据(本地 HoMR 音符模板, 否决符干)" : "Load gate data from scripts/homr-gate.py (local HoMR note templates, veto stems)"}>{lang === "zh" ? "载入门数据" : "Load gate"} <input type="file" accept=".json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadHomrGate(f); e.target.value = ""; }} /></label>}
              <div className={styles.pillRow}>
                <label className={`${styles.pill} ${synbox ? styles.pillOn : ""}`}><input type="checkbox" checked={synbox} onChange={(e) => setSynbox(e.target.checked)} /> {tx("enableSync")}</label>
-               <label className={`${styles.pill} ${embedMetro ? styles.pillOn : ""}`}><input type="checkbox" checked={embedMetro} onChange={(e) => setEmbedMetro(e.target.checked)} /> +metro</label>
-               <label className={`${styles.pill} ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? styles.pillOn : ""}`}><input type="checkbox" checked={((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0} onChange={(e) => applyAdv("wpdf", e.target.checked ? 1 : 0)} title="preload.js 是否内嵌 pdf_data base64(关=只存 metric/timing, 体积小)" /> +PDF</label>
+               {dev && <><label className={`${styles.pill} ${embedMetro ? styles.pillOn : ""}`}><input type="checkbox" checked={embedMetro} onChange={(e) => setEmbedMetro(e.target.checked)} /> +metro</label>
+               <label className={`${styles.pill} ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? styles.pillOn : ""}`}><input type="checkbox" checked={((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0} onChange={(e) => applyAdv("wpdf", e.target.checked ? 1 : 0)} title="preload.js 是否内嵌 pdf_data base64(关=只存 metric/timing, 体积小)" /> +PDF</label></>}
              </div>
-             <p className={styles.expertHint}>{lang === "zh" ? `${numPages} 页 · ${correctedPages} 页校正 · ${tapCount} 个同步点 · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "包含" : "不包含"}` : `${numPages} pages · ${correctedPages} corrected · ${tapCount} sync points · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "included" : "excluded"}`}</p>
+             {dev && <p className={styles.expertHint}>{lang === "zh" ? `${numPages} 页 · ${correctedPages} 页校正 · ${tapCount} 个同步点 · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "包含" : "不包含"}` : `${numPages} pages · ${correctedPages} corrected · ${tapCount} sync points · PDF ${((opt as unknown as Record<string, number>).wpdf ?? 1) !== 0 ? "included" : "excluded"}`}</p>}
           </div>
-          <details className={styles.pcard} open={expertOpen} onToggle={(e) => { const o = (e.target as HTMLDetailsElement).open; setExpertOpen(o); try { localStorage.setItem("sf-expert-open", o ? "1" : "0"); } catch { /* ignore */ } }}>
+          {dev && <details className={styles.pcard} open={expertOpen} onToggle={(e) => { const o = (e.target as HTMLDetailsElement).open; setExpertOpen(o); try { localStorage.setItem("sf-expert-open", o ? "1" : "0"); } catch { /* ignore */ } }}>
              <summary className={styles.pcardTitle}><span className={styles.stepNum} aria-hidden="true">4</span><span>{tx("expertSection")} · {tx("expertDev")}</span><span className={styles.pcardCaret} aria-hidden="true">›</span></summary>
              <p className={styles.expertHint}>{lang === "zh" ? "仅在识别困难时调整；修改后会重新分析谱面。" : "Adjust only when recognition needs tuning; changes rerun analysis."}</p>
              <div className={styles.pcardTitle}>{tx("timingSection")}</div>
@@ -3928,7 +3930,7 @@ export default function ScoreFollowPage() {
             ))}
             <label className={styles.stepper}>cropx <input type="number" min={0} value={opt.cropx} onChange={(e) => applyAdv("cropx", Number(e.target.value))} /></label>
              <label className={`${styles.pill} ${opt.annot === 1 ? styles.pillOn : ""}`}><input type="checkbox" checked={opt.annot === 1} onChange={(e) => applyAdv("annot", e.target.checked ? 1 : 0)} /> {tx("annotate")}</label>
-          </details>
+          </details>}
          </aside>
        )}
 
@@ -4119,7 +4121,7 @@ export default function ScoreFollowPage() {
            {isManual && <span aria-label="manual corrections">✓</span>}
            <span>{tapCount} sync</span>
          </span>}
-         {diagnosticMode && analysis && <span className={styles.statusTechnical}>v{ALGO_VERSION} · spatium {analysis.spatium.toFixed(1)}px · conf {confRange} · {analysis.elapsedMs}ms</span>}
+         {dev && diagnosticMode && analysis && <span className={styles.statusTechnical}>v{ALGO_VERSION} · spatium {analysis.spatium.toFixed(1)}px · conf {confRange} · {analysis.elapsedMs}ms</span>}
        </footer>
 
     </main>
