@@ -1,12 +1,13 @@
 """Piano benchmark on Heller Op.47 (real recordings, OMR scores, cached transcriptions).
 
 Usage: python3 -m benchmarks.piano_heller [--data DIR] [--only 1,2] [--inject] [--inject-omr] [--inject-perf]
-                                          [--excerpt] [--no-trust] [--no-second]
+                                          [--excerpt] [--no-trust] [--no-second] [--no-fill]
   default      : aligner recall/precision per etude, and the full engine on the professional takes
                  (pitch score, false blame = mistakes reported on a professional take, scored share)
   --inject-omr : realistic OMR errors injected into the score of the professional take; every one
                  reported as the player's mistake is a false blame (lower is better)
   --no-trust   : engine without score-trust weighting; --no-second: without the Audiveris reading
+  --no-fill    : without re-spacing voices with an unprinted rest from the take
   --inject     : mistakes injected into the SCORE, the real audio untouched, so the audio check sees
                  real evidence: an added written note = a key the pianist did not play (missed), a
                  re-pitched note = a wrong key (wrong, played = original), a deleted note = an extra key
@@ -261,6 +262,7 @@ def main():
     ap.add_argument("--inject-omr", action="store_true")
     ap.add_argument("--no-trust", action="store_true")
     ap.add_argument("--no-second", action="store_true")
+    ap.add_argument("--no-fill", action="store_true")
     a = ap.parse_args()
     omr = defaultdict(lambda: [0, 0])
     shares = []
@@ -278,7 +280,7 @@ def main():
         s = stats(notes, perf, r)
         tot["notes"] += s["notes"]; tot["matched"] += s["matched"]; tot["wrong"] += s["wrong"]
         tot["in"] += s["matched"] + s["extra"] + s["wrong"]
-        kw = {"trust": not a.no_trust, "second_xml": None if a.no_second else second_reading(a.data, n)}
+        kw = {"trust": not a.no_trust, "fill_voices": not a.no_fill, "second_xml": None if a.no_second else second_reading(a.data, n)}
         base = engine(wav, xml, perf, **kw)
         bs = base["summary"]
         chk = bs["scoreCheck"]
@@ -292,7 +294,7 @@ def main():
         s.update({"pitch": bs["pitchScore"], "rhythm": bs["rhythmScore"], "mistakes": mistakes,
                   "doubtful": bs["uncertainNotes"], "scored": chk["scoredShare"], "second": chk["secondReading"],
                   "check": f"{chk['pitch']}/{chk['rhythm']}",
-                  "evidence": sorted({e["kind"] for e in chk["evidence"]}), "A4": bs["tuning"]["referenceHz"],
+                  "evidence": sorted({e["kind"] for e in chk["evidence"]}), "fills": len(bs.get("voiceFixes", [])), "A4": bs["tuning"]["referenceHz"],
                   "sec": round(time.time() - t, 2)})
         print(f"No{n:02d}", json.dumps(s, ensure_ascii=False), flush=True)
         if a.inject:

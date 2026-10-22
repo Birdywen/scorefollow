@@ -21,8 +21,9 @@ from .piano_audio import Spectra, StrikeModel, blind_tuning, measure_tuning, ret
 from .piano_score import has_repeats, parse_piano_score
 from .score_trust import SYMPTOM_TEXT, assess, note_doubt, second_witness
 from .validation import validate_instrument, validate_bpm
+from .voice_fill import W as VOICE_W, fill_all, place
 
-VERSION = "piano-align-0.6"
+VERSION = "piano-align-0.7"
 RETUNE_MIN_CENTS = 12            # a piano this far from A440 is resampled to A440 before transcription
 SHIFT_MARGIN = 1.3               # a semitone-shifted reading must beat the written one by this factor
 HEARD, ABSENT = 0.7, 0.3         # audio verdict thresholds on P(key struck)
@@ -37,6 +38,8 @@ SYSTEMATIC_GAP_MEASURES = 4      # ...with no more than this many measures betwe
 SYSTEMATIC_CONSISTENCY = 0.7     # a lost accidental changes (nearly) every such note in its passage
 SMOOTH_HALF_WINDOW_BEATS = 2.0   # tempo shaping slower than this is rubato, faster is rhythm
 CHORD_UNEVEN_MS = 50             # chord notes spread wider than this sound split
+VOICE_HIT, VOICE_MISS = 3.0, 1.5  # a short voice's written key found / not found in the take at a candidate onset
+VOICE_AUDIO_MARGIN = 2.0         # the take must prefer the re-spaced voice by this much (beyond the score-only cue)
 DOUBT_EXCLUDE = 0.5              # a measure the score is this doubtful about: its disagreements are not scored
 # 5090 transcription service (Tailscale). Override with env; old public IP is dead (CGNAT).
 PIANO_API_URL = os.environ.get("PIANO_API_URL", "http://100.88.202.126:7777").rstrip("/")
@@ -168,6 +171,57 @@ def _best_alignment(xml: str, perf, start_measure: int, bpm: float, audio_sec: f
     return best
 
 
+def _fill_voices_from_take(xml: str, best):
+    """Voices the OMR packed to the start of a bar (an unprinted rest): a pianist who plays both voices
+    does not shift one inside a bar, so place each such voice where the take has its keys. Order and
+    durations stay as written and beam groups are never split; only clear wins are applied, as
+    invisible <forward> gaps. Returns (xml, fixes)."""
+    _q, _shift, perf, _unfold, _notes, spans, _issues, r, _scope = best
+    used = [perf[j][0] for j in dict(r["match"]).values()]
+    if len(used) < 8:
+        return xml, []
+    lo, hi = min(used), max(used)
+    smooth = smooth_map(r["tempo"], SMOOTH_HALF_WINDOW_BEATS)
+    on = np.array([e[0] for e in perf])
+    pitch = np.array([int(round(e[2])) for e in perf])
+    starts = defaultdict(list)
+    for m, b0, _b1 in spans:
+        starts[m].append(b0)
+
+    def choose(v):
+        occ = [b0 for b0 in starts.get(v.measure + 1, []) if lo - 0.25 <= float(smooth(b0)) <= hi + 0.25]
+        if not occ:
+            return None
+        step = v.beat
+        for e in v.events:
+            step = int(np.gcd(step, e.dur))
+
+        def heard(i, t):
+            e = v.events[i]
+            if e.rest or not e.midis:
+                return 0.0
+            c = 0.0
+            for b0 in occ:
+                b = b0 + t / v.divisions
+                sec = float(smooth(b))
+                tol = min(0.12, 0.4 * step / v.divisions * (float(smooth(b + 1)) - sec))
+                near = np.abs(on - sec) < tol
+                for mm in e.midis:
+                    c += -VOICE_HIT if bool(np.any(near & (pitch == mm))) else VOICE_MISS
+            return c / len(occ)
+        res = place(v, heard)
+        if not res:
+            return None
+        onsets, best_cost, current_cost = res
+        if all(t == e.pos for t, e in zip(onsets, v.events)):
+            return None
+        audio_gain = sum(heard(i, e.pos) for i, e in enumerate(v.events)) - sum(heard(i, t) for i, t in enumerate(onsets))
+        if audio_gain < VOICE_AUDIO_MARGIN or current_cost - best_cost < VOICE_W["margin"]:
+            return None
+        return onsets
+    return fill_all(xml, choose)
+
+
 def _check(model, midi: int, t: float, masked: bool):
     """Audio verdict on 'key `midi` struck at t': (probability or None, label)."""
     p = model.prob(midi, t) if model is not None else None
@@ -222,9 +276,10 @@ def midi_name(m: int) -> str:
 
 
 def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf: list | None = None,
-                  second_xml: str | None = None, trust: bool = True) -> dict:
+                  second_xml: str | None = None, trust: bool = True, fill_voices: bool = True) -> dict:
     """start_measure 0 = locate the excerpt automatically. perf: pre-transcribed events (tests/benchmarks).
-    second_xml: an independent OMR reading of the same page. trust=False ignores score doubt (benchmarks)."""
+    second_xml: an independent OMR reading of the same page. trust=False ignores score doubt (benchmarks).
+    fill_voices: re-space voices with an unprinted rest where the take shows them (see _fill_voices_from_take)."""
     validate_instrument("piano", ["piano"])
     validate_bpm(bpm, 30, 200)
     signal, rate = read_wav(wav)
@@ -242,6 +297,14 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
     best = _best_alignment(xml, perf, start_measure, bpm, audio_sec)
     if best is None:
         raise ValueError("开始小节没有可演奏音符" if start_measure > 0 else "录音与谱面对不上")
+    voice_fixes = []
+    if fill_voices:
+        filled, voice_fixes = _fill_voices_from_take(xml, best)
+        again = _best_alignment(filled, perf, start_measure, bpm, audio_sec) if voice_fixes else None
+        if again is not None and again[0] >= best[0]:
+            xml, best = filled, again
+        else:
+            voice_fixes = []
     _q, shift, perf, unfold, notes, spans, issues, r, scope = best
     if not scope:
         raise ValueError("录音与谱面对不上：没有匹配到谱面音符")
@@ -325,6 +388,13 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
 
     # --- Is the score itself trustworthy here? Each finding carries its evidence.
     evidence, excluded = [], {}
+    if voice_fixes:
+        ms = sorted({f["measure"] for f in voice_fixes})
+        evidence.append({"kind": "voice_filled", "measures": ms, "count": len(voice_fixes),
+                         "zh": f"第 {_ranges(ms)} 小节：有声部被识别成挤在小节开头（谱上省略了休止符），已按录音补上隐藏休止符再评分"
+                               f"（共 {len(voice_fixes)} 处，乐谱外观不变）。",
+                         "en": f"m{_ranges(ms)}: a voice was read as packed to the start of the bar (a rest left unprinted); "
+                               f"hidden rests were filled from the recording before scoring ({len(voice_fixes)} places, printed score unchanged)."})
     subs = defaultdict(list)
     for k in scope:
         if k in wrong and verdict[k]["label"] != "unclear":
@@ -690,7 +760,8 @@ def analyze_piano(wav: bytes, xml: str, bpm: float, start_measure: int = 1, perf
                         "unevenChords": sum(s > CHORD_UNEVEN_MS for s in chord_spreads),
                         "unevenChordMeasures": [m for m, _c in uneven_measures.most_common(8)],
                         "handOffsetMs": round(float(np.median(hand_offsets))) if len(hand_offsets) >= 3 else None,
-                        "scoreSuspects": score_suspects, "scoreCheck": score_check, "tuning": tuning},
+                        "scoreSuspects": score_suspects, "scoreCheck": score_check, "tuning": tuning,
+                        "voiceFixes": voice_fixes},
             "measureIntervals": intervals,
             "notes": aligned,
             # Unused performed notes: counted ones are extra keys; the rest are explained (transcriber
