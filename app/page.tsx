@@ -1223,6 +1223,8 @@ export default function ScoreFollowPage() {
   // V: 干净视图开关 = 四覆盖层(Systems/Barlines/Cursor/Low confidence)的总闸.
   // 开=四开关全灭(含 line cursor, 仅更新光标样式, 不重分析);
   // 关=四开关全开, line cursor 恢复进干净前的值. 简单可预测, 不再恢复旧勾选.
+  const toggleCorrectMode = () => { if (correctMode) { setSelectedBar(null); setPie(null); } else { setAdjustMode(false); setBarPop(null); } setCorrectMode(!correctMode); };
+  const toggleAdjustMode = () => { if (adjustMode) { setSelectedBar(null); setBarPop(null); } else { setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); } setAdjustMode(!adjustMode); };
   const toggleCleanView = useCallback(() => {
     if (!cleanView) {
       cleanSavedRef.current = {
@@ -3525,7 +3527,7 @@ export default function ScoreFollowPage() {
            const off = pageOffsetsRef.current.find((o) => o.page === n);
            if (off && notationRef.current && stackRef.current && analysis) notationRef.current.scrollTop = off.y * (stackRef.current.clientWidth / Math.max(1, analysis.pageW));
           }} aria-label={tx("prevPage")}>‹</button>
-          <span className={styles.pageIndicator}>{lang === "zh" ? `第 ${pageNum} / ${numPages || 1} 页` : `Page ${pageNum} / ${numPages || 1}`}</span>
+          <span className={styles.pageIndicator}><span className={styles.phoneHide}>{lang === "zh" ? "第 " : "Page "}</span>{pageNum} / {numPages || 1}{lang === "zh" && <span className={styles.phoneHide}> 页</span>}</span>
           <button className={styles.practiceBtn} disabled={!analysis || pageNum >= numPages} onClick={() => {
            const n = Math.min(numPages || 1, pageNum + 1); pageNumRef.current = n; setPageNum(n);
            const off = pageOffsetsRef.current.find((o) => o.page === n);
@@ -3537,16 +3539,22 @@ export default function ScoreFollowPage() {
            <b>{speed.toFixed(2)}×</b>
          </label>
            <span className={styles.practiceDivider} />
-           <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""}`} aria-pressed={correctMode} onClick={() => { if (correctMode) { setSelectedBar(null); setPie(null); } else { setAdjustMode(false); setBarPop(null); } setCorrectMode(!correctMode); }}>
+           <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""} ${styles.desktopOnly}`} aria-pressed={correctMode} onClick={toggleCorrectMode}>
              {correctMode ? tx("correcting") : tx("correct")}
            </button>
-           <button className={`${styles.practiceBtn} ${adjustMode ? styles.practiceBtnActive : ""}`} aria-pressed={adjustMode} onClick={() => { if (adjustMode) { setSelectedBar(null); setBarPop(null); } else { setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); } setAdjustMode(!adjustMode); }} title="Bar adjust mode (J)">
+           <button className={`${styles.practiceBtn} ${adjustMode ? styles.practiceBtnActive : ""} ${styles.desktopOnly}`} aria-pressed={adjustMode} onClick={toggleAdjustMode} title="Bar adjust mode (J)">
              {adjustMode ? tx("adjusting") : tx("adjust")}
            </button>
-           <button className={`${styles.practiceBtn} ${performanceOpen ? styles.practiceBtnActive : ""}`} aria-expanded={performanceOpen} onClick={() => { setPerformanceOpen((v) => !v); setAdvOpen(false); }}>{lang === "zh" ? "演奏分析" : "Analyze"}</button>
+           <button className={`${styles.practiceBtn} ${performanceOpen ? styles.practiceBtnActive : ""}`} aria-expanded={performanceOpen} onClick={() => { setPerformanceOpen((v) => !v); setAdvOpen(false); }}>{lang === "zh" ? <><span className={styles.phoneHide}>演奏</span>分析</> : "Analyze"}</button>
            <details className={styles.moreWrap}>
              <summary className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} title={lang === "zh" ? "更多" : "More"} aria-label={lang === "zh" ? "更多" : "More"}>⋯</summary>
              <div className={styles.moreMenu} onClick={(e) => { if ((e.target as HTMLElement).closest("button")) { const d = e.currentTarget.parentElement as HTMLDetailsElement | null; if (d) d.open = false; } }}>
+               <button className={`${styles.practiceBtn} ${correctMode ? styles.practiceBtnActive : ""} ${styles.mobileOnly}`} aria-pressed={correctMode} onClick={toggleCorrectMode}>
+                 {correctMode ? tx("correcting") : tx("correct")}
+               </button>
+               <button className={`${styles.practiceBtn} ${adjustMode ? styles.practiceBtnActive : ""} ${styles.mobileOnly}`} aria-pressed={adjustMode} onClick={toggleAdjustMode} title="Bar adjust mode (J)">
+                 {adjustMode ? tx("adjusting") : tx("adjust")}
+               </button>
                <button className={styles.practiceBtn} onClick={() => { setReportOpen(true); setReportMsg(""); }} title={tx("reportTitle")}>{tx("reportIssue")}</button>
                <button className={`${styles.practiceBtn} ${cleanView ? styles.practiceBtnActive : ""}`} aria-pressed={cleanView} onClick={toggleCleanView}>{tx("cleanView")}</button>
                <button className={`${styles.practiceBtn} ${advOpen ? styles.practiceBtnActive : ""}`} aria-expanded={advOpen} aria-controls="sf-control-panel" onClick={() => setAdvOpen((v) => !v)} title="Panel (M)">{tx("panelBtn")}</button>

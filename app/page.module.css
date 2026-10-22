@@ -622,3 +622,18 @@ details[open] > summary.pcardTitle::after { transform: rotate(90deg); }
 .helpCardAccent .helpCardIcon { background: var(--sf-surface); }
 .helpDialog :is(button, summary):focus-visible { outline-color: var(--sf-focus); }
 .helpHero .helpClose:focus-visible { outline-color: #fff; }
+
+/* Phones: keep the practice bar on one row (2026-10-22). Correct/Adjust move into the ⋯ menu. */
+.mobileOnly { display: none !important; }
+@media (max-width: 600px) {
+  .desktopOnly { display: none !important; }
+  .mobileOnly { display: inline-flex !important; }
+  .phoneHide { display: none; }
+  .pageIndicator { min-width: 40px; }
+  .practiceDivider { display: none; }
+  .practicebar { gap: 4px; }
+  .practicePlay { min-width: 0; padding: 0 10px; }
+}
+@media (max-width: 370px) {
+  .practicebar { padding-left: 6px; padding-right: 6px; }
+}
