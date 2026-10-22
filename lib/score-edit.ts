@@ -1,7 +1,7 @@
 /** Small fixes to recognized MusicXML: note pitch, note <-> rest, chord tones, raw measure XML.
  * Edits are string splices, so everything the editor does not touch stays byte-for-byte.
  * Sounding pitch follows the analyzer's rules (analysis_service/engine.py): an explicit
- * <alter>, else the <accidental>, else an earlier accidental on the same step+octave in
+ * <alter>, else the <accidental>, else an earlier accidental on the same step+octave and staff in
  * the measure, else the key signature. */
 
 export type Pitch = { step: string; alter: number; octave: number };
@@ -67,7 +67,7 @@ function scan(xml: string): RawPart[] {
       const block = mm[0], open = block.slice(0, block.indexOf(">") + 1);
       for (const am of block.matchAll(/<attributes(?=[\s>])[\s\S]*?<\/attributes>/g)) {
         const a = am[0];
-        const f = tagNum(a, "fifths"); if (f != null) fifths = f;
+        for (const fm of a.matchAll(/<fifths>\s*(-?\d+)\s*<\/fifths>/g)) fifths = Number(fm[1]); // the last one wins, as in the analyzer
         const d = tagNum(a, "divisions"); if (d != null && d > 0) divisions = d;
         if (/<senza-misura/.test(a)) { beats = null; beatType = null; }
         const b = tagNum(a, "beats"), bt = tagNum(a, "beat-type");
@@ -110,7 +110,7 @@ function readPart(xml: string, raw: RawMeasure, partIndex: number, partId: strin
     if (pb) {
       const step = tagText(pb, "step") ?? "", octave = tagNum(pb, "octave"), explicit = tagNum(pb, "alter");
       if (step in SEMI && octave != null) {
-        const key = step + octave;
+        const key = (tagText(b, "staff") ?? "1") + step + octave; // signs hold per staff, as in the analyzer
         let alter: number;
         if (explicit != null) { alter = Math.round(explicit); memory.set(key, alter); }
         else if (accidental != null && accidental in ACC_ALTER) { alter = ACC_ALTER[accidental]; memory.set(key, alter); }
@@ -174,8 +174,9 @@ const splice = (xml: string, start: number, end: number, text: string) => xml.sl
 /** Alter a pitch on this step+octave would get from the key and earlier accidentals in the measure. */
 function contextAlter(xml: string, part: EditPart, ni: number, step: string, octave: number): number {
   let alter = keyAlter(part.fifths, step);
+  const staff = part.notes[ni]?.staff ?? "1";
   for (const n of part.notes.slice(0, ni)) {
-    if (!n.pitch || n.pitch.step !== step || n.pitch.octave !== octave) continue;
+    if (!n.pitch || n.pitch.step !== step || n.pitch.octave !== octave || n.staff !== staff) continue;
     const b = xml.slice(n.start, n.end);
     if (/<alter>/.test(b) || (n.accidental != null && n.accidental in ACC_ALTER)) alter = n.pitch.alter;
   }
@@ -441,7 +442,7 @@ function placeVoice(mine: VEvent[], others: VEvent[], L: number, beat: number) {
   mine.forEach((e, i) => {
     const cur = new Map<number, [number, number]>();
     for (const t of ts) {
-      if (t + e.dur > L) continue;
+      if (t + e.dur > L || (i === 0 && t < e.pos)) continue; // hidden rests only push notes later
       let best: [number, number] | null = null;
       if (i === 0) best = [cost(e, t) + (t > 0 ? GAP : 0), -1];
       else for (const [pt, [pc]] of prev) {
@@ -507,10 +508,14 @@ export function voiceGaps(xml: string): VoiceGap[] {
 export function fillVoiceGap(xml: string, mi: number, pi: number, staff: string, voice: string): string {
   const g = gapsIn(xml).find((x) => x.index === mi && x.partIndex === pi && x.staff === staff && x.voice === voice);
   if (!g?.fix || !g._onsets) throw new Error(`no proposed fix for staff ${staff} voice ${voice} in measure ${mi + 1}`);
+  return insertGaps(xml, g, g.fix.gaps);
+}
+
+function insertGaps(xml: string, g: { _ev: VEvent[]; _toks: Tok[]; voice: string; staff: string }, gaps: VoiceFix["gaps"]): string {
   const ev = g._ev, toks = g._toks, edits: Array<[number, number, string]> = [];
-  const fwd = (d: number) => `<forward><duration>${d}</duration><voice>${voice}</voice><staff>${staff}</staff></forward>`;
+  const fwd = (d: number) => `<forward><duration>${d}</duration><voice>${g.voice}</voice><staff>${g.staff}</staff></forward>`;
   let total = 0;
-  for (const gap of g.fix.gaps) { edits.push([ev[gap.before].insertAt, ev[gap.before].insertAt, fwd(gap.length)]); total += gap.length; }
+  for (const gap of gaps) { edits.push([ev[gap.before].insertAt, ev[gap.before].insertAt, fwd(gap.length)]); total += gap.length; }
   const next = toks[ev[ev.length - 1].tokLast + 1];
   if (next?.kind === "backup") {
     edits.push([next.start, next.end, next.text.replace(/<duration>\s*\d+\s*<\/duration>/, `<duration>${next.dur + total}</duration>`)]);
@@ -522,12 +527,73 @@ export function fillVoiceGap(xml: string, mi: number, pi: number, staff: string,
   return xml;
 }
 
-/** Apply every proposed voice fix; returns the new XML and how many voices were filled. */
+/** Replay a placement the analyzer chose from the recording: the voice's notes move from `from` to
+ * `to` (onsets in quarter notes). Throws when the voice is not as `from` describes (another score). */
+export function placeVoiceAt(xml: string, mi: number, pi: number, staff: string, voice: string, from: number[], to: number[]): string {
+  const g = gapsIn(xml).find((x) => x.index === mi && x.partIndex === pi && x.staff === staff && x.voice === voice);
+  const div = scan(xml)[pi]?.measures[mi]?.divisions ?? 1;
+  const same = (a: number[], b: number[]) => a.length === b.length && a.every((t, k) => Math.abs(t - b[k]) < 1e-6);
+  if (!g || !same(g._ev.map((e) => e.pos / div), from) || to.length !== from.length)
+    throw new Error(`staff ${staff} voice ${voice} in measure ${mi + 1} is not as the analysis saw it`);
+  const gaps: VoiceFix["gaps"] = [];
+  to.forEach((t, k) => {
+    const shifted = Math.round((t - from[k]) * div), before = k ? Math.round((to[k - 1] - from[k - 1]) * div) : 0;
+    if (shifted < before || (k && to[k] < to[k - 1] + g._ev[k - 1].dur / div - 1e-6)) throw new Error("onsets out of order");
+    if (shifted > before) gaps.push({ before: k, length: shifted - before });
+  });
+  return gaps.length ? insertGaps(xml, g, gaps) : xml;
+}
+
+/** One measure (every part) as a score of its own, with the clef, key, time and divisions in force.
+ * reveal: draw the measure's voice <forward> gaps as grey rests, to show where hidden rests are. */
+export function measureExcerpt(xml: string, mi: number, reveal = false): string {
+  const partList = /<part-list(?=[\s>])[\s\S]*?<\/part-list>/.exec(xml)?.[0] ?? "";
+  const parts = [...xml.matchAll(/<part(?=[\s>])[^>]*>[\s\S]*?<\/part>/g)].map((pm) => {
+    const body = pm[0], open = body.slice(0, body.indexOf(">") + 1);
+    const ms = [...body.matchAll(/<measure(?=[\s>])[^>]*>[\s\S]*?<\/measure>/g)].map((m) => m[0]);
+    if (!ms[mi]) return "";
+    let divisions = "1", key = "", time = "", staves = "";
+    const clefs = new Map<string, string>();
+    for (const m of ms.slice(0, mi + 1)) for (const am of m.matchAll(/<attributes(?=[\s>])[\s\S]*?<\/attributes>/g)) {
+      const a = am[0];
+      divisions = /<divisions>\s*(\d+)\s*<\/divisions>/.exec(a)?.[1] ?? divisions;
+      key = [...a.matchAll(/<key(?=[\s>])[\s\S]*?<\/key>/g)].at(-1)?.[0] ?? key;
+      time = /<time(?=[\s>])[\s\S]*?<\/time>/.exec(a)?.[0] ?? time;
+      staves = /<staves>[^<]*<\/staves>/.exec(a)?.[0] ?? staves;
+      for (const c of a.matchAll(/<clef(?=[\s>])[^>]*>[\s\S]*?<\/clef>/g)) clefs.set(attr(c[0], "number") ?? "1", c[0]);
+    }
+    const div = Number(divisions);
+    let m = ms[mi].replace(/<print(?=[\s>/])[^>]*\/>|<print(?=[\s>])[\s\S]*?<\/print>/g, "")
+      .replace(/<attributes(?=[\s>])[\s\S]*?<\/attributes>/g, (a) => a.replace(/<divisions>[\s\S]*?<\/divisions>/, ""));
+    if (reveal) m = m.replace(/<forward>([\s\S]*?)<\/forward>/g, (whole, inner: string) => {
+      const voice = tagText(inner, "voice"), staff = tagText(inner, "staff") ?? "1", d = tagNum(inner, "duration") ?? 0;
+      if (!voice || !d) return whole;
+      let left = d / div, out = "";
+      while (left > 1e-9) {
+        const hit = TYPES.find(([len]) => len <= left + 1e-9);
+        if (!hit) return whole;
+        out += `<note color="#9AA0A6"><rest/><duration>${Math.round(hit[0] * div)}</duration><voice>${voice}</voice><type>${hit[1]}</type>${"<dot/>".repeat(hit[2])}<staff>${staff}</staff></note>`;
+        left -= hit[0];
+      }
+      return out;
+    });
+    const head = `<attributes><divisions>${divisions}</divisions>${key}${time}${staves}${[...clefs.values()].join("")}</attributes>`;
+    m = m.replace(/^<measure[^>]*>/, (o) => o.replace(/\s(implicit|width)="[^"]*"/g, "") + head);
+    return `${open}${m}</part>`;
+  });
+  return `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1">${partList}${parts.join("")}</score-partwise>`;
+}
+
+/** Apply every proposed voice fix; returns the new XML and how many voices were filled. Each voice is
+ * looked at once, in score order (a filled voice can still be short and must not be moved again). */
 export function fillAllVoiceGaps(xml: string): { xml: string; filled: number } {
   let filled = 0;
-  for (let guard = 0; guard < 10000; guard++) {
-    const g = gapsIn(xml).find((x) => x.fix);
+  const done = new Set<string>();
+  for (;;) {
+    const g = gapsIn(xml).find((x) => !done.has(`${x.partIndex}/${x.index}/${x.staff}/${x.voice}`));
     if (!g) break;
+    done.add(`${g.partIndex}/${g.index}/${g.staff}/${g.voice}`);
+    if (!g.fix) continue;
     xml = fillVoiceGap(xml, g.index, g.partIndex, g.staff, g.voice);
     filled++;
   }

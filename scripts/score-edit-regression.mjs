@@ -204,5 +204,11 @@ print(json.dumps(sorted([n["voice"], n["onsetBeat"], n["pitchMidi"]] for n in pa
   const beamSrc = score(n(p("C", 5), 2, 1, 1) + n(p("E", 5), 2, 1, 1) + n(p("G", 5), 2, 1, 1) + n(p("C", 6), 2, 1, 1)
     + back(8) + n(p("E", 4), 1, 2, 1, bm("begin")) + n(p("G", 4), 1, 2, 1, bm("end")));
   for (const x of E.voiceGaps(beamSrc)) if (x.fix) assert.equal(x.fix.onsets[1] - x.fix.onsets[0], 0.25, "beam group kept together");
+  // A voice that starts late would fit better earlier, but a hidden rest can only push notes later:
+  // no such proposal, and "fill all" ends (it used to propose the same no-op forever).
+  const late = score(n(p("D", 5), 4, 1, 1) + n(p("E", 5), 4, 1, 1) + back(8)
+    + "<forward><duration>2</duration><voice>2</voice><staff>1</staff></forward>" + n(p("D", 5), 2, 2, 1));
+  for (const x of E.voiceGaps(late)) if (x.fix) assert(x.fix.onsets[0] >= x.fix.current[0], "never earlier");
+  assert(E.fillAllVoiceGaps(late).filled <= 1);
 }
 console.log("SCORE_EDIT_OK");

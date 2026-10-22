@@ -12,8 +12,10 @@ type OsmdSheet = { GraphicSheet?: { MeasureList?: Array<Array<{ PositionAndShape
  * on demand and never touches SSR. Dark app theme => notation sits on a
  * white paper card (see .osmdPreview). With onMeasureClick, a click picks
  * the measure under the pointer, and `selected` gets an outline. */
-export default function ScoreOsmdPreview({ musicXml, zh, zoom = 1, selected = null, onMeasureClick }: {
+export default function ScoreOsmdPreview({ musicXml, zh, zoom = 1, selected = null, onMeasureClick, compact = false }: {
   musicXml: string; zh: boolean; zoom?: number; selected?: number | null; onMeasureClick?: (index: number) => void;
+  /** No title, part names or credits: for a measure or two shown inline. */
+  compact?: boolean;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const frame = useRef<HTMLDivElement | null>(null);
@@ -35,7 +37,8 @@ export default function ScoreOsmdPreview({ musicXml, zh, zoom = 1, selected = nu
         const { OpenSheetMusicDisplay } = await import("opensheetmusicdisplay");
         if (dead || !host.current) return;
         host.current.innerHTML = "";
-        const osmd = new OpenSheetMusicDisplay(host.current, { autoResize: false, backend: "svg" });
+        const osmd = new OpenSheetMusicDisplay(host.current, { autoResize: false, backend: "svg",
+          ...(compact ? { drawTitle: false, drawSubtitle: false, drawComposer: false, drawLyricist: false, drawCredits: false, drawPartNames: false, drawPartAbbreviations: false } : {}) });
         await osmd.load(musicXml);
         if (dead) return;
         osmd.Zoom = zoom;
@@ -57,7 +60,7 @@ export default function ScoreOsmdPreview({ musicXml, zh, zoom = 1, selected = nu
       }
     })();
     return () => { dead = true; setLayout(null); if (host.current) host.current.innerHTML = ""; };
-  }, [musicXml, zoom, width]);
+  }, [musicXml, zoom, width, compact]);
 
   function pick(e: React.MouseEvent) {
     const f = frame.current;

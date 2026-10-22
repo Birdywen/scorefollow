@@ -3,6 +3,7 @@
 import { describeFailure, type FailureInfo } from "@/lib/analysis-failure";
 import { useEffect, useRef, useState } from "react";
 import ScorePreviewDialog from "./ScorePreviewDialog";
+import VoiceFixCompare, { type VoiceFixRecord } from "./VoiceFixCompare";
 import ReportDialog from "./ReportDialog";
 import styles from "./performance.module.css";
 import {
@@ -71,6 +72,8 @@ type Result = {
     // piano-align-0.5
     uncertainNotes?: number; audioRescuedNotes?: number; ghostExtras?: number;
     audioCheck?: { available: boolean };
+    // piano-align-0.7: voices placed from the take (hidden rests)
+    voiceFixes?: VoiceFixRecord[];
     scoreCheck?: { pitch: "ok" | "partial" | "refused"; rhythm: "ok" | "partial" | "refused"; excludedNotes: number;
       evidence: { kind: string; measures: number[]; zh: string; en: string }[];
       // piano-align-0.6: per-measure score trust
@@ -92,7 +95,7 @@ type OmrResult = { musicXml: string; compatible: boolean; reason?: string | null
 /** Piano uses the polyphonic parser; older services only report the monophonic check. */
 const omrUsable = (r: OmrResult, instrument: string) => instrument === "piano" ? (r.pianoCompatible ?? r.compatible) : r.compatible;
 /** Piano extras: score check with evidence, tuning, audio check, wrong notes, chord evenness, hands. */
-function PianoDetails({ result, zh }: { result: Result; zh: boolean }) {
+function PianoDetails({ result, zh, score }: { result: Result; zh: boolean; score: Blob | null }) {
   const s = result.summary;
   const wrong = result.notes.filter((n) => n.status === "wrong_pitch" && n.playedMidi != null);
   if (s.chordCount == null && !wrong.length && !s.scoreCheck && !s.tuning) return null;
@@ -107,7 +110,8 @@ function PianoDetails({ result, zh }: { result: Result; zh: boolean }) {
       <p className={refused ? styles.error : styles.warn}>{zh
         ? `谱面检查：${check.pitch === "refused" ? "音准不评分" : check.pitch === "partial" ? `音准有 ${check.excludedNotes} 个音不计分` : "音准正常评分"}；${check.rhythm === "refused" ? "节奏不评分" : check.rhythm === "partial" ? "节奏部分小节不计分" : "节奏正常评分"}。依据：`
         : `Score check: ${check.pitch === "refused" ? "pitch not scored" : check.pitch === "partial" ? `${check.excludedNotes} notes left out of pitch` : "pitch scored"}; ${check.rhythm === "refused" ? "rhythm not scored" : check.rhythm === "partial" ? "some measures left out of rhythm" : "rhythm scored"}. Evidence:`}</p>
-      <ul>{check.evidence.map((e, i) => <li key={`${e.kind}:${i}`}>{zh ? e.zh : e.en}</li>)}</ul>
+      <ul>{check.evidence.map((e, i) => <li key={`${e.kind}:${i}`}>{zh ? e.zh : e.en}
+        {e.kind === "voice_filled" && s.voiceFixes?.length ? <VoiceFixCompare fixes={s.voiceFixes} score={score} zh={zh} /> : null}</li>)}</ul>
     </div>}
     {check?.scoredShare != null && <p>{zh
       ? `谱面可信度：${check.secondReading ? "已与第二次独立识别逐小节比对，并做了谱面结构检查" : "做了谱面结构检查（没有第二次识别可比对）"}；本次评分覆盖 ${Math.round(check.scoredShare * 100)}% 的音符。`
@@ -1249,7 +1253,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         : result.summary.pitchScoreMethod === "note-f1"
         ? (zh ? `钢琴音符匹配分（F1）· 漏音 ${result.summary.missedNotes ?? "—"} · 多音 ${result.summary.extraNotes ?? "—"}；两者均影响分数。录音内静音仍计入覆盖范围。` : `Piano note F1 · Missed ${result.summary.missedNotes ?? "—"} · Extra ${result.summary.extraNotes ?? "—"}; both affect the score. Recorded silence remains in scope.`)
         : (zh ? "旧版钢琴音高分仅评价已匹配音符，不含漏音、多音扣分；请更新服务后重新分析。" : "Older piano scores evaluate matched notes only, without missed/extra penalties; update the service and reanalyze.")}</p>}
-      {result.instrument === "piano" && <PianoDetails result={result} zh={zh} />}
+      {result.instrument === "piano" && <PianoDetails result={result} zh={zh} score={xmlFile} />}
       </details>
       {pdfMeasures > 0 && !canJump && <p className={styles.error}>{zh ? `谱面有 ${pdfMeasures} 小节、MusicXML 有 ${scoreMeasures} 小节；请核对后再映射到 PDF。` : `PDF has ${pdfMeasures} measures; MusicXML has ${scoreMeasures}. Verify alignment before mapping.`}</p>}
       {(result.suggestedMeasureSync?.length ?? 0) > 0 && canJump && onApplyMeasureSync && <div>

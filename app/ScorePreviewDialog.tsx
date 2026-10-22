@@ -7,6 +7,7 @@ import {
   addChordTone, deleteChordTone, fillAllVoiceGaps, fillVoiceGap, impliedAlter, lengthIssues, voiceGaps, measureCount, measureXml, noteToRest, pitchName, readMeasure,
   replaceMeasureXml, restToNote, setNotePitch, type EditNote, type Pitch,
 } from "@/lib/score-edit";
+import { AbcError, abcLength, applyAbc, measureAbc } from "@/lib/score-abc";
 import styles from "./performance.module.css";
 
 const SEMITONES = Array.from({ length: 25 }, (_, i) => i - 12);
@@ -45,6 +46,9 @@ export default function ScorePreviewDialog({
   const [selected, setSelected] = useState<number | null>(null);
   const [raw, setRaw] = useState<{ part: number; text: string } | null>(null);
   const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null);
+  // ABC lines being typed, by "part/voice"; derived from the score again whenever it changes.
+  const [abc, setAbc] = useState<Record<string, string>>({});
+  const [abcError, setAbcError] = useState<{ key: string; text: string } | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -56,7 +60,10 @@ export default function ScorePreviewDialog({
   const gaps = useMemo(() => (onSave ? voiceGaps(draft) : []), [draft, onSave]);
   const gapMeasures = useMemo(() => [...new Map(gaps.filter((g) => g.fix).map((g) => [g.index, g])).values()], [gaps]);
   const measure = useMemo(() => (editable && selected != null ? readMeasure(draft, selected) : null), [draft, editable, selected]);
+  const abcVoices = useMemo(() => (measure ? measure.parts.map((p) => measureAbc(draft, measure.index, p.partIndex)) : []), [draft, measure]);
   const dirty = draft !== saved;
+
+  useEffect(() => { setAbc({}); setAbcError(null); }, [draft, selected]);
 
   useEffect(() => {
     const previous = document.activeElement;
@@ -121,6 +128,68 @@ export default function ScorePreviewDialog({
     let n = 0;
     if (commit(() => { const r = fillAllVoiceGaps(draft); n = r.filled; return r.xml; }))
       setNotice({ error: false, text: zh ? `已在 ${n} 个声部补上隐藏休止符（乐谱外观不变）。` : `Filled hidden rests in ${n} voices (the printed score looks the same).` });
+  }
+  function applyLine(pi: number, voice: string) {
+    const key = `${pi}/${voice}`, text = abc[key];
+    if (selected == null || text == null) return;
+    try {
+      const next = applyAbc(draft, selected, pi, voice, text);
+      if (new DOMParser().parseFromString(next, "application/xml").querySelector("parsererror"))
+        throw new Error(zh ? "生成的 XML 有误，未应用" : "The result is not well-formed XML; not applied");
+      commit(() => next);
+    } catch (exc) {
+      setAbcError({ key, text: exc instanceof AbcError ? (zh ? exc.zh : exc.en) : exc instanceof Error ? exc.message : String(exc) });
+    }
+  }
+  function abcRows(pi: number) {
+    const voices = abcVoices.find((_, k) => measure?.parts[k]?.partIndex === pi) ?? [];
+    if (!voices.length) return null;
+    return <div className={styles.abcBox} data-testid="abc-editor">
+      <div className={styles.abcHead}>
+        <b>{zh ? "按声部改节奏（ABC 记谱）" : "Fix rhythm per voice (ABC)"}</b>
+        <details><summary>{zh ? "怎么写" : "How to write"}</summary>
+          {zh ? <ul className={styles.abcHelp}>
+            <li><code>C D E F G A B</code> 是中央 C 起的八度，<code>c d … b</code> 高一个八度，<code>C,</code> 低八度，<code>c&apos;</code> 再高八度</li>
+            <li><code>^</code> 升 <code>_</code> 降 <code>=</code> 还原；不写的按调号和本行前面的记号</li>
+            <li>时值以八分音符为 1：<code>c2</code> 四分，<code>c4</code> 二分，<code>c/</code> 十六分，<code>c3/2</code> 附点八分</li>
+            <li><code>z</code> 休止符，<code>x</code> 隐藏休止（谱面不显示，只占时间；漏写的休止用它补）</li>
+            <li><code>[CEG]2</code> 和弦，<code>c2-</code> 连到下一个同音，<code>(3cde</code> 三连音，<code>{"{g}"}c</code> 倚音</li>
+          </ul> : <ul className={styles.abcHelp}>
+            <li><code>C D E F G A B</code> is the octave from middle C, <code>c d … b</code> an octave up, <code>C,</code> an octave down, <code>c&apos;</code> two up</li>
+            <li><code>^</code> sharp <code>_</code> flat <code>=</code> natural; otherwise the key signature and earlier signs in the line apply</li>
+            <li>Lengths count eighth notes: <code>c2</code> quarter, <code>c4</code> half, <code>c/</code> sixteenth, <code>c3/2</code> dotted eighth</li>
+            <li><code>z</code> rest, <code>x</code> hidden rest (takes time, not printed — use it for omitted rests)</li>
+            <li><code>[CEG]2</code> chord, <code>c2-</code> tie to the next note, <code>(3cde</code> triplet, <code>{"{g}"}c</code> grace note</li>
+          </ul>}
+        </details>
+      </div>
+      {voices.map((v) => {
+        const key = `${pi}/${v.voice}`, value = abc[key] ?? v.text, changed = value.trim() !== v.text.trim();
+        const id = `abc-${pi}-${v.voice}`;
+        let len: number | null = null, syntax: string | null = null;
+        if (v.editable) {
+          try { len = abcLength(value); } catch (exc) { syntax = exc instanceof AbcError ? (zh ? exc.zh : exc.en) : String(exc); }
+        }
+        const error = abcError?.key === key ? abcError.text : syntax;
+        const over = len != null && v.expected != null && len > v.expected + 1e-9;
+        const full = len != null && v.expected != null && Math.abs(len - v.expected) < 1e-9;
+        const status = error ?? (len == null ? "" : zh
+          ? `${fmtBeats(len)} 拍${v.expected == null ? "" : full ? " ✓" : over ? `，超出小节（${fmtBeats(v.expected)} 拍）` : `，小节 ${fmtBeats(v.expected)} 拍，其余按末尾休止`}`
+          : `${fmtBeats(len)} beats${v.expected == null ? "" : full ? " ✓" : over ? `, longer than the bar (${fmtBeats(v.expected)})` : ` of ${fmtBeats(v.expected)}; the rest counts as a rest at the end`}`);
+        return <div key={key} className={styles.abcRow} data-testid="abc-row">
+          <label htmlFor={id}>{zh ? `声部 ${v.voice}` : `Voice ${v.voice}`}<small>{zh ? `谱表 ${v.staff}` : `staff ${v.staff}`}</small></label>
+          {v.editable ? <>
+            <input id={id} value={value} spellCheck={false} autoCapitalize="off" autoComplete="off" autoCorrect="off"
+              aria-invalid={!!error} aria-describedby={id + "-status"}
+              onChange={(e) => { setAbc((a) => ({ ...a, [key]: e.target.value })); if (abcError?.key === key) setAbcError(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyLine(pi, v.voice); } }} />
+            <button type="button" disabled={!changed || !!syntax} onClick={() => applyLine(pi, v.voice)}>{zh ? "应用" : "Apply"}</button>
+            <p id={id + "-status"} className={`${styles.abcStatus} ${error || over ? styles.abcBad : full ? styles.abcOk : ""}`}
+              role={error ? "alert" : undefined}>{status}</p>
+          </> : <p className={styles.abcStatus} style={{ gridColumn: "2 / -1" }}>{zh ? v.reason?.zh : v.reason?.en}</p>}
+        </div>;
+      })}
+    </div>;
   }
   function go(index: number) {
     if (!Number.isInteger(index) || index < 0 || index >= total) return;
@@ -294,6 +363,7 @@ export default function ScorePreviewDialog({
                     : zh ? "看不出缺在哪里，按缺在小节末尾处理（不改变任何音的起拍）。" : "No clear spot for the missing time; treated as a rest at the end (no onset changes)."}
                 </p>;
               })}
+              {abcRows(part.partIndex)}
               <table className={styles.editTable}>
                 <thead><tr><th>#</th><th>{zh ? "谱表/声部" : "Staff/voice"}</th><th>{zh ? "时值" : "Value"}</th><th>{zh ? "音高" : "Pitch"}</th><th /></tr></thead>
                 <tbody>{part.notes.map((n) => noteRow(part.partIndex, n, ++nth))}</tbody>
