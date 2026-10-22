@@ -12,7 +12,7 @@ try {
     page.on('pageerror', e => errors.push(e.message));
     await page.route('**/omr/jobs', route => route.fulfill({ json: { id: 'preview-fixture', status: 'completed', result: { musicXml: xml, compatible: true, noteCount: 1, measureCount: 1, restoredFirstRest: false } } }));
     await page.goto(process.env.SF_UI_URL || 'http://127.0.0.1:8901/scorefollow/', { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: /^(演奏分析|Analyze)$/ }).click();
+    await page.getByRole('button', { name: /^((演奏)?分析|Analyze)$/ }).click();
     await page.getByText(/^(从 PDF 识别（OMR，可选）|Recognize from PDF \(OMR, optional\))$/).click();
     await page.getByLabel(/另选用于识别的 PDF|PDF for recognition/).setInputFiles({ name: 'preview.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nfixture') });
     await page.getByRole('button', { name: /^(识别 PDF|Recognize PDF)$/ }).click();

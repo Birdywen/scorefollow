@@ -289,13 +289,16 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
   });
   const [xmlFile, setXmlFile] = useState<File | null>(null);
   const [omrPdf, setOmrPdf] = useState<File | null>(null);
-  const [removedFirstRest, setRemovedFirstRest] = useState(false);
-  const [removedBeats, setRemovedBeats] = useState(4);
   const [omrJob, setOmrJob] = useState<OmrJob | null>(null);
   const [showOsmd, setShowOsmd] = useState(false);
+  // Hand fixes to the recognized MusicXML, kept per OMR job.
+  const [omrEdit, setOmrEdit] = useState<{ jobId: string; xml: string } | null>(null);
   useEffect(() => { setShowOsmd(false); }, [omrJob?.id]);
   const [omrBusy, setOmrBusy] = useState(false);
   const [instrument, setInstrument] = useState("violin");
+  const editedXml = omrEdit && omrEdit.jobId === omrJob?.id ? omrEdit.xml : null;
+  // An edited score is checked by the analysis service itself.
+  const omrBlocked = omrJob?.result != null && !omrUsable(omrJob.result, instrument) && editedXml == null;
   const [bpm, setBpm] = useState(80);
   const [startMeasure, setStartMeasure] = useState(1);
   const [beatsPerMeasure, setBeatsPerMeasure] = useState(4);
@@ -762,14 +765,6 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       setError(zh ? "请先填写上方的分析服务地址；若浏览器就在这台服务器上，可填 http://127.0.0.1:8765" : "Enter the analysis API URL above. On the server itself, use http://127.0.0.1:8765");
       return;
     }
-    if (removedFirstRest && !omrPdf) {
-      setError(zh ? "请另选已经手工删除首小节整休止的 PDF" : "Select a separately prepared PDF with the opening rest measure removed");
-      return;
-    }
-    if (removedFirstRest && (!Number.isInteger(removedBeats) || removedBeats < 1 || removedBeats > 16)) {
-      setError(zh ? "请输入已删除整休止的小节长度（1–16 个四分音符拍）" : "Enter 1–16 quarter-note beats for the removed measure");
-      return;
-    }
     try {
       const base = apiBase(api);
       setOmrBusy(true); setOmrJob(null); setXmlFile(null); setError("");
@@ -778,8 +773,7 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
       if (!bytes || bytes.byteLength > 15_000_000 || bytes.byteLength < 5 || new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-")
         throw new Error(zh ? "请先加载不超过 15 MB 的 PDF" : "Load a PDF smaller than 15 MB first");
       const response = await fetch(`${base}/omr/jobs`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pdfBase64: encodeBase64(new Uint8Array(bytes)), filename: omrPdf?.name || pdfName || "score.pdf",
-          ...(removedFirstRest ? { prependRestBeats: removedBeats } : {}) }) });
+        body: JSON.stringify({ pdfBase64: encodeBase64(new Uint8Array(bytes)), filename: omrPdf?.name || pdfName || "score.pdf" }) });
       const data = await readJsonResponse<OmrJob>(response);
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       if (!isValidJobEnvelope(data)) throw new Error("识别服务返回了无效任务 / OMR service returned an invalid job");
@@ -973,10 +967,6 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
         <summary>{zh ? "从 PDF 识别（OMR，可选）" : "Recognize from PDF (OMR, optional)"}</summary>
         <label className={styles.field}>{zh ? "另选用于识别的 PDF（可选）" : "PDF for recognition (optional)"}
           <input type="file" accept=".pdf,application/pdf" onChange={(e) => { setOmrPdf(e.target.files?.[0] ?? null); setOmrJob(null); setXmlFile(null); }} /></label>
-        <label className={styles.check}><input type="checkbox" checked={removedFirstRest} onChange={(e) => { setRemovedFirstRest(e.target.checked); setOmrJob(null); setXmlFile(null); }} />
-          {zh ? "另选 PDF 已手工删除开头的整休止小节；识别后补回" : "Separate PDF has its opening all-rest measure removed; restore it in MusicXML"}</label>
-        {removedFirstRest && <label className={styles.field}>{zh ? "删除的小节长度（四分音符拍）" : "Removed measure length (quarter-note beats)"}
-          <input type="number" min={1} max={16} step={1} value={removedBeats} onChange={(e) => { setRemovedBeats(Number(e.target.value)); setOmrJob(null); setXmlFile(null); }} /></label>}
         <button className={styles.omrButton} disabled={omrActive || recording || busyTakeId != null || (!omrPdf && !pdfName)} onClick={() => void recognizePdf()}>
           {omrBusy ? (zh ? "准备 PDF…" : "Preparing PDF…") : (zh ? "识别 PDF" : "Recognize PDF")}</button>
         {omrJob && <p role="status" className={styles.hint}>OMR {omrJob.status}{omrJob.cached ? (zh ? " · 缓存结果" : " · cached") : ""}{omrJob.progress != null ? ` · ${omrJob.progress}%` : ""}</p>}
@@ -985,8 +975,15 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
           <p className={styles.hint}>{(() => { const count = instrument === "piano" ? (omrJob.result.pianoNoteCount ?? omrJob.result.noteCount) : omrJob.result.noteCount; return zh ? `已得到 ${count} 个可分析音符 · ${omrJob.result.measureCount} 小节` : `${count} analyzable notes · ${omrJob.result.measureCount} measures`; })()}</p>
           {omrUsable(omrJob.result, instrument) && <p className={styles.hint}>{zh ? "已自动作为演奏分析的目标谱；选择起始小节并录音即可。" : "Automatically selected as the target score. Choose a starting measure and record."}</p>}
           {!omrUsable(omrJob.result, instrument) && <p className={styles.error}>{zh ? "识别已完成，但当前分析器暂不支持此 MusicXML：" : "Recognition completed, but the analyzer does not support this MusicXML: "}{instrument === "piano" ? (omrJob.result.pianoReason ?? omrJob.result.reason) : omrJob.result.reason}</p>}
-          <button className={styles.omrButton} onClick={() => setShowOsmd(true)}>{zh ? "预览识别乐谱（大窗口 · 可转调 · 可下载）" : "Preview recognized score (large · transpose · download)"}</button>
-          {showOsmd && <ScorePreviewDialog musicXml={omrJob.result.musicXml} filename={omrPdf?.name || pdfName || "score"} zh={zh} onClose={() => setShowOsmd(false)} />}
+          {editedXml != null && <p className={styles.hint} role="status">{zh ? "已手动修正识别错误：分析使用修改后的乐谱。" : "Recognition errors fixed by hand: analysis uses the edited score."}</p>}
+          <button className={styles.omrButton} onClick={() => setShowOsmd(true)}>{zh ? "预览识别乐谱（大窗口 · 可修正 · 可转调 · 可下载）" : "Preview recognized score (large · fix errors · transpose · download)"}</button>
+          {showOsmd && <ScorePreviewDialog musicXml={editedXml ?? omrJob.result.musicXml} originalXml={omrJob.result.musicXml}
+            filename={omrPdf?.name || pdfName || "score"} zh={zh} onClose={() => setShowOsmd(false)}
+            onSave={(xml) => {
+              const original = xml === omrJob.result?.musicXml;
+              setOmrEdit(original ? null : { jobId: omrJob.id, xml });
+              setXmlFile(new File([xml], (omrPdf?.name || pdfName || "score").replace(/\.pdf$/i, "") + (original ? "" : "-edited") + ".musicxml", { type: "application/xml" }));
+            }} />}
         </div>}
       </details>
     </details>
@@ -1078,11 +1075,11 @@ export default function PerformancePanel({ lang, pdfMeasures, pdfName, pdfBytes,
               <span className={styles.takeName}>{take.name}</span>
             </label>
             <div className={styles.takeRow}>
-              <button className={`${styles.omrButton} ${styles.analyzeBtn}`} disabled={busyTakeId != null || recording || !xmlFile || (omrJob?.result != null && !omrUsable(omrJob.result, instrument))} onClick={() => void analyzeTake(take)}>
+              <button className={`${styles.omrButton} ${styles.analyzeBtn}`} disabled={busyTakeId != null || recording || !xmlFile || omrBlocked} onClick={() => void analyzeTake(take)}>
                 {busyTakeId === take.id ? (zh ? "分析中…" : "Analyzing…") : (zh ? "分析这一遍" : "Analyze")}</button>
               {busyTakeId === take.id && <button className={styles.omrButton} onClick={() => cancelAnalysis(take.id)}>{zh ? "取消分析" : "Cancel"}</button>}
               <button className={styles.omrButton}
-                disabled={busyTakeId != null || recording || !xmlFile || (omrJob?.result != null && !omrUsable(omrJob.result, instrument)) || take.firstBeatAudioSec != null}
+                disabled={busyTakeId != null || recording || !xmlFile || omrBlocked || take.firstBeatAudioSec != null}
                 title={take.firstBeatAudioSec != null ? (zh ? "已同步录音不能自动定位" : "Synced takes cannot use automatic excerpt location") : (zh ? "忽略起始小节，自动找出录音在谱上的位置" : "Ignores the start measure and finds where the take sits in the score")}
                 onClick={() => void analyzeTake(take, true)}>
                 {zh ? "自动定位片段" : "Find excerpt"}</button>
