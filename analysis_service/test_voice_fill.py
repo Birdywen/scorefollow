@@ -57,6 +57,16 @@ class VoiceFillTests(unittest.TestCase):
             r = voice_fill.place(v, lambda i, t: -10.0 if i == 1 and t == 6 else 0.0)  # even if the take "wants" a split
             self.assertEqual(r[0][1] - r[0][0], 1)
 
+    def test_a_late_voice_is_never_moved_earlier(self):
+        # Hidden rests only push notes later; an earlier fit used to be "applied" as a no-op.
+        xml = score([n("D", 5, 4, 1, 1) + n("E", 5, 4, 1, 1) + back(8)
+                     + "<forward><duration>2</duration><voice>2</voice><staff>1</staff></forward>" + n("D", 5, 2, 2, 1)])
+        for v in voice_fill.short_voices(xml):
+            r = voice_fill.place(v, lambda i, t: -10.0 if t == 0 else 0.0)  # even if the take "wants" beat 1
+            self.assertTrue(r is None or r[0][0] >= v.events[0].pos)
+        _xml, fixes = voice_fill.fill_all(xml, voice_fill.proposal)
+        self.assertTrue(all(f["to"][0] >= f["from"][0] for f in fixes))
+
     def _take(self, bass_beat):
         """8 bars, 2/4 at 60 bpm. Treble: eighths. Bass voice 6: one eighth E3 written packed to the
         bar start; the pianist plays it on `bass_beat` (0 or 1). No shared notehead: only the take can tell."""

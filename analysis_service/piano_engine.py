@@ -23,7 +23,7 @@ from .score_trust import SYMPTOM_TEXT, assess, note_doubt, second_witness
 from .validation import validate_instrument, validate_bpm
 from .voice_fill import W as VOICE_W, fill_all, place
 
-VERSION = "piano-align-0.7"
+VERSION = "piano-align-0.7.1"
 RETUNE_MIN_CENTS = 12            # a piano this far from A440 is resampled to A440 before transcription
 SHIFT_MARGIN = 1.3               # a semitone-shifted reading must beat the written one by this factor
 HEARD, ABSENT = 0.7, 0.3         # audio verdict thresholds on P(key struck)

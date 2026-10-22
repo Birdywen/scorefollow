@@ -225,7 +225,8 @@ def place(v: Voice, evidence=None):
     for i, e in enumerate(mine):
         cur = {}
         for t in ts:
-            if t + e.dur > L:
+            # Hidden rests only push notes later: the first note cannot start before it does now.
+            if t + e.dur > L or (i == 0 and t < e.pos):
                 continue
             best = None
             if i == 0:
