@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ScoreOsmdPreview from "./ScoreOsmdPreview";
 import { transposeMusicXml, transposeSuffix } from "@/lib/score-transpose";
 import {
-  addChordTone, deleteChordTone, impliedAlter, lengthIssues, measureCount, measureXml, noteToRest, pitchName, readMeasure,
+  addChordTone, deleteChordTone, fillAllVoiceGaps, fillVoiceGap, impliedAlter, lengthIssues, voiceGaps, measureCount, measureXml, noteToRest, pitchName, readMeasure,
   replaceMeasureXml, restToNote, setNotePitch, type EditNote, type Pitch,
 } from "@/lib/score-edit";
 import styles from "./performance.module.css";
@@ -52,6 +52,9 @@ export default function ScorePreviewDialog({
   const editable = !!onSave && semitones === 0;
   const total = useMemo(() => measureCount(draft), [draft]);
   const issues = useMemo(() => (onSave ? lengthIssues(draft) : []), [draft, onSave]);
+  // Voices that stop early because the engraving hid a rest; the fix inserts invisible gaps.
+  const gaps = useMemo(() => (onSave ? voiceGaps(draft) : []), [draft, onSave]);
+  const gapMeasures = useMemo(() => [...new Map(gaps.filter((g) => g.fix).map((g) => [g.index, g])).values()], [gaps]);
   const measure = useMemo(() => (editable && selected != null ? readMeasure(draft, selected) : null), [draft, editable, selected]);
   const dirty = draft !== saved;
 
@@ -113,6 +116,11 @@ export default function ScorePreviewDialog({
       return next;
     });
     if (ok) setRaw(null);
+  }
+  function fillAll() {
+    let n = 0;
+    if (commit(() => { const r = fillAllVoiceGaps(draft); n = r.filled; return r.xml; }))
+      setNotice({ error: false, text: zh ? `已在 ${n} 个声部补上隐藏休止符（乐谱外观不变）。` : `Filled hidden rests in ${n} voices (the printed score looks the same).` });
   }
   function go(index: number) {
     if (!Number.isInteger(index) || index < 0 || index >= total) return;
@@ -244,6 +252,11 @@ export default function ScorePreviewDialog({
               title={zh ? `${fmtBeats(i.actual)} 拍，应为 ${fmtBeats(i.expected)} 拍` : `${fmtBeats(i.actual)} beats, expected ${fmtBeats(i.expected)}`}>
               {zh ? `第${i.number}小节` : `m${i.number}`}</button>)}
             {issues.length > 12 && "…"}</span>}
+          {gapMeasures.length > 0 && <span className={styles.editIssues}>{zh ? "疑似漏写休止符：" : "Likely hidden rests:"}
+            {gapMeasures.slice(0, 12).map((g) => <button key={g.index} type="button" onClick={() => go(g.index)}>
+              {zh ? `第${g.number}小节` : `m${g.number}`}</button>)}
+            {gapMeasures.length > 12 && "…"}
+            <button type="button" onClick={fillAll}>{zh ? `全部补上（${gapMeasures.length} 小节）` : `Fill all (${gapMeasures.length} measures)`}</button></span>}
           {notice && <span className={notice.error ? styles.error : styles.hint} role={notice.error ? "alert" : "status"}>{notice.text}</span>}
         </div>}
         <div className={styles.osmdBody}>
@@ -268,6 +281,19 @@ export default function ScorePreviewDialog({
               {part.expected != null && Math.abs(part.length - part.expected) > 1e-6 && <p className={styles.error}>
                 {zh ? `本小节共 ${fmtBeats(part.length)} 拍，拍号应为 ${fmtBeats(part.expected)} 拍（四分音符计）。可用下方 XML 修改时值。`
                   : `This measure has ${fmtBeats(part.length)} beats; the time signature needs ${fmtBeats(part.expected)} (quarter notes). Fix note values in the XML below.`}</p>}
+              {gaps.filter((g) => g.index === selected && g.partIndex === part.partIndex).map((g) => {
+                const at = (ts: number[]) => ts.map((t) => fmtBeats(t + 1)).join(zh ? "、" : ", ");
+                return <p key={g.staff + "/" + g.voice} className={g.fix ? styles.error : styles.hint}>
+                  {zh ? `谱表 ${g.staff} 声部 ${g.voice} 只有 ${fmtBeats(g.actual)} 拍（应为 ${fmtBeats(g.expected)}）。`
+                    : `Staff ${g.staff} voice ${g.voice} has ${fmtBeats(g.actual)} beats (needs ${fmtBeats(g.expected)}). `}
+                  {g.fix ? <>{zh ? `可能漏写了休止符：音符从第 ${at(g.fix.current)} 拍移到第 ${at(g.fix.onsets)} 拍（对齐其他声部）。`
+                    : `Probably a hidden rest: notes move from beats ${at(g.fix.current)} to ${at(g.fix.onsets)} (lined up with the other voices). `}
+                    <button type="button" className={styles.omrButton}
+                      onClick={() => commit(() => fillVoiceGap(draft, selected!, part.partIndex, g.staff, g.voice))}>
+                      {zh ? "补上隐藏休止符" : "Fill hidden rest"}</button></>
+                    : zh ? "看不出缺在哪里，按缺在小节末尾处理（不改变任何音的起拍）。" : "No clear spot for the missing time; treated as a rest at the end (no onset changes)."}
+                </p>;
+              })}
               <table className={styles.editTable}>
                 <thead><tr><th>#</th><th>{zh ? "谱表/声部" : "Staff/voice"}</th><th>{zh ? "时值" : "Value"}</th><th>{zh ? "音高" : "Pitch"}</th><th /></tr></thead>
                 <tbody>{part.notes.map((n) => noteRow(part.partIndex, n, ++nth))}</tbody>

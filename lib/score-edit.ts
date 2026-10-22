@@ -340,3 +340,196 @@ export function replaceMeasureXml(xml: string, mi: number, pi: number, block: st
   if (measureCount(out) !== measureCount(xml)) throw new Error("measure count changed");
   return out;
 }
+
+/* ---- Voices with omitted rests ----
+ * Engravers often leave out a rest in one voice (a bass note struck on beats 1 and 2 with the
+ * eighth rests between them hidden, an inner voice that only enters on beat 2). OMR then packs
+ * that voice's notes to the start of the bar and every onset after the gap is wrong.
+ * voiceGaps finds voices shorter than the bar and proposes where the missing time goes by lining
+ * the notes up with the other voices: shared noteheads first, then any onset, then the beat grid.
+ * fillVoiceGap inserts the gaps as <forward> (invisible), so the printed score looks the same. */
+
+export type VoiceFix = {
+  /** Gaps in divisions, inserted before the voice's head note number `before` (0-based within the voice). */
+  gaps: Array<{ before: number; length: number }>;
+  /** Proposed onsets of the voice's notes in quarter notes; `current` are the onsets as recognized. */
+  onsets: number[]; current: number[];
+  /** How much better the proposal fits than the recognized placement (higher = surer). */
+  margin: number;
+};
+export type VoiceGap = {
+  index: number; number: string; partIndex: number; staff: string; voice: string;
+  /** Quarter notes: what the time signature asks for, and where this voice ends. */
+  expected: number; actual: number;
+  /** null: no placement fits clearly better than "rest at the end", which changes no onset. */
+  fix: VoiceFix | null;
+};
+
+type Tok = { kind: "note" | "backup" | "forward"; start: number; end: number; dur: number; text: string };
+type VEvent = { key: string; pos: number; dur: number; rest: boolean; midis: number[]; staff: string;
+  insertAt: number; tokFirst: number; tokLast: number;
+  /** Beamed into the next note: no rest can hide between them. */
+  beamOn: boolean };
+
+// Placement weights, tuned on Heller Op.47 halbestunde OMR against the recordings (2026-10-22).
+const W = { onset: 2, shared: 3, same: 0, other: 1, none: 0, offgrid: 1, gap: 0.6, margin: 2 };
+
+function voiceEvents(xml: string, raw: RawMeasure, part: EditPart) {
+  const block = xml.slice(raw.start, raw.end);
+  const toks: Tok[] = [];
+  for (const t of block.matchAll(/<(note|backup|forward)(?=[\s>])[\s\S]*?<\/\1>/g)) {
+    const s = raw.start + (t.index ?? 0);
+    toks.push({ kind: t[1] as Tok["kind"], start: s, end: s + t[0].length, dur: tagNum(t[0], "duration") ?? 0, text: t[0] });
+  }
+  const byStart = new Map(part.notes.map((n) => [n.start, n]));
+  const events: VEvent[] = [];
+  let pos = 0, graceFrom = -1;
+  toks.forEach((t, ti) => {
+    if (t.kind !== "note") { pos += t.kind === "backup" ? -t.dur : t.dur; graceFrom = -1; return; }
+    const n = byStart.get(t.start)!;
+    if (n.grace) { if (graceFrom < 0) graceFrom = ti; return; }
+    if (n.chord && events.length) {
+      const e = events[events.length - 1];
+      if (n.midi != null) e.midis.push(n.midi);
+      e.tokLast = ti; return;
+    }
+    const first = graceFrom >= 0 ? graceFrom : ti;
+    events.push({ key: `${n.staff}/${n.voice}`, pos, dur: t.dur, rest: n.rest, midis: n.midi != null ? [n.midi] : [],
+      staff: n.staff, insertAt: toks[first].start, tokFirst: first, tokLast: ti,
+      beamOn: /<beam\s+number="1"\s*>\s*(begin|continue)\s*</.test(t.text) });
+    graceFrom = -1; pos += t.dur;
+  });
+  return { toks, events };
+}
+
+/** Best onsets for one voice's notes (divisions), keeping order and durations, or null. */
+function placeVoice(mine: VEvent[], others: VEvent[], L: number, beat: number) {
+  const at = new Map<number, { staffs: Set<string>; midis: Map<number, Set<number>> }>(); // midi -> durations
+  for (const o of others) {
+    if (o.rest) continue;
+    const a = at.get(o.pos) ?? { staffs: new Set(), midis: new Map() };
+    a.staffs.add(o.staff);
+    o.midis.forEach((m) => a.midis.set(m, (a.midis.get(m) ?? new Set()).add(o.dur)));
+    at.set(o.pos, a);
+  }
+  // A notehead shared with another voice (every pitch of the chord) is the strongest cue: one key
+  // struck once, held for a different length in each voice. Same length as well is likelier a
+  // separate note OMR read twice, so it counts less.
+  const shared = (e: VEvent, a: { midis: Map<number, Set<number>> }) => {
+    if (!e.midis.length || !e.midis.every((m) => a.midis.has(m))) return 0;
+    return e.midis.every((m) => a.midis.get(m)!.has(e.dur)) ? W.same : W.shared;
+  };
+  const cost = (e: VEvent, t: number) => {
+    if (e.rest) return 0;
+    let c = 0;
+    const a = at.get(t);
+    if (a?.staffs.has(e.staff)) c -= W.onset + shared(e, a);
+    else if (a) c -= W.other;
+    else c += W.none;
+    if (e.dur <= beat && t % e.dur !== 0) c += W.offgrid;
+    return c;
+  };
+  const GAP = W.gap;
+  const step = mine.reduce((g, e) => gcd(g, e.dur), beat);
+  const cands = new Set<number>([...at.keys()].filter((t) => t % step === 0));
+  for (let t = 0; t <= L; t += step) cands.add(t);
+  mine.forEach((e) => cands.add(e.pos));
+  const ts = [...cands].filter((t) => t >= 0 && t <= L).sort((a, b) => a - b);
+  // dp[i]: map onset -> [cost, previous onset]
+  let prev = new Map<number, [number, number]>();
+  const back: Array<Map<number, [number, number]>> = [];
+  mine.forEach((e, i) => {
+    const cur = new Map<number, [number, number]>();
+    for (const t of ts) {
+      if (t + e.dur > L) continue;
+      let best: [number, number] | null = null;
+      if (i === 0) best = [cost(e, t) + (t > 0 ? GAP : 0), -1];
+      else for (const [pt, [pc]] of prev) {
+        const end = pt + mine[i - 1].dur;
+        if (end > t || (t > end && mine[i - 1].beamOn)) continue;
+        const c = pc + cost(e, t) + (t > end ? GAP : 0);
+        if (!best || c < best[0]) best = [c, pt];
+      }
+      if (best) cur.set(t, best);
+    }
+    back.push(cur); prev = cur;
+  });
+  if (!prev.size) return null;
+  let [bt, [bc]] = [...prev].reduce((a, b) => (b[1][0] < a[1][0] ? b : a));
+  const onsets: number[] = [];
+  for (let i = mine.length - 1; i >= 0; i--) { onsets.unshift(bt); bt = back[i].get(bt)![1]; }
+  let cc = 0;
+  mine.forEach((e, i) => { cc += cost(e, e.pos) + (e.pos > (i ? mine[i - 1].pos + mine[i - 1].dur : 0) ? GAP : 0); });
+  return { onsets, margin: cc - bc };
+}
+const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : Math.abs(a));
+
+function gapsIn(xml: string): Array<VoiceGap & { _ev: VEvent[]; _toks: Tok[]; _onsets: number[] | null }> {
+  const out: Array<VoiceGap & { _ev: VEvent[]; _toks: Tok[]; _onsets: number[] | null }> = [];
+  scan(xml).forEach((p, pi) => p.measures.forEach((m, i) => {
+    if (m.implicit || !m.beats || !m.beatType) return;
+    const L = Math.round(m.beats * 4 / m.beatType * m.divisions), beat = Math.round(4 / m.beatType * m.divisions);
+    const part = readPart(xml, m, pi, p.id);
+    if (Math.abs(part.length * m.divisions - L) > 1e-6) return; // whole-bar problem: lengthIssues reports it
+    const { toks, events } = voiceEvents(xml, m, part);
+    const keys = [...new Set(events.map((e) => e.key))];
+    for (const key of keys) {
+      const mine = events.filter((e) => e.key === key);
+      const last = mine[mine.length - 1], endPos = last.pos + last.dur;
+      if (endPos >= L || mine.every((e) => e.rest)) continue;
+      const [staff, voice] = key.split("/");
+      // Only voices written in one unbroken run of notes can be re-spaced safely.
+      const contiguous = mine.every((e, k) => k === 0 || (e.tokFirst === mine[k - 1].tokLast + 1 && e.pos === mine[k - 1].pos + mine[k - 1].dur));
+      const placed = contiguous ? placeVoice(mine, events.filter((e) => e.key !== key), L, beat) : null;
+      const moves = placed && placed.margin >= W.margin && placed.onsets.some((t, k) => t !== mine[k].pos);
+      let fix: VoiceFix | null = null;
+      if (moves) {
+        const gaps: VoiceFix["gaps"] = [];
+        placed!.onsets.forEach((t, k) => {
+          const shifted = t - mine[k].pos, before = k ? placed!.onsets[k - 1] - mine[k - 1].pos : 0;
+          if (shifted > before) gaps.push({ before: k, length: shifted - before });
+        });
+        fix = { gaps, onsets: placed!.onsets.map((t) => t / m.divisions), current: mine.map((e) => e.pos / m.divisions), margin: placed!.margin };
+      }
+      out.push({ index: i, number: m.number, partIndex: pi, staff, voice, expected: L / m.divisions, actual: endPos / m.divisions,
+        fix, _ev: mine, _toks: toks, _onsets: moves ? placed!.onsets : null });
+    }
+  }));
+  return out;
+}
+
+/** Voices that stop before the end of an otherwise full bar, with a proposed placement when one is clear. */
+export function voiceGaps(xml: string): VoiceGap[] {
+  return gapsIn(xml).map(({ _ev, _toks, _onsets, ...g }) => g);
+}
+
+/** Apply voiceGaps' proposal for one voice: invisible <forward> gaps, later voices kept in place. */
+export function fillVoiceGap(xml: string, mi: number, pi: number, staff: string, voice: string): string {
+  const g = gapsIn(xml).find((x) => x.index === mi && x.partIndex === pi && x.staff === staff && x.voice === voice);
+  if (!g?.fix || !g._onsets) throw new Error(`no proposed fix for staff ${staff} voice ${voice} in measure ${mi + 1}`);
+  const ev = g._ev, toks = g._toks, edits: Array<[number, number, string]> = [];
+  const fwd = (d: number) => `<forward><duration>${d}</duration><voice>${voice}</voice><staff>${staff}</staff></forward>`;
+  let total = 0;
+  for (const gap of g.fix.gaps) { edits.push([ev[gap.before].insertAt, ev[gap.before].insertAt, fwd(gap.length)]); total += gap.length; }
+  const next = toks[ev[ev.length - 1].tokLast + 1];
+  if (next?.kind === "backup") {
+    edits.push([next.start, next.end, next.text.replace(/<duration>\s*\d+\s*<\/duration>/, `<duration>${next.dur + total}</duration>`)]);
+  } else if (next) {
+    edits.push([next.start, next.start, `<backup><duration>${total}</duration></backup>`]);
+  }
+  edits.sort((a, b) => b[0] - a[0]);
+  for (const [s, e, t] of edits) xml = splice(xml, s, e, t);
+  return xml;
+}
+
+/** Apply every proposed voice fix; returns the new XML and how many voices were filled. */
+export function fillAllVoiceGaps(xml: string): { xml: string; filled: number } {
+  let filled = 0;
+  for (let guard = 0; guard < 10000; guard++) {
+    const g = gapsIn(xml).find((x) => x.fix);
+    if (!g) break;
+    xml = fillVoiceGap(xml, g.index, g.partIndex, g.staff, g.voice);
+    filled++;
+  }
+  return { xml, filled };
+}

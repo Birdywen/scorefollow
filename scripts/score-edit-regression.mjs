@@ -149,4 +149,60 @@ const base = measureKeys[0]; // engine measure numbering
 variants.forEach((_, vi) => shown[vi].forEach((mids, mi) => {
   assert.deepEqual((heard[vi][base + mi] ?? []).slice().sort((a, b) => a - b), mids, `variant ${vi} measure ${mi + 1}`);
 }));
+
+// Hidden rests: a voice packed to the start of the bar is re-spaced onto the other voices' onsets.
+{
+  const n = (pitch, dur, voice, staff, extra = "") => `<note>${pitch}<duration>${dur}</duration><voice>${voice}</voice>${extra}<staff>${staff}</staff></note>`;
+  const ch = (pitch, dur, voice, staff) => `<note><chord/>${pitch}<duration>${dur}</duration><voice>${voice}</voice><staff>${staff}</staff></note>`;
+  const back = (d) => `<backup><duration>${d}</duration></backup>`;
+  const score = (body, beats = 2) => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>${beats}</beats><beat-type>4</beat-type></time><staves>2</staves></attributes>
+${body}</measure></part></score-partwise>`;
+  // 2/4, divisions 4. Bass voice 6 strikes B2 and C3 on beats 1 and 2 (eighth rests hidden);
+  // voice 5 shares those noteheads. Voice 7 follows voice 6 in the XML and must stay put.
+  const R = "<rest/>";
+  const v1 = n(p("D", 5), 8, 1, 1);
+  const v5 = n(p("B", 2), 1, 5, 2) + n(p("G", 3), 1, 5, 2) + n(R, 2, 5, 2) + n(p("C", 3), 1, 5, 2) + n(p("G", 3), 1, 5, 2) + n(R, 2, 5, 2);
+  const v6 = n(p("B", 2), 2, 6, 2) + n(p("C", 3), 2, 6, 2);
+  const v7 = n(R, 4, 7, 2) + n(p("E", 3), 4, 7, 2);
+  const src = score(v1 + back(8) + v5 + back(8) + v6 + back(4) + v7);
+  const g = E.voiceGaps(src);
+  assert.deepEqual(g.map((x) => [x.staff, x.voice, x.actual, x.expected]), [["2", "6", 1, 2]]);
+  assert.deepEqual(g[0].fix.current, [0, 0.5]);
+  assert.deepEqual(g[0].fix.onsets, [0, 1], "C3 moves onto the shared notehead on beat 2");
+  const filled = E.fillVoiceGap(src, 0, 0, "2", "6");
+  assert.equal((filled.match(/<rest\/>/g) ?? []).length, (src.match(/<rest\/>/g) ?? []).length, "no printed rest added");
+  assert.match(filled, /<forward><duration>2<\/duration><voice>6<\/voice><staff>2<\/staff><\/forward>/);
+  assert.equal(E.voiceGaps(filled).filter((x) => x.fix).length, 0);
+  assert.deepEqual(E.lengthIssues(filled), []);
+  assert.equal(E.fillAllVoiceGaps(src).xml, filled);
+  assert.equal(E.fillAllVoiceGaps(src).filled, 1);
+  const onsets = (x) => {
+    const r = spawnSync("python3", ["-B", "-c", `
+import json, sys
+from analysis_service.piano_score import parse_piano_score
+print(json.dumps(sorted([n["voice"], n["onsetBeat"], n["pitchMidi"]] for n in parse_piano_score(sys.stdin.read()))))`],
+    { cwd: new URL("..", import.meta.url), input: x, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  const before = onsets(src), after = onsets(filled);
+  const c3 = (ns) => ns.filter((t) => t[2] === 48).map((t) => t[1]).sort((a, b) => a - b);
+  assert.deepEqual(c3(before), [0.5, 1], "as recognized: a phantom C3 on the off-beat");
+  assert.deepEqual(c3(after), [1], "filled: one C3 on beat 2, shared with voice 5");
+  assert.deepEqual(after.filter((t) => t[0] !== "6"), before.filter((t) => t[0] !== "6"), "other voices unchanged");
+
+  // Only part of a chord matches later on: keep it where it is (rest at the end).
+  const chordSrc = score(n(p("B", 4), 4, 1, 1) + n(p("A", 4), 2, 1, 1) + n(p("F", 4), 2, 1, 1) + n(p("D", 4), 4, 1, 1)
+    + back(12) + n(p("D", 4), 4, 2, 1) + ch(p("F", 4), 4, 2, 1), 3);
+  assert.deepEqual(E.voiceGaps(chordSrc).map((x) => [x.voice, x.fix]), [["2", null]]);
+  assert.throws(() => E.fillVoiceGap(chordSrc, 0, 0, "1", "2"));
+
+  // Notes beamed together are never pulled apart.
+  const bm = (t) => `<beam number="1">${t}</beam>`;
+  const beamSrc = score(n(p("C", 5), 2, 1, 1) + n(p("E", 5), 2, 1, 1) + n(p("G", 5), 2, 1, 1) + n(p("C", 6), 2, 1, 1)
+    + back(8) + n(p("E", 4), 1, 2, 1, bm("begin")) + n(p("G", 4), 1, 2, 1, bm("end")));
+  for (const x of E.voiceGaps(beamSrc)) if (x.fix) assert.equal(x.fix.onsets[1] - x.fix.onsets[0], 0.25, "beam group kept together");
+}
 console.log("SCORE_EDIT_OK");
