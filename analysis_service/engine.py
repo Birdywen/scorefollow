@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.27"
+VERSION = "string-mono-0.28"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -912,6 +912,12 @@ def _interior_silence_gaps(times: np.ndarray, energy: np.ndarray, onsets: list[f
     return gaps
 
 
+# 0.28 漂移补救: 刚性/活网格结果的音高匹配率低于此值就试按小节重对齐, 补救后
+# 匹配率至少高出 DRIFT_RESCUE_GAIN 才采用。E31 节拍器同步 0.39 -> 0.89。
+DRIFT_RESCUE_MATCH = 0.6
+DRIFT_RESCUE_GAIN = 0.15
+
+
 def _needs_rescue_check(pitch_score, rhythm_score, confidence) -> bool:
     """刚性网格疑似解释失败才进入代价较高的自动对齐：分够不上或出不了分。
     好片段（音准节奏都在正常区间）永远走原路径，零行为变化。"""
@@ -927,7 +933,7 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
                        duration_sec: float, requested_start: int, score_last: int,
                        rigid_start: float, onsets: list[float],
                        pitch_notes: list | None = None,
-                       signal=None, rate=None) -> dict:
+                       signal=None, rate=None, suspect: str | None = None) -> dict:
     """刚性网格解释失败时的补救：用音高证据重对齐并返回小节级网格。
 
     (0, -12, +12) 依次试 align_excerpt（不移调优先：移调候选须明显更优才胜出，
@@ -1036,6 +1042,9 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
     if any(b["audioSec"] <= a["audioSec"] for a, b in zip(markers, markers[1:])):
         plan["advice"] = "自动对齐的小节时间不是单调递增，无法重建网格；可使用手动小节同步逐小节对齐后重分析。"
         return {**plan, "markers": [], "reasons": []}
+    if not reasons and suspect:
+        # 调用方已从音高证据看出网格漂移 (见 DRIFT_RESCUE_MATCH); 采不采用由调用方比匹配率决定。
+        reasons.append(suspect)
     if not reasons:
         return plan
     plan.update(shift=shift, alignment=True, markers=markers, reasons=reasons,
@@ -1048,6 +1057,8 @@ def _auto_measure_sync(*, xml: str, notes: list[dict], times: np.ndarray,
     if "tempo" in reasons:
         plan["limitations"].append(
             f"面板速度与实测 {plan['detected_bpm']} BPM 差别较大，已按实测速度对齐；可在面板上改成该速度。")
+    if "drift" in reasons:
+        plan["limitations"].append("检测到的拍点在曲中逐渐偏离演奏，已按音高证据逐小节重新对齐；小节内部节奏照常评分。")
     if "pause" in reasons:
         plan["limitations"].append("录音中途有停顿或明显变速，已按小节分段对齐；小节内部节奏照常评分。")
     if "offset" in reasons:
@@ -2359,22 +2370,49 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
         result["summary"]["syncAdvice"] = "谱面与录音首尾的时间证据冲突，覆盖范围未核实；请检查谱面是否完整，并使用手动小节同步后重分析。"
     # An already supported excerpt may begin mid-measure (a cropped take).
     # Preserve that note-level range instead of replacing it with whole measures.
-    if sync_mode == "legacy" and alignment is None and \
-            _needs_rescue_check(pitch_gate_score, rhythm_gate_score,
-                                "medium" if voiced_count / len(notes) >= .8 else "low"):
+    # 0.28: 网格一路漂移 (QM 拍点在快速段丢拍: E31 节拍器同步到曲末早 5 s) 时测音窗
+    # 落到邻音上, 音准掉到 50 多, 不到 _needs_rescue_check 的 < 40, 活网格也从不补救。
+    # 匹配率低就也试一次补救, 但只有补救后匹配率明显更高才采用: 真拉错的录音换了
+    # 网格也不会变好, 照原结果打分。
+    _gate = sync_mode == "legacy" and alignment is None and \
+        _needs_rescue_check(pitch_gate_score, rhythm_gate_score,
+                            "medium" if voiced_count / len(notes) >= .8 else "low")
+    _match_now = correct_pitch_notes / len(pitch_errors) if len(pitch_errors) >= 12 else None
+    _drift = not _gate and sync_mode in ("legacy", "vamp-beat") and alignment is None and \
+        _match_now is not None and _match_now < DRIFT_RESCUE_MATCH
+    if _gate or _drift:
         _plan = _auto_measure_sync(xml=xml, notes=rescue_notes, times=times, pitches=pitches,
                                    energy=energy, sec_per_beat=sec_per_beat,
                                    duration_sec=duration_sec,
                                    requested_start=start_measure,
                                    score_last=score_notes[-1]["measure"],
                                    rigid_start=start, onsets=onsets, pitch_notes=pitch_notes,
-                                   signal=signal, rate=rate)
-        if _plan["markers"]:
-            _xml2 = transpose_score_xml(xml, _plan["shift"]) if _plan["shift"] else xml
-            _rescued = analyze(wav, _xml2, bpm, instrument, _plan["start_measure"],
-                               sync_mode="manual-measures", measure_sync=_plan["markers"], _beat_requested=_beat_req, _beat_rejected_in=_beat_rejected,
+                                   signal=signal, rate=rate,
+                                   suspect="drift" if _drift else None)
+        if _plan["markers"] and _drift:
+            _rescued = analyze(wav, transpose_score_xml(xml, _plan["shift"]) if _plan["shift"] else xml,
+                               bpm, instrument, _plan["start_measure"],
+                               sync_mode="manual-measures", measure_sync=_plan["markers"], _beat_requested=_beat_req,
+                               # 拍点网格跑了但输给音高证据 = beat:rejected, 不是检测器缺失。
+                               _beat_rejected_in=_beat_rejected or sync_mode == "vamp-beat",
                                pitch_notes=pitch_notes, onset_hint=onset_hint,
                                pitch_tolerance_cents=pitch_tolerance_cents)
+            _rs = _rescued["summary"]
+            _match_new = (_rs.get("correctPitchNotes") or 0) / _rs["scoredPitchNotes"] \
+                if (_rs.get("scoredPitchNotes") or 0) >= 12 else None
+            if _match_new is None or _match_new < _match_now + DRIFT_RESCUE_GAIN:
+                result["summary"]["rescueAttempts"] = _plan["attempts"] + [
+                    {"reason": "drift_not_better", "matchBefore": round(_match_now, 3),
+                     "matchAfter": None if _match_new is None else round(_match_new, 3)}]
+                return result
+            _plan["_rescued"] = _rescued
+        if _plan["markers"]:
+            _xml2 = transpose_score_xml(xml, _plan["shift"]) if _plan["shift"] else xml
+            _rescued = _plan.get("_rescued") or analyze(
+                wav, _xml2, bpm, instrument, _plan["start_measure"],
+                sync_mode="manual-measures", measure_sync=_plan["markers"], _beat_requested=_beat_req, _beat_rejected_in=_beat_rejected,
+                pitch_notes=pitch_notes, onset_hint=onset_hint,
+                pitch_tolerance_cents=pitch_tolerance_cents)
             _summary = _rescued["summary"]
             _summary["autoLocated"] = auto_located
             _summary["locationCost"] = location_cost
@@ -2389,6 +2427,6 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             _rescued["limitations"] = list(_rescued.get("limitations") or []) + _plan["limitations"]
             return _rescued
         result["summary"]["rescueAttempts"] = _plan["attempts"]
-        if _plan["advice"]:
+        if _plan["advice"] and not _drift:
             result["summary"]["syncAdvice"] = _plan["advice"]
     return result
