@@ -205,8 +205,114 @@ def _pitch_diff(midi: float, target: float) -> float:
     return min(2.5, cents / 100, abs(cents - 1200) / 100 + .75)
 
 
+def _is_mono(score_notes: list[dict], events: list) -> bool:
+    return (not any(isinstance(e, tuple) for e in events)
+            and not any(isinstance(_written(note), tuple) for note in score_notes))
+
+
+def _skip_fixed_point(best: np.ndarray, allowed: np.ndarray | None = None) -> np.ndarray:
+    """Solve cur[r, j] = cur[r, j-1] + .85 if that is < best[r, j] else best[r, j].
+
+    The skip move of the DTW, solved for whole rows at once but exactly as the
+    cell-by-cell loop does it: each pass guesses where runs of skips are and
+    fills each run with sequential additions (np.add.accumulate), and it stops
+    only when every cell satisfies the recurrence, which has one solution.
+    Column 0 has no left neighbour; `allowed` False cells never take a skip.
+    """
+    finite = np.isfinite(best)
+    has = finite.any(axis=1)
+    last = np.where(has, best.shape[1] - 1 - np.argmax(finite[:, ::-1], axis=1), -1)
+    width = int(last.max()) + 1  # cells right of a row's last finite one are a pure skip run
+    cur = best.copy()
+    if width > 1:
+        part = best[:, :width]
+        ok = np.arange(1, width)[None, :] <= last[:, None]  # each row's tail is filled below
+        if allowed is not None:
+            ok &= allowed[:, 1:width]
+        head = part.copy()
+        while True:  # one-step passes over the finite part; always converges
+            nxt = part.copy()
+            left = head[:, :-1] + .85
+            take = (left < part[:, 1:]) & ok
+            nxt[:, 1:] = np.where(take, left, part[:, 1:])
+            if np.array_equal(nxt, head):
+                break
+            head = nxt
+        cur[:, :width] = head
+    for r in np.nonzero(has & (last < best.shape[1] - 1))[0]:
+        c = int(last[r]) + 1
+        end = best.shape[1]
+        if allowed is not None:
+            stop = np.nonzero(~allowed[r, c:])[0]
+            end = c + int(stop[0]) if len(stop) else end
+        if end > c:
+            seq = np.full(end - c + 1, .85)
+            seq[0] = cur[r, c - 1]
+            cur[r, c:end] = np.add.accumulate(seq)[1:]
+    return cur
+
+
+def _mono_costs(events: np.ndarray, written: np.ndarray) -> np.ndarray:
+    """_pitch_diff for one event against an array, same float operations (bit-identical)."""
+    cents = np.abs(events - written) * 100
+    return np.minimum(np.minimum(2.5, cents / 100), np.abs(cents - 1200) / 100 + .75)
+
+
 def _prefix_candidates(score_notes: list[dict], events: list[float],
                        limit: int = 64, margin: float = 0.40, cap: int = 16) -> list:
+    """Pitch-only prefix scan; all candidate starts run as one batched array.
+
+    Monophonic only (identical values to _prefix_candidates_scalar, which
+    handles chords).
+    """
+    if not _is_mono(score_notes, events):
+        return _prefix_candidates_scalar(score_notes, events, limit, margin, cap)
+    k = min(len(events), limit)
+    head = [float(e) for e in events[:k]]
+    band = max(4, k // 3)
+    floor = max(6, int(k * .65))
+    pitches = np.array([float(note["pitchMidi"]) for note in score_notes])
+    starts = [st for st in range(len(score_notes))
+              if _anchor_ok(head[0], float(pitches[st]))
+              and min(2 * k + 4, len(score_notes) - st) >= max(6, int(k * .65))]
+    scored = []
+    if starts:
+        width = 2 * k + 4
+        lengths = np.array([min(width, len(score_notes) - st) for st in starts])
+        idx = np.array(starts)[:, None] + np.arange(width)[None, :]
+        valid = np.arange(width)[None, :] < lengths[:, None]
+        win = np.where(valid, pitches[np.minimum(idx, len(pitches) - 1)], 0.0)
+        cols = np.arange(1, width + 1)
+        prev = np.full((len(starts), width + 1), np.inf)
+        prev[:, 0] = 0.0
+        for i, midi in enumerate(head, 1):
+            row = np.full_like(prev, np.inf)
+            inband = (np.abs(i - cols) <= band)[None, :] & valid
+            diff = _mono_costs(midi, win)
+            diag = prev[:, :-1] + diff
+            if i == 1:
+                row[:, 1:] = np.where(inband, diag, np.inf)
+            else:
+                up = prev[:, 1:] + EXTRA_EVENT_COST
+                best = np.minimum(diag, up)
+                best[:, 0] = diag[:, 0]  # column 1 takes only the match move
+                best = np.where(inband, best, np.inf)
+                cur = _skip_fixed_point(best, inband)
+                row[:, 1:] = np.where(inband, cur, np.inf)
+            prev = row
+        for r, st in enumerate(starts):
+            ln = int(lengths[r])
+            tail = prev[r, floor:ln + 1]
+            scored.append((float(np.min(tail)) / k if ln + 1 > floor else float("inf"), st))
+    scored.sort()
+    if not scored or not math.isfinite(scored[0][0]):
+        raise ValueError("录音与乐谱不足以定位片段；请指定起始小节")
+    cutoff = scored[0][0] + margin
+    return [(c, s) for c, s in scored if c <= cutoff][:cap]
+
+
+def _prefix_candidates_scalar(score_notes: list[dict], events: list[float],
+                              limit: int = 64, margin: float = 0.40, cap: int = 16) -> list:
     """Pitch-only scan of the excerpt prefix; returns [(cost, start)] kept.
 
     Deliberately no beat-tracker positions here (see module docstring): the
@@ -243,18 +349,96 @@ def _prefix_candidates(score_notes: list[dict], events: list[float],
     return [(c, s) for c, s in scored if c <= cutoff][:cap]
 
 
+def _cost_row(midi, written: list, lo: int, hi: int, mono: bool) -> tuple:
+    """Match and extra costs of one audio event against written[lo-1:hi] (numpy rows).
+
+    The monophonic case is _pitch_diff vectorized with the same float operations,
+    so every value is bit-identical; chords fall back to the scalar functions.
+    """
+    if mono and not isinstance(midi, tuple):
+        cents = np.abs(midi - written[lo - 1:hi]) * 100
+        return np.minimum(np.minimum(2.5, cents / 100), np.abs(cents - 1200) / 100 + .75), EXTRA_EVENT_COST
+    ws = written[lo - 1:hi]
+    return (np.array([_match_cost(midi, w) for w in ws]),
+            np.array([_extra_cost(midi, w) for w in ws]))
+
+
+def _full_paths(score_notes: list[dict], events: list, starts: list[int]) -> list:
+    """_full_path for several starts at once (one batched array when monophonic)."""
+    if not _is_mono(score_notes, events):
+        return [_full_path(score_notes, events, st) for st in starts]
+    out = {st: (float("inf"), 0, None) for st in starts}
+    run = [st for st in starts if len(score_notes) - st >= 8]
+    if not run:
+        return [out[st] for st in starts]
+    n = len(events)
+    pitches = np.array([float(note["pitchMidi"]) for note in score_notes])
+    width = len(score_notes) - min(run)
+    lengths = np.array([len(score_notes) - st for st in run])
+    idx = np.array(run)[:, None] + np.arange(width)[None, :]
+    valid = np.arange(width)[None, :] < lengths[:, None]
+    win = np.where(valid, pitches[np.minimum(idx, len(pitches) - 1)], 0.0)
+    band = max(4, n // 3)
+    floor = max(4, n // 10)
+    prev = np.full((len(run), width + 1), np.inf)
+    prev[:, 0] = 0.0
+    back = np.zeros((len(run), n + 1, width + 1), dtype=np.uint8)
+    for i, midi in enumerate(events, 1):
+        row = np.full_like(prev, np.inf)
+        lo = max(1, i - band)
+        hi = min(width, i + band)
+        if lo <= hi:
+            ok = valid[:, lo - 1:hi]
+            diag = prev[:, lo - 1:hi] + _mono_costs(float(midi), win[:, lo - 1:hi])
+            if i == 1:
+                row[:, lo:hi + 1] = np.where(ok, diag, np.inf)
+                back[:, i, lo:hi + 1] = np.where(ok, 1, 0)
+            else:
+                up = prev[:, lo:hi + 1] + EXTRA_EVENT_COST
+                take_up = up < diag
+                best = np.where(take_up, up, diag)
+                act = np.where(take_up, 2, 1).astype(np.uint8)
+                if lo == 1:
+                    best[:, 0] = diag[:, 0]
+                    act[:, 0] = 1
+                best = np.where(ok, best, np.inf)
+                cur = _skip_fixed_point(best, ok)
+                skip = np.zeros(cur.shape, dtype=bool)
+                skip[:, 1:] = (cur[:, :-1] + .85) < best[:, 1:]
+                if lo == 1:
+                    skip[:, 0] = False
+                act[skip] = 3
+                row[:, lo:hi + 1] = np.where(ok, cur, np.inf)
+                back[:, i, lo:hi + 1] = np.where(ok, act, 0)
+        prev = row
+    for r, st in enumerate(run):
+        m = int(lengths[r])
+        tail = prev[r, floor:m + 1]
+        if not np.isfinite(tail).any():
+            continue
+        end_j = int(np.argmin(tail)) + floor
+        out[st] = (float(prev[r, end_j]) / n, end_j, back[r, :, :m + 1].copy())
+    return [out[st] for st in starts]
+
+
 def _full_path(score_notes: list[dict], events: list[float], start: int) -> tuple:
     """Full-length pitch-only DTW from `start`; free end over remaining score.
 
     Returns (mean_cost, end_j, back) with end_j the 1-based column where the
     last audio event lands, or (inf, 0, None) when the remaining score cannot
     cover the excerpt (band-unreachable: correct rejection, not an error).
+
+    Row-vectorized; identical to the cell-by-cell recurrence (ties keep the
+    order match, extra, skip). Within a row the skip move depends on the cell
+    to its left, so it is solved as a fixed point, which is exact.
     """
     n = len(events)
     written = [_written(note) for note in score_notes[start:]]
     m = len(written)
     if m < 8:
         return float("inf"), 0, None
+    mono = not any(isinstance(w, tuple) for w in written)
+    warr = np.array(written, dtype=float) if mono else written
     band = max(4, n // 3)
     floor = max(4, n // 10)
     prev = np.full(m + 1, np.inf)
@@ -264,16 +448,31 @@ def _full_path(score_notes: list[dict], events: list[float], start: int) -> tupl
         row = np.full(m + 1, np.inf)
         lo = max(1, i - band)
         hi = min(m, i + band)
-        for j in range(lo, hi + 1):
-            diff = _match_cost(midi, written[j - 1])
-            if i == 1 or j == 1:
-                row[j] = prev[j - 1] + diff
-                back[i, j] = 1
-            else:
-                options = (prev[j - 1] + diff, prev[j] + _extra_cost(midi, written[j - 1]), row[j - 1] + .85)
-                action = int(np.argmin(options))
-                row[j] = options[action]
-                back[i, j] = action + 1
+        if lo > hi:
+            prev = row
+            continue
+        diff, extra = _cost_row(midi, warr, lo, hi, mono)
+        diag = prev[lo - 1:hi] + diff
+        if i == 1:
+            row[lo:hi + 1] = diag
+            back[i, lo:hi + 1] = 1
+            prev = row
+            continue
+        up = prev[lo:hi + 1] + extra
+        take_up = up < diag
+        best = np.where(take_up, up, diag)
+        act = np.where(take_up, 2, 1).astype(np.uint8)
+        if lo == 1:  # column 1 only takes the match move
+            best[0] = diag[0]
+            act[0] = 1
+        cur = _skip_fixed_point(best[None, :])[0]
+        skip = np.zeros(len(cur), dtype=bool)
+        skip[1:] = (cur[:-1] + .85) < best[1:]
+        if lo == 1:
+            skip[0] = False
+        act[skip] = 3
+        row[lo:hi + 1] = cur
+        back[i, lo:hi + 1] = act
         prev = row
     tail = prev[floor:]
     if not np.isfinite(tail).any():
@@ -364,8 +563,8 @@ def align_excerpt(score_notes: list[dict], pitch_notes: list,
         raise ValueError("片段定位需要至少 8 个可靠的音高事件；请指定起始小节")
     stage1 = _prefix_candidates(score_notes, events)
     full = []
-    for _, start in stage1:
-        cost, end_j, back = _full_path(score_notes, events, start)
+    starts = [start for _, start in stage1]
+    for start, (cost, end_j, back) in zip(starts, _full_paths(score_notes, events, starts)):
         if math.isfinite(cost):
             full.append((cost, start, end_j, back))
     if not full:

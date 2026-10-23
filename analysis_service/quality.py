@@ -9,7 +9,11 @@ PITCH_UNRELIABLE_RATIO = 0.2
 # evidence-2: 速度不一致且节奏分低于此值, 视为时间映射漂移 (partial, 不出综合分)。
 TEMPO_RHYTHM_FLOOR = 60
 # evidence-3: 钢琴谱面检查拒评 (scoreCheck refused) -> issue score_unreliable; 两项都拒评时 outcome score_unreliable。
-QUALITY_VERSION = "evidence-3"
+# evidence-4: 唯一挡住综合分的是 low_coverage 且覆盖只是略低 (听清 >= REFERENCE_HEARD_FLOOR,
+# 音高可判 >= REFERENCE_PITCH_FLOOR) 时仍给综合分, 标 overallReliability "reference" + unheardRatio。
+REFERENCE_HEARD_FLOOR = 0.6
+REFERENCE_PITCH_FLOOR = 0.5
+QUALITY_VERSION = "evidence-4"
 
 
 def assess_quality(result: dict) -> dict:
@@ -83,11 +87,16 @@ def assess_quality(result: dict) -> dict:
     # timeline; never back-filled for old or incomplete reports.
     pitch, rhythm = summary.get("pitchScore"), summary.get("rhythmScore")
     weights = dict(OVERALL_WEIGHTS)
-    overall = None
+    overall, reliability = None, None
+    heard = min(1.0, (summary.get("voicedNotes") or 0) / count) if count else 0.0
+    borderline = heard >= REFERENCE_HEARD_FLOOR and pitch_coverage >= REFERENCE_PITCH_FLOOR and not mismatch
     if pitch is not None and rhythm is not None and "alignment_unverified" not in issues \
-            and "low_coverage" not in issues and "pitch_tracking_unreliable" not in issues and "tempo_timing_unreliable" not in issues:
+            and ("low_coverage" not in issues or borderline) \
+            and "pitch_tracking_unreliable" not in issues and "tempo_timing_unreliable" not in issues:
         overall = int(math.floor(pitch * weights["pitch"] + rhythm * weights["rhythm"] + .5))
+        reliability = "reference" if "low_coverage" in issues else "full"
     return {"version": QUALITY_VERSION, "outcome": outcome, "overallScore": overall,
+            "overallReliability": reliability, "unheardRatio": round(1 - heard, 3),
             "overallWeights": weights, "pitchMatchRate": match_rate, "issues": issues,
             "pitchCoverage": round(pitch_coverage, 3), "timingCoverage": round(timing_coverage, 3),
             # This indicates a usable timeline, never a claim of verified accuracy.

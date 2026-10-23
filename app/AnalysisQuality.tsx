@@ -4,6 +4,7 @@ export type Quality = {
   version: string; outcome: "complete" | "complete_with_rescue" | "partial" | "insufficient_evidence" | "score_audio_mismatch" | "score_unreliable";
   issues: string[]; pitchCoverage: number; timingCoverage: number; followReady: boolean;
   overallScore?: number | null; pitchMatchRate?: number | null; overallWeights?: { pitch: number; rhythm: number };
+  overallReliability?: "full" | "reference" | null; unheardRatio?: number;
 };
 
 type Summary = {

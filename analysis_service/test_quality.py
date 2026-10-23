@@ -92,6 +92,37 @@ class OverallScoreTests(unittest.TestCase):
         self.assertEqual(self.q(pitchScore=0, rhythmScore=0)["overallScore"], 0)
 
 
+class ReferenceOverallTests(unittest.TestCase):
+    """evidence-4: borderline coverage still gets an overall score, marked for reference."""
+    def q(self, **patch):
+        s = {"noteCount": 630, "voicedNotes": 503, "scoredPitchNotes": 500, "timedNotes": 600,
+             "timingCandidateNotes": 629, "pitchScore": 90, "rhythmScore": 94, "correctPitchNotes": 440,
+             "confidence": "low"}
+        s.update(patch)
+        return assess_quality({"summary": s, "measureIntervals": []})
+
+    def test_borderline_low_coverage_gets_reference_overall(self):
+        q = self.q()
+        self.assertIn("low_coverage", q["issues"])
+        self.assertEqual(q["overallScore"], 92)
+        self.assertEqual(q["overallReliability"], "reference")
+        self.assertEqual(q["unheardRatio"], round(1 - 503 / 630, 3))
+        self.assertEqual(q["outcome"], "partial")
+
+    def test_full_coverage_is_full(self):
+        q = self.q(voicedNotes=600, scoredPitchNotes=598, confidence="medium")
+        self.assertEqual(q["overallReliability"], "full")
+
+    def test_too_little_heard_stays_uncomputed(self):
+        q = self.q(voicedNotes=360, scoredPitchNotes=355)
+        self.assertIsNone(q["overallScore"])
+        self.assertIsNone(q["overallReliability"])
+
+    def test_other_blockers_still_block(self):
+        self.assertIsNone(self.q(syncAdvice="Review alignment")["overallScore"])
+        self.assertIsNone(self.q(outlierNotes=120)["overallScore"])
+
+
 class MismatchTests(unittest.TestCase):
     def q(self, **patch):
         s = {"noteCount": 46, "scoredPitchNotes": 37, "timedNotes": 38, "timingCandidateNotes": 45,

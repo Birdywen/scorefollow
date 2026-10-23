@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.26"
+VERSION = "string-mono-0.27"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -254,6 +254,15 @@ def track(signal: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray, np.nda
             # 首个强峰偏向基频而非 2 倍周期；低置信片段不强行定音。
             strong = peaks[candidates[peaks] >= max(0.7, maximum * 0.90)]
             idx = int(strong[0]) if len(strong) else int(np.argmax(candidates))
+            if idx == 0 or idx == len(candidates) - 1:
+                # 0.27: 落在搜索边界的不是音高 (截断值, 读数恒为 MIDI 96.9 / 36)。低音的
+                # 最短延迟自相关天然很高, 真周期峰稍弱 (快速跨弦) 就被边界压掉。
+                # 有 >= 0.7 的内部峰就改取最强内部峰。没有则保留原读数: 删掉会丢掉
+                # 换音处的音高跳变起音, 快速抖动演奏累计错位 (test_drift_slip seed 8)。
+                inner = peaks[candidates[peaks] >= 0.7]
+                if len(inner):
+                    top = float(np.max(candidates[inner]))
+                    idx = int(inner[candidates[inner] >= top * 0.90][0])
             confidence = float(candidates[idx])
             lag = float(lo + idx)
             if 0 < idx < len(candidates) - 1:
@@ -2058,6 +2067,41 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             detected = float(np.median(pitches[valid])) if np.count_nonzero(valid) >= 4 else None
             cents = round((detected - note["pitchMidi"]) * 100, 1) if detected is not None else None
             quality = round(float(np.median(confidence[valid])), 2) if cents is not None else 0.0
+        # 0.27 起音锚定补测: 快速大跳 (如大提琴跨弦低音八分音符) 的常规窗锚在期望时刻、
+        # 跳过前 35%、又在下一起音前 30 ms 截断, 常只剩 0-30 ms (<4 帧), 帧明明测到
+        # (置信 0.8-0.99) 却判没听清。起音已测到时改在 [本起音, 下一起音] 内重测:
+        # 读数像邻音 (更近前/后一音的谱面音高) 不收; 差三度以上不指控, 只交 CREPE。
+        rescued = False
+        if cents is None and onset is not None:
+            span_end = min(onset + duration, nxt) if nxt is not None else onset + duration
+            span = span_end - onset
+            r_lo = onset + span * (0.30 if shifted else 0.20)
+            r_hi = span_end - span * 0.12
+            if r_hi - r_lo >= 0.04:
+                rvalid = (times >= r_lo) & (times <= r_hi) & np.isfinite(pitches) & (confidence >= 0.7)
+                if np.count_nonzero(rvalid) >= 3:
+                    r_det = float(np.median(pitches[rvalid]))
+                    r_cents = (r_det - note["pitchMidi"]) * 100
+                    own = abs(r_det - note["pitchMidi"])
+                    near = [abs(r_det - notes[k]["pitchMidi"]) for k in (note_index - 1, note_index + 1)
+                            if 0 <= k < len(notes)]
+                    neighbour = abs(r_cents) > pitch_tolerance_cents and any(d < own for d in near)
+                    if abs(r_cents) <= 200 and not neighbour:
+                        detected, cents = r_det, round(r_cents, 1)
+                        quality = round(float(np.median(confidence[rvalid])), 2)
+                        rescued = True
+                    else:
+                        # 前一音仍在共鸣 (单音高跟踪器跟住了它): 频谱里目标音的分音串确实在、
+                        # 且不比另一串弱太多才算听到; 读数取目标分音, 宽于 50c 不评 (短窗分辨率不够)。
+                        v = verify_target(signal, rate, onset + span * 0.10, span_end, note["pitchMidi"], r_det)
+                        if v and v["check"] in ("confirmed", "two-series") and v["recovered"] is not None \
+                                and abs(v["recovered"][1]) <= 50:
+                            detected, cents = v["recovered"][0], v["recovered"][1]
+                            quality = 0.7
+                            rescued = True
+                if cents is None and not (crepe_lo is not None and crepe_hi is not None
+                                          and crepe_hi - crepe_lo >= r_hi - r_lo):
+                    crepe_lo, crepe_hi, fallback_win = r_lo, r_hi, True
         # 节奏优先归因: 本窗超差但邻音 (±4 音/±6 拍) 匹配时, 音准按邻音判对,
         # 错位由计时误差在节奏侧扣分 (小节错位是节奏错, 不是音准错)。
         cents, detected, quality, crepe_cents = _apply_crepe_opinion(
@@ -2109,7 +2153,8 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                                 "kind": "suspect"})
         pitch_status = classify_pitch(cents, detected, pitch_tolerance_cents)
         # 只挡有滑格证据的起音 (判错音/邻音归因) 进速度趋势; uncertain 照常喂, 抢快时趋势才追得上。
-        if onset is not None and beat_time is None and not wide_hit and not displaced and pitch_status not in ("sharp", "flat"):
+        # 补测读数只用于音准, 不改速度趋势的取舍 (按补测前的 uncertain 喂)。
+        if onset is not None and beat_time is None and not wide_hit and not displaced and (rescued or pitch_status not in ("sharp", "flat")):
             drift_obs.append((expected, onset - expected))
         timing_eligible = (bool(manual_boundaries) or note_index > 0) and not (manual_boundaries and abs(note["onsetBeat"] - manual_boundaries[note["measure"]]) < 1e-6)
         timing_candidates += int(timing_eligible)

@@ -909,6 +909,7 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
   const notices = !result ? [] : [
     result.quality?.outcome === "score_audio_mismatch" ? (zh ? "录音和谱面好像对不上（可能不是同一首或同一段），这次的分数先别当真。" : "The recording may not match the score; scores are not reliable.") : "",
     result.summary.tempoMismatch ? (zh ? `录音的速度约 ${result.summary.detectedBpm ?? "—"} BPM，和设定的 ${selected?.bpm ?? bpm} BPM 差得比较多，节奏分仅供参考。` : `Detected tempo ≈ ${result.summary.detectedBpm ?? "—"} BPM differs from the set tempo; rhythm score is indicative only.`) : "",
+    result.quality?.overallReliability === "reference" ? (zh ? `综合分仅供参考：有 ${Math.round((result.quality.unheardRatio ?? 0) * 100)}% 的音没听清。` : `Overall score is indicative only: ${Math.round((result.quality.unheardRatio ?? 0) * 100)}% of notes could not be heard clearly.`) : "",
     result.summary.takeBeyondScoreAfterSec != null ? (zh ? "录音比谱面长，多出来的部分没有打分。" : "The recording runs past the score; the extra part is not scored.") : "",
     result.summary.syncAdvice ? (zh ? "自动对齐小节没有成功，原因见下方“技术细节”，也可以手动同步小节。" : "Automatic bar alignment failed; see Technical details or sync bars manually.") : "",
   ].filter(Boolean);
@@ -916,7 +917,7 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
     <div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.pitchScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.pitchScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "音准" : "Pitch"}</div>
     <div><b data-unscored={result.quality?.outcome === "score_audio_mismatch" || result.summary.rhythmScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.summary.rhythmScore ?? (zh ? "未计分" : "Not scored")}</b>{zh ? "跟拍" : "Timing"}</div>
     {/* 综合分只取后端 quality.overallScore，前端不补算；旧报告显示“未计算”，两项都缺显示“证据不足”，绝不显示 0 */}
-    <div><b data-unscored={result.quality?.overallScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.quality?.overallScore ?? (result.summary.pitchScore == null && result.summary.rhythmScore == null ? (zh ? "证据不足" : "Insufficient evidence") : (zh ? "未计算" : "Not computed"))}</b>{zh ? "综合" : "Overall"}</div>
+    <div><b data-unscored={result.quality?.overallScore == null}>{result.quality?.outcome === "score_audio_mismatch" ? (zh ? "不匹配" : "Mismatch") : result.quality?.overallScore ?? (result.summary.pitchScore == null && result.summary.rhythmScore == null ? (zh ? "证据不足" : "Insufficient evidence") : (zh ? "未计算" : "Not computed"))}</b>{zh ? "综合" : "Overall"}{result.quality?.overallReliability === "reference" && result.quality?.outcome !== "score_audio_mismatch" ? (zh ? "（仅供参考）" : " (indicative)") : ""}</div>
   </>;
   // Review notes grouped by bar; the summary card shows the 3 busiest bars.
   const issueGroups: [number, Note[]][] = (() => {

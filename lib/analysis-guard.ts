@@ -34,7 +34,9 @@ export function isValidAnalysisResult(r: unknown): boolean {
         !["complete", "complete_with_rescue", "partial", "insufficient_evidence", "score_audio_mismatch", "score_unreliable"].includes(String(q.outcome)) ||
         (q.overallScore !== undefined && q.overallScore !== null && !(typeof q.overallScore === "number" && Number.isFinite(q.overallScore) && q.overallScore >= 0 && q.overallScore <= 100)) ||
         !Array.isArray(q.issues) || !q.issues.every((issue) => typeof issue === "string") ||
-        typeof q.followReady !== "boolean") return false;
+        typeof q.followReady !== "boolean" ||
+        ![undefined, null, "full", "reference"].includes(q.overallReliability as string | null | undefined) ||
+        (q.unheardRatio !== undefined && !(typeof q.unheardRatio === "number" && q.unheardRatio >= 0 && q.unheardRatio <= 1))) return false;
     for (const key of ["pitchCoverage", "timingCoverage"]) {
       if (typeof q[key] !== "number" || !Number.isFinite(q[key]) || q[key] < 0 || q[key] > 1) return false;
     }
