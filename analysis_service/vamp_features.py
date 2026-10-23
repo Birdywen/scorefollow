@@ -24,8 +24,9 @@ def extract_pitch_notes(wav: bytes) -> list | None:
     try:
         import numpy as np
         import vamp
-        from .engine import read_wav
+        from .engine import read_wav, string_highpass
         signal, rate = read_wav(wav)
+        signal = string_highpass(signal, rate)
         out = vamp.collect(_load(signal, rate), rate, "pyin:pyin", output="notes")
         notes = []
         for seg in out["list"]:
@@ -46,8 +47,9 @@ def extract_onsets(wav: bytes, sensitivity: int = 20) -> list | None:
     None when unavailable."""
     try:
         import vamp
-        from .engine import read_wav
+        from .engine import read_wav, string_highpass
         signal, rate = read_wav(wav)
+        signal = string_highpass(signal, rate)
         out = vamp.collect(_load(signal, rate), rate,
                            "qm-vamp-plugins:qm-onsetdetector",
                            output="onsets", parameters={"sensitivity": sensitivity})
@@ -68,8 +70,9 @@ def extract_beats(wav: bytes) -> list | None:
     不足 4 个拍点视为无效。None = 不可用。"""
     try:
         import vamp
-        from .engine import read_wav
+        from .engine import read_wav, string_highpass
         signal, rate = read_wav(wav)
+        signal = string_highpass(signal, rate)
         out = vamp.collect(_load(signal, rate), rate,
                            "qm-vamp-plugins:qm-barbeattracker", output="beats")
         beats = sorted(float(e["timestamp"]) for e in out["list"])

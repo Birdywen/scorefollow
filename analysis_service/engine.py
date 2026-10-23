@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.28"
+VERSION = "string-mono-0.29"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -210,6 +210,22 @@ def parse_score(xml: str) -> list[dict]:
 NORMALIZED_PEAK = 0.5
 # track() 每块 FFT 帧数: 128 帧 x 16384 点 complex128 约 16 MB。
 TRACK_CHUNK_FRAMES = 128
+
+
+# 0.29 弦乐 Vamp 传感器前置高通: 60 Hz 二阶 Butterworth 幅频 (零相位 FFT, 不移动起音)。
+# 低频隆隆声 (桌面/手机/空调) 干扰 pYIN/QM, 让 Dotzauer No.23 s1 自动对齐失败。
+# 只喂给 vamp_features 与定位用 BP; 引擎自研跟踪与能量门限仍用原始信号 (引擎侧
+# 也滤会让 No.27 fast 起音能量判定失准, 节奏 91 -> 0)。大提琴最低 C2 65 Hz 只衰减约 2 dB。
+STRING_HIGHPASS_HZ = 60.0
+
+
+def string_highpass(signal: np.ndarray, rate: int, cutoff: float = STRING_HIGHPASS_HZ) -> np.ndarray:
+    if cutoff <= 0 or len(signal) < 16:
+        return signal
+    spectrum = np.fft.rfft(signal.astype(np.float64))
+    f = np.fft.rfftfreq(len(signal), 1.0 / rate)
+    gain = f ** 2 / np.sqrt(f ** 4 + cutoff ** 4)
+    return np.fft.irfft(spectrum * gain, n=len(signal)).astype(np.float32)
 
 
 def read_wav(data: bytes) -> tuple[np.ndarray, int]:
@@ -916,6 +932,67 @@ def _interior_silence_gaps(times: np.ndarray, energy: np.ndarray, onsets: list[f
 # 匹配率至少高出 DRIFT_RESCUE_GAIN 才采用。E31 节拍器同步 0.39 -> 0.89。
 DRIFT_RESCUE_MATCH = 0.6
 DRIFT_RESCUE_GAIN = 0.15
+# 0.29 局部微调: 全局重对齐失败 (重复乐句分不清) 时, 每小节在 ±0.75 s 内找
+# 让本小节音高最吻合的平移, 相邻小节平移变化按 LOCAL_REFINE_JUMP_COST 每 0.1 s 计罚。
+LOCAL_REFINE_MAX_SEC = 0.75
+LOCAL_REFINE_STEP_SEC = 0.03
+LOCAL_REFINE_JUMP_COST = 1.0
+
+
+def _local_grid_refine(notes: list[dict], boundaries: dict[int, float], times: np.ndarray,
+                       pitches: np.ndarray, duration_sec: float) -> list[dict]:
+    """网格逐渐漂移 (Dotzauer No.20: 前 15 小节全对, 之后演奏一路晚到 0.6 s) 而全局
+    重对齐失败时的兜底: 小节起点 = 原网格时刻 + 平滑平移 (Viterbi)。只移小节边界,
+    小节内照常评分; 返回 [] 表示无从改进。notes 为已打分音符 (expectedSec/onsetBeat)。"""
+    pts = sorted({(float(n["onsetBeat"]), float(n["expectedSec"])) for n in notes
+                  if n.get("expectedSec") is not None and n.get("onsetBeat") is not None})
+    if len(pts) < 12:
+        return []
+    beats, secs = np.array([p[0] for p in pts]), np.array([p[1] for p in pts])
+    measures = sorted({n["measure"] for n in notes})
+    shifts = np.arange(-LOCAL_REFINE_MAX_SEC, LOCAL_REFINE_MAX_SEC + 1e-9, LOCAL_REFINE_STEP_SEC)
+    row = {m: i for i, m in enumerate(measures)}
+    gain = np.zeros((len(measures), len(shifts)))
+    for v in notes:
+        if v.get("expectedEndSec") is None or v.get("expectedSec") is None:
+            continue
+        a, b = float(v["expectedSec"]), float(v["expectedEndSec"])
+        want = np.asarray([v["pitchMidi"]] + list(v.get("chordMidi") or []), dtype=float)
+        # 整音窗 [a+s, b+s) 内吻合帧占比: 平移恰好对准时最高 (只看中位数会在 ±半音长内一样好)。
+        st, en = np.searchsorted(times, a + shifts), np.searchsorted(times, b + shifts)
+        lo, hi = int(st.min()), int(en.max())
+        seg = pitches[lo:hi]
+        with np.errstate(invalid="ignore"):
+            hits = np.isfinite(seg) & (np.min(np.abs(seg[:, None] - want[None, :]), axis=1) < 0.35)
+        cs = np.concatenate([[0], np.cumsum(hits)])
+        total = en - st
+        gain[row[v["measure"]]] += np.where(total >= 2, (cs[en - lo] - cs[st - lo]) / np.maximum(total, 1), 0.0)
+    jump = LOCAL_REFINE_JUMP_COST * np.abs(shifts[:, None] - shifts[None, :]) / 0.1
+    total, back = gain[0].copy(), []
+    for i in range(1, len(measures)):
+        cand = total[:, None] - jump  # [prev, cur]
+        back.append(np.argmax(cand, axis=0))
+        total = cand.max(axis=0) + gain[i]
+    path = [int(np.argmax(total))]
+    for bp in reversed(back):
+        path.append(int(bp[path[-1]]))
+    path.reverse()
+    if gain[np.arange(len(measures)), path].sum() <= gain[:, len(shifts) // 2].sum():
+        return []
+    markers = []
+    for i, m in enumerate(measures + [measures[-1] + 1]):
+        if m not in boundaries:
+            return []
+        sec = float(np.interp(boundaries[m], beats, secs, left=np.nan, right=np.nan))
+        if not np.isfinite(sec):
+            # 曲末边界在最后一个音之后: 按最后两音的拍速外推。
+            spb = (secs[-1] - secs[-2]) / max(beats[-1] - beats[-2], 1e-6)
+            sec = secs[-1] + (boundaries[m] - beats[-1]) * spb
+        sec += float(shifts[path[min(i, len(path) - 1)]])
+        markers.append({"measure": int(m), "audioSec": float(round(max(0.0, min(sec, duration_sec)), 3))})
+    if any(b["audioSec"] <= a["audioSec"] for a, b in zip(markers, markers[1:])):
+        return []
+    return markers
 
 
 def _needs_rescue_check(pitch_score, rhythm_score, confidence) -> bool:
@@ -1296,8 +1373,9 @@ def _bp_locate_events(signal, rate, chords: bool = False):
     names a venv interpreter with basic-pitch[onnx]; any failure or timeout -> None,
     so locate falls back to pYIN and the fused events exactly as in 0.11.
     chords=True groups simultaneous notes (bp_chords) for chord scores; the raw
-    notes are cached so both reductions share one inference."""
-    raw = _bp_raw_notes(signal, rate)
+    notes are cached so both reductions share one inference.
+    0.29: 定位用的 BP 吃高通后的信号 (低频隆隆声让 No.23 s1 三个 shift 全败)。"""
+    raw = _bp_raw_notes(string_highpass(signal, rate), rate)
     if raw is None:
         return None
     return (bp_chords(raw) if chords else bp_monophonic(raw)) or None
@@ -2389,6 +2467,12 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                                    rigid_start=start, onsets=onsets, pitch_notes=pitch_notes,
                                    signal=signal, rate=rate,
                                    suspect="drift" if _drift else None)
+        if _drift and not _plan["markers"]:
+            _local = _local_grid_refine(result["notes"], measure_start_beats(xml, include_end=True),
+                                        times, pitches, duration_sec)
+            if _local:
+                _plan.update(markers=_local, reasons=["drift"], start_measure=_local[0]["measure"])
+                _plan["attempts"] = _plan["attempts"] + [{"reason": "local_refine", "events": "grid"}]
         if _plan["markers"] and _drift:
             _rescued = analyze(wav, transpose_score_xml(xml, _plan["shift"]) if _plan["shift"] else xml,
                                bpm, instrument, _plan["start_measure"],
