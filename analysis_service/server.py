@@ -27,6 +27,7 @@ from .engine import VERSION as STRING_VERSION, crepe_backend
 from .job_store import JobStore, QueueFull, TERMINAL
 
 MAX_BODY = 24_000_000  # a 300 s take is ~17.6 MB as base64 WAV, plus the MusicXML
+MAX_AUDIO = 14_000_000  # decoded WAV: 300 s of 22.05 kHz mono 16-bit is 13.23 MB
 MAX_OMR_BODY = 21_000_000
 TTL = 3600
 jobs: dict[str, dict] = {}
@@ -210,8 +211,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("补回整休止需要 1–16 个四分音符拍")
             else:
                 audio = base64.b64decode(request["audioWavBase64"], validate=True)
-                if len(audio) > 10_000_000:
-                    raise ValueError("音频超过 10 MB")
+                if len(audio) > MAX_AUDIO:
+                    raise ValueError("音频超过 300 秒上限 / Audio exceeds the 300 s limit")
                 xml = request["scoreXml"]
                 if not isinstance(xml, str):
                     raise ValueError("请上传 MusicXML")
