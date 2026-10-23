@@ -18,7 +18,7 @@ from .rhythm_annotator import annotate_rhythm as _annotate_rhythm
 from .validation import validate_wav_audio, validate_musicxml, validate_bpm, validate_instrument
 from .performance_monitor import track_performance
 
-VERSION = "string-mono-0.29"
+VERSION = "string-mono-0.30"
 
 # string-mono-0.18: onset detectors carry ~15 ms of their own error, and without a
 # metronome the time axis is anchored on the first detected onset (often late on
@@ -475,6 +475,55 @@ def _verify_targets(aligned: list, signal, rate, tolerance: float) -> None:
                            else "outlier" if ps == "outlier" else "uncertain" if ps == "uncertain"
                            else ts if ts in ("late", "early") else "timing_uncertain" if ts == "uncertain"
                            else "correct")
+
+
+BP_OPINION_MIN = 0.3   # written key's mean activation over the note window
+BP_OPINION_MAX_CENTS = 100.0
+
+
+def _bp_second_opinion(aligned: list, signal, rate, tolerance: float) -> int:
+    """0.30: the tracker says octave/outlier/>150 c but Basic Pitch clearly hears the
+    written key (strongest key in the window) -> re-read the pitch from that key's own
+    harmonics over the frames BP has it sounding. Lazy: BP runs only if a candidate
+    exists. Returns how many notes were re-read."""
+    cand = [n for n in aligned if not n.get("chordMidi") and not n.get("pitchDisplaced")
+            and n.get("pitchErrorCents") is not None and n.get("targetCheckRawCents") is None
+            and (n.get("pitchStatus") in ("octave", "outlier")
+                 or (n.get("pitchStatus") in ("sharp", "flat")
+                     and abs(n["pitchErrorCents"]) > OUTLIER_SUSPECT_CENTS))]
+    if not cand:
+        return 0
+    act = _bp_note_activation(string_highpass(signal, rate), rate)
+    if act is None:
+        return 0
+    from .chord_pitch import bp_time_frame, harmonic_cents, sounding_run
+    fixed = 0
+    for n in cand:
+        lo = n["performedSec"] if n.get("performedSec") is not None else n["expectedSec"]
+        hi = max(n["expectedEndSec"], lo + 0.05)
+        m = int(round(n["pitchMidi"]))
+        if not 21 <= m <= 108:
+            continue
+        f0 = int(bp_time_frame(lo))
+        seg = act[f0:max(f0 + 1, int(bp_time_frame(hi)))].astype(np.float32)
+        if not len(seg):
+            continue
+        seg = seg.mean(0)
+        if seg[m - 21] < BP_OPINION_MIN or seg[m - 21] < seg.max():
+            continue
+        run = sounding_run(act, m, lo - 0.05, hi)
+        if run is None:
+            continue
+        a, b = run
+        c = harmonic_cents(signal, rate, m, a + 0.15 * (b - a), b - 0.1 * (b - a))
+        if c is None or abs(c) > BP_OPINION_MAX_CENTS:
+            continue
+        n["bpCheckRawCents"] = n["pitchErrorCents"]
+        n["pitchErrorCents"] = c
+        n["pitchStatus"] = classify_pitch(c, m + c / 100, tolerance)
+        n["status"] = _note_status(n["pitchStatus"], n.get("timingStatus"))
+        fixed += 1
+    return fixed
 
 
 def _note_status(pitch_status: str, timing_status: str | None) -> str:
@@ -937,6 +986,49 @@ DRIFT_RESCUE_GAIN = 0.15
 LOCAL_REFINE_MAX_SEC = 0.75
 LOCAL_REFINE_STEP_SEC = 0.03
 LOCAL_REFINE_JUMP_COST = 1.0
+
+# 0.30: 整段录音常以 10-20 s 空弦调音开头 (No.03/No.17 s0)。指定起始小节时
+# 首个起音就是时间零点, 调音会让整段错位。只在谱面开头的 12 个音在后面
+# 明显吻合、而录音开头明显不吻合时才跳过; 正常录音不动。
+LEAD_IN_NOTES = 12
+LEAD_IN_MAX_SEC = 60.0
+LEAD_IN_MIN_SEC = 1.5
+LEAD_IN_MATCH = 0.6
+LEAD_IN_MARGIN = 0.25
+LEAD_IN_PAD_SEC = 0.15
+
+
+def _opening_match(midis: list[float], opening: list[float]) -> float:
+    """Fraction of the score opening found in order (LCS, +-1 semitone)."""
+    prev = [0] * (len(opening) + 1)
+    for m in midis:
+        cur = [0]
+        for j, o in enumerate(opening):
+            cur.append(prev[j] + 1 if abs(m - o) <= 1.0 else max(prev[j + 1], cur[j]))
+        prev = cur
+    return prev[-1] / len(opening)
+
+
+def detect_lead_in(events: list, notes: list[dict]) -> float | None:
+    """Audio second where the score opening starts after a tuning lead-in, or None."""
+    opening = [float(n["pitchMidi"]) for n in notes[:LEAD_IN_NOTES]]
+    if len(opening) < 8 or len(events) < len(opening):
+        return None
+    midis = [float(np.min(m)) if isinstance(m, (list, tuple)) else float(m) for _, _, m in events]
+    first = float(events[0][0])
+    window = len(opening) + 3
+    cands = [i for i, e in enumerate(events) if float(e[0]) - first <= LEAD_IN_MAX_SEC]
+    scores = [_opening_match(midis[i:i + window], opening) for i in cands]
+    best = max(scores)
+    if best < LEAD_IN_MATCH or scores[0] > best - LEAD_IN_MARGIN:
+        return None
+    # Earliest near-best window whose first event is itself one of the first notes,
+    # so a tuning note just before the opening is not taken as the start.
+    for i, s in zip(cands, scores):
+        if s >= best - 0.05 and any(abs(midis[i] - o) <= 1.0 for o in opening[:2]):
+            start = float(events[i][0])
+            return start if start - first >= LEAD_IN_MIN_SEC else None
+    return None
 
 
 def _local_grid_refine(notes: list[dict], boundaries: dict[int, float], times: np.ndarray,
@@ -1752,6 +1844,18 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     # 乱序/重叠事件直接进入 _hint_track 的 searchsorted。
     if pitch_notes:
         usable_events(pitch_notes)
+    lead_in_sec = None
+    if pitch_notes and sync_mode in ("legacy", "vamp-beat") and start_measure >= 1:
+        lead_in_sec = detect_lead_in(usable_events(pitch_notes),
+                                     [n for n in score_notes if n["measure"] >= start_measure])
+        if lead_in_sec is not None:
+            cut = max(0.0, lead_in_sec - LEAD_IN_PAD_SEC)
+            signal = signal.copy()
+            signal[:int(cut * rate)] = 0.0
+            pitch_notes = [e for e in pitch_notes if float(e[0]) >= cut]
+            onset_hint = [o for o in onset_hint if float(o) >= cut] if onset_hint else onset_hint
+            beat_map = [b for b in beat_map if float(b) >= cut - 0.5] if beat_map else beat_map
+            lead_in_sec = round(lead_in_sec, 2)
     sec_per_beat = seconds_per_quarter(xml, bpm)
     # 面板速度只做第一道粗筛：区间外标 mismatch；区间内（[0.8,1.25]）也可能
     # 是 2x 密网格（八分锁拍且面板≈2x 真速，慢速连奏实测），间隔比值无法区分，
@@ -2275,6 +2379,9 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
     # dropped/octave/outlier 一律不计入。
     # 对齐全部定型后才核对目标音: 只改评分, 不回灌速度趋势/CREPE 登记 (见 _verify_targets)。
     _verify_targets(aligned, signal, rate, pitch_tolerance_cents)
+    import os as _os
+    if _os.environ.get("SF_NO_BP_OPINION") != "1":
+        _bp_second_opinion(aligned, signal, rate, pitch_tolerance_cents)
     trim_active = _drop_player_outliers(aligned, pitch_tolerance_cents)
     pitch_errors = [abs(float(n["pitchErrorCents"])) for n in aligned
                     if n.get("pitchStatus") in ("sharp", "flat", "correct")]
@@ -2431,13 +2538,15 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
                         "tempoMismatch": tempo_mismatch,
                         "autoMeasureSync": False, "octaveShift": None,
                         "rescueReasons": ["tempo"] if auto_tempo_refit else [],
-                        "syncAdvice": None},
+                        "syncAdvice": None, "leadInSec": lead_in_sec},
             "notes": aligned, "limitations": ["仅支持单声部无明显伴奏；长滑音、揉弦、重复音起音可能无法可靠判定。",
                                            "手动小节边界用于对齐；仅评估小节内节奏，手动标记的首拍不评分。"
                                            if sync_mode == "manual-measures" else
                                            "音高按十二平均律；首音作为时间零点，不计入节奏得分。"
                                            if sync_mode == "legacy" else
                                            "音高按十二平均律；节拍器第一拍锚定时间轴，后端仅做 ±150 ms 微调。"]}
+    if lead_in_sec is not None:
+        result["limitations"].append(f"录音开头 {lead_in_sec} 秒与谱面开头不吻合（疑似调音），已跳过，不计分。")
     if auto_tempo_refit:
         result["limitations"].append(
             f"拍点网格与谱面速度口径不一致，已按片段证据校准整体速度为 {detected_bpm} BPM；逐音节奏偏差仍按固定速度参考评分。")
@@ -2506,9 +2615,11 @@ def analyze(wav: bytes, xml: str, bpm: float, instrument: str, start_measure: in
             _summary["rescueAttempts"] = _plan["attempts"]
             _summary["detectedBpm"] = _plan["detected_bpm"]
             _summary["takeBeyondScoreAfterSec"] = _plan.get("take_beyond_score_after")
+            _summary["leadInSec"] = lead_in_sec
             if "tempo" in _plan["reasons"]:
                 _summary["tempoMismatch"] = True
-            _rescued["limitations"] = list(_rescued.get("limitations") or []) + _plan["limitations"]
+            _rescued["limitations"] = list(_rescued.get("limitations") or []) + _plan["limitations"] + \
+                [x for x in result["limitations"] if x.startswith("录音开头")]
             return _rescued
         result["summary"]["rescueAttempts"] = _plan["attempts"]
         if _plan["advice"] and not _drift:

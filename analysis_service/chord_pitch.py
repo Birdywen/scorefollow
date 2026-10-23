@@ -22,7 +22,24 @@ import math
 
 import numpy as np
 
-BP_FPS = 22050 / 256          # Basic Pitch frame rate
+BP_FPS = 22050 / 256          # Basic Pitch nominal frame rate
+# 0.30: Basic Pitch stitches 2 s windows of 172 frames that each cover ~10 ms less
+# audio than 172 hops, so frame k is NOT k / BP_FPS: it runs ~0.5% late (0.44 s
+# at 100 s). Same mapping as basic_pitch.note_creation.model_frames_to_time.
+BP_HOP_SEC = 256 / 22050
+BP_WINDOW_FRAMES = 172
+BP_WINDOW_OFFSET = BP_HOP_SEC * (BP_WINDOW_FRAMES - (22050 * 2 - 256) / 256) + 0.0018
+
+
+def bp_frame_time(k):
+    """Audio second of Basic Pitch frame k."""
+    return k * BP_HOP_SEC - BP_WINDOW_OFFSET * math.floor(k / BP_WINDOW_FRAMES)
+
+
+def bp_time_frame(t):
+    """Basic Pitch frame (float) at audio second t; inverse of bp_frame_time."""
+    w = math.floor(max(0.0, t) / (BP_WINDOW_FRAMES * BP_HOP_SEC - BP_WINDOW_OFFSET))
+    return (t + BP_WINDOW_OFFSET * w) / BP_HOP_SEC
 BP_ACTIVE = 0.3               # note activation counted as sounding
 MIN_SOUND_SEC = 0.10          # shorter runs are not a played tone
 ROLL_SEC = 0.40               # rolled-chord bass may start this early
@@ -45,7 +62,7 @@ def sounding_run(act, m, lo, hi):
     """Longest run (lo_sec, hi_sec) where key m is active inside [lo, hi], else None."""
     if act is None or not 21 <= int(m) <= 108:
         return None
-    a, b = max(0, int(lo * BP_FPS)), min(len(act), int(math.ceil(hi * BP_FPS)))
+    a, b = max(0, int(bp_time_frame(lo))), min(len(act), int(math.ceil(bp_time_frame(hi))))
     if b <= a:
         return None
     on = np.concatenate([[False], act[a:b, int(m) - 21] >= BP_ACTIVE, [False]])
@@ -54,7 +71,7 @@ def sounding_run(act, m, lo, hi):
         return None
     starts, ends = edges[0::2], edges[1::2]
     k = int(np.argmax(ends - starts))
-    return (a + starts[k]) / BP_FPS, (a + ends[k]) / BP_FPS
+    return bp_frame_time(a + starts[k]), bp_frame_time(a + ends[k])
 
 
 def buried(m, tones):
