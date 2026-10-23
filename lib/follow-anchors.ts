@@ -14,33 +14,40 @@ const DOWNBEAT_FRAC = 0.03;
 
 export function followAnchors(intervals: FollowInterval[], notes: FollowNote[], offsetSec = 0):
   { starts: { measure: number; startSec: number }[]; onsets: FollowOnset[] } {
-  const ivs = [...intervals].filter((i) => i.endSec > i.startSec).sort((a, b) => a.measure - b.measure);
-  const byMeasure = new Map<number, FollowInterval>(ivs.map((i) => [i.measure, i]));
-  const played = new Map<number, FollowOnset[]>();
+  // Time order, one entry per played pass: with repeats unfolded a measure appears more than once.
+  const ivs = [...intervals].filter((i) => i.endSec > i.startSec).sort((a, b) => a.startSec - b.startSec);
+  const played: FollowOnset[][] = ivs.map(() => []);
   for (const n of notes) {
     if (n.performedSec == null || !Number.isFinite(n.performedSec) || !Number.isFinite(n.expectedSec)) continue;
     if (n.matchStatus === "uncertain" || n.timingStatus === "uncertain") continue;
-    const iv = byMeasure.get(n.measure);
-    if (!iv) continue;
     // expectedSec is on the un-shifted grid; intervals carry the applied sync offset.
-    const lo = iv.startSec - offsetSec, hi = iv.endSec - offsetSec;
-    const frac = Math.max(0, Math.min(0.999, (n.expectedSec - lo) / (hi - lo)));
-    const list = played.get(n.measure) ?? [];
-    list.push({ measure: n.measure, frac, sec: n.performedSec });
-    played.set(n.measure, list);
+    const e = n.expectedSec + offsetSec;
+    // The pass of this measure whose span holds the written time (50 ms rounding slack).
+    let k = -1, best = 0.05;
+    ivs.forEach((iv, i) => {
+      if (iv.measure !== n.measure) return;
+      const d = e < iv.startSec ? iv.startSec - e : e >= iv.endSec ? e - iv.endSec + 1e-9 : 0;
+      if (d < best) { best = d; k = i; }
+    });
+    if (k < 0) continue;
+    const iv = ivs[k];
+    const frac = Math.max(0, Math.min(0.999, (e - iv.startSec) / (iv.endSec - iv.startSec)));
+    played[k].push({ measure: n.measure, frac, sec: n.performedSec });
   }
   const starts: { measure: number; startSec: number }[] = [];
-  for (const iv of ivs) {
+  const kept: number[] = [];
+  ivs.forEach((iv, k) => {
     const prev = starts.length ? starts[starts.length - 1].startSec : -Infinity;
-    const down = (played.get(iv.measure) ?? []).filter((o) => o.frac < DOWNBEAT_FRAC).sort((a, b) => a.sec - b.sec)[0];
+    const down = played[k].filter((o) => o.frac < DOWNBEAT_FRAC).sort((a, b) => a.sec - b.sec)[0];
     const start = down && down.sec > prev ? down.sec : iv.startSec;
-    if (start > prev) starts.push({ measure: iv.measure, startSec: start });
-  }
+    if (start > prev) { starts.push({ measure: iv.measure, startSec: start }); kept.push(k); }
+  });
   const onsets: FollowOnset[] = [];
-  starts.forEach((s, k) => {
-    const end = k + 1 < starts.length ? starts[k + 1].startSec : byMeasure.get(s.measure)!.endSec;
-    // Only onsets inside this measure's span, so a click never lands the shade elsewhere.
-    for (const o of played.get(s.measure) ?? []) if (o.sec >= s.startSec && o.sec < end) onsets.push(o);
+  starts.forEach((s, j) => {
+    const k = kept[j];
+    const end = j + 1 < starts.length ? starts[j + 1].startSec : ivs[k].endSec;
+    // Only onsets inside this pass's span, so a click never lands the shade elsewhere.
+    for (const o of played[k]) if (o.sec >= s.startSec && o.sec < end) onsets.push(o);
   });
   return { starts, onsets };
 }

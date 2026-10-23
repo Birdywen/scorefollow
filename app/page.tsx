@@ -1610,7 +1610,7 @@ export default function ScoreFollowPage() {
     const targetRow = dir < 0
       ? rows[e === 0 ? rows.length - 1 : e - 1]
       : rows[e >= rows.length - 1 ? 0 : e + 1];
-    const hit = w.x2time(cx, targetRow - 5);
+    const hit = w.x2time(cx, targetRow - 5, (mediaRef.current as { currentTime?: number } | null)?.currentTime);
     if (!hit) return;
     placeCursor(hit.measure, hit.t);
   }, [placeCursor]);
@@ -1795,7 +1795,7 @@ export default function ScoreFollowPage() {
         setPie(null);
         return;
       }
-      const hit = wijzerRef.current.x2time(p.x, p.y);
+      const hit = wijzerRef.current.x2time(p.x, p.y, (mediaRef.current as { currentTime?: number } | null)?.currentTime);
       if (!hit) { setSelectedBar(null); return; }
       if (loopMark) { loopMarkTap(engineMeasureFromRaw(hit.measure + 1)); return; }
       placeCursor(hit.measure, hit.t);

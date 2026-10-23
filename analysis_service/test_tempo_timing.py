@@ -20,7 +20,7 @@ class TempoTimingTests(unittest.TestCase):
         self.assertEqual(q["outcome"], "partial")
         self.assertIsNone(q["overallScore"])
         self.assertEqual(q["version"], QUALITY_VERSION)
-        self.assertEqual(QUALITY_VERSION, "evidence-4")
+        self.assertEqual(QUALITY_VERSION, "evidence-5")
 
     def test_tempo_mismatch_with_good_rhythm_stays_complete(self):
         q = assess_quality(result(tempoMismatch=True, rhythmScore=74))
@@ -34,6 +34,19 @@ class TempoTimingTests(unittest.TestCase):
         self.assertNotIn("tempo_timing_unreliable", q["issues"])
         self.assertEqual(q["outcome"], "complete")
         self.assertIsNotNone(q["overallScore"])
+
+    def test_played_repeats_can_be_followed(self):
+        rep = result(repeatsUnfolded=True)
+        rep["measureIntervals"] = [{"measure": m, "startSec": .5 + i, "endSec": 1.5 + i}
+                                   for i, m in enumerate([1, 2, 1, 2])]
+        self.assertTrue(assess_quality(rep)["followReady"])
+        # Without a repeat in the score, a measure going back is still a broken timeline.
+        rep["summary"]["repeatsUnfolded"] = False
+        self.assertFalse(assess_quality(rep)["followReady"])
+        # Time must still move forward.
+        rep["summary"]["repeatsUnfolded"] = True
+        rep["measureIntervals"][2]["startSec"] = 1.0
+        self.assertFalse(assess_quality(rep)["followReady"])
 
 
 if __name__ == "__main__":

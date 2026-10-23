@@ -13,7 +13,8 @@ TEMPO_RHYTHM_FLOOR = 60
 # 音高可判 >= REFERENCE_PITCH_FLOOR) 时仍给综合分, 标 overallReliability "reference" + unheardRatio。
 REFERENCE_HEARD_FLOOR = 0.6
 REFERENCE_PITCH_FLOOR = 0.5
-QUALITY_VERSION = "evidence-4"
+# evidence-5: a take that plays the repeats (measure numbers go back) can be followed.
+QUALITY_VERSION = "evidence-5"
 
 
 def assess_quality(result: dict) -> dict:
@@ -78,9 +79,11 @@ def assess_quality(result: dict) -> dict:
     else:
         outcome = "complete"
     intervals = result.get("measureIntervals") or []
+    # Measures must move forward in time; with repeats unfolded they may jump back to an earlier bar.
+    repeats = bool(summary.get("repeatsUnfolded"))
     valid_timeline = len(intervals) >= 2 and all(
         item["endSec"] > item["startSec"] >= 0 and
-        (i == 0 or item["measure"] > intervals[i - 1]["measure"] and
+        (i == 0 or (repeats or item["measure"] > intervals[i - 1]["measure"]) and
          item["startSec"] >= intervals[i - 1]["endSec"] - .001)
         for i, item in enumerate(intervals))
     # Combined score only when both components exist on a verified, covered

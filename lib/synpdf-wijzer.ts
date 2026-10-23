@@ -96,20 +96,26 @@ export class Wijzer {
   }
 
   /** 点击→时间(等价原版 x2time, 返回秒 + 小节号) */
-  x2time(x: number, y: number): { t: number; measure: number } | null {
+  /** near: current playhead; picks the closest pass of a repeated measure. */
+  x2time(x: number, y: number, near?: number): { t: number; measure: number } | null {
     for (let d = 0; d < this.measures.length; d++) {
       const e = this.measures[d];
       if (y > e.y + e.h || y < e.y || x > e.x + e.w) continue;
       if (x < e.x) return null;
       const frac = (x - e.x) / e.w;
-      const near = this.nearestOnset(d, frac);
-      if (near) return { t: near.t, measure: d };
+      const hit = this.nearestOnset(d, frac, near);
+      if (hit) return { t: hit.t, measure: d };
+      let pick = -1;
       for (let b = 0; b < this.times.length; b++) {
-        if (d === this.times[b].mix) {
-          const t0 = this.times[b].t;
-          const t1 = b + 1 < this.times.length ? this.times[b + 1].t : t0 + 2;
-          return { t: t0 + (t1 - t0) * frac + TOFF, measure: d };
-        }
+        if (d !== this.times[b].mix) continue;
+        if (pick < 0) pick = b;
+        if (near == null) break;
+        if (Math.abs(this.times[b].t - near) < Math.abs(this.times[pick].t - near)) pick = b;
+      }
+      if (pick >= 0) {
+        const t0 = this.times[pick].t;
+        const t1 = pick + 1 < this.times.length ? this.times[pick + 1].t : t0 + 2;
+        return { t: t0 + (t1 - t0) * frac + TOFF, measure: d };
       }
       return { t: TOFF, measure: d };
     }
@@ -131,10 +137,12 @@ export class Wijzer {
   }
 
   /** 小节 d 内离点击位置 frac 最近的实测起音 */
-  nearestOnset(d: number, frac: number): Onset | null {
+  nearestOnset(d: number, frac: number, near?: number): Onset | null {
+    // With repeats a measure holds one onset per pass at the same frac: take the pass nearest `near`.
     let best: Onset | null = null;
     for (const o of this.onsets.get(d) ?? []) {
-      if (!best || Math.abs(o.frac - frac) < Math.abs(best.frac - frac)) best = o;
+      const df = Math.abs(o.frac - frac), bf = best ? Math.abs(best.frac - frac) : Infinity;
+      if (df < bf - 1e-6 || (Math.abs(df - bf) <= 1e-6 && near != null && best && Math.abs(o.t - near) < Math.abs(best.t - near))) best = o;
     }
     return best;
   }
