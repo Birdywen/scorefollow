@@ -146,8 +146,8 @@ const LOCAL_API = "http://127.0.0.1:8765";
 const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
 const TAKES_KEY = "sf-takes-meta-v1";
 const MAX_TAKES = 10;
-// Keep browser recordings below this page's 180-second conversion limit.
-const MAX_RECORDING_MS = 179_500;
+// Keep browser recordings just below the take limit.
+const MAX_RECORDING_MS = TAKE_MAX_SEC * 1000 - 500;
 
 type PracticeMetro = {
   isAvailable: () => boolean;
@@ -183,7 +183,7 @@ async function toWav(file: Blob): Promise<string> {
   const context = new AudioContext();
   try {
     const decoded = await context.decodeAudioData(await file.arrayBuffer());
-    if (decoded.duration < 0.4 || decoded.duration > 180) throw new Error("录音须为 0.4–180 秒 / Audio must be 0.4–180 s");
+    if (decoded.duration < 0.4 || decoded.duration > TAKE_MAX_SEC) throw new Error(`录音须为 0.4–${TAKE_MAX_SEC} 秒 / Audio must be 0.4–${TAKE_MAX_SEC} s`);
     const rate = 22050;
     const frames = Math.floor(decoded.duration * rate);
     const bytes = new Uint8Array(44 + frames * 2);
@@ -524,8 +524,8 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
     const duration = (await durationOf(blob)) || 0;
     const durationSec = Math.round(duration * 10) / 10;
     if (!alive.current) return;
-    if (!duration || duration > 180) {
-      setError(zh ? "录音无法读取或超过 180 秒；请上传可播放的较短片段。" : "Cannot read the recording, or it exceeds 180 seconds; upload a playable shorter excerpt.");
+    if (!duration || duration > TAKE_MAX_SEC) {
+      setError(zh ? `录音无法读取或超过 ${TAKE_MAX_SEC} 秒；请上传可播放的较短片段。` : `Cannot read the recording, or it exceeds ${TAKE_MAX_SEC} seconds; upload a playable shorter excerpt.`);
       return;
     }
     setError("");
@@ -645,7 +645,7 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
       }, 120);
       recordingStopTimer.current = setTimeout(() => {
         if (!alive.current || recorder.current?.state !== "recording") return;
-        setError(zh ? "录音达到 180 秒上限，已自动停止并保存" : "The 180-second limit was reached; the take was stopped and saved");
+        setError(zh ? `录音达到 ${TAKE_MAX_SEC} 秒上限，已自动停止并保存` : `The ${TAKE_MAX_SEC}-second limit was reached; the take was stopped and saved`);
         stopSyncRecording();
       }, MAX_RECORDING_MS);
     } catch (exc) {
@@ -1064,7 +1064,7 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
       {ytBusy && <p role="status" className={styles.hint}>{ytBusy}</p>}
       {selected && <section className={styles.quality} aria-label={zh ? "音频预检" : "Audio preflight"}>
         <p title={zh ? "静音、削波、音高与谱面匹配将在分析时检查" : "Silence, clipping, pitch and score matching are checked during analysis"}>
-          <b>{zh ? "音频预检" : "Audio preflight"}</b> · {selected.durationSec}s · {selected.blob?.type || (zh ? "未知格式" : "Unknown format")} · {zh ? "最长 180 秒" : "max 180 s"}</p>
+          <b>{zh ? "音频预检" : "Audio preflight"}</b> · {selected.durationSec}s · {selected.blob?.type || (zh ? "未知格式" : "Unknown format")} · {zh ? `最长 ${TAKE_MAX_SEC} 秒` : `max ${TAKE_MAX_SEC} s`}</p>
       </section>}
       {recording && session && <p role="status" className={styles.hint}>
         {tick && tick.elapsedSec >= 0

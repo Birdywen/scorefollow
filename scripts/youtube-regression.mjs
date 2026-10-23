@@ -108,10 +108,10 @@ assert.equal(player.calls.filter((c) => c[0] === "play").length, 0, "no playVide
 // B-sync markers (video time) -> excerpt within the take limit, markers shifted.
 const ex = youTubeExcerpt([{ measure: 3, audioSec: 42.5 }, { measure: 4, audioSec: 44.5 }, { measure: 5, audioSec: 46.6 }]);
 assert.deepEqual(ex, { startSec: 41, lengthSec: 9, markers: [{ measure: 3, audioSec: 1.5 }, { measure: 4, audioSec: 3.5 }, { measure: 5, audioSec: 5.6 }] });
-const long = youTubeExcerpt(Array.from({ length: 120 }, (_, i) => ({ measure: i + 1, audioSec: 0.5 + 2 * i })));
+const long = youTubeExcerpt(Array.from({ length: 200 }, (_, i) => ({ measure: i + 1, audioSec: 0.5 + 2 * i })));
 assert.equal(long.startSec, 0);
-assert.equal(long.lengthSec, 180);
-assert.ok(long.markers.every((m) => m.audioSec < 180) && long.markers.length === 90);
+assert.equal(long.lengthSec, 300);
+assert.ok(long.markers.every((m) => m.audioSec < 300) && long.markers.length === 150);
 
 // Recording the tab while the video plays: the take's time 0 maps to the right video time.
 globalThis.MediaStream = class { constructor(tracks) { this.tracks = tracks; } getAudioTracks() { return this.tracks; } };

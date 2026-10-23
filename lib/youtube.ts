@@ -141,7 +141,8 @@ export class YouTubeMedia {
 
 /* ---- Analysis: YouTube audio comes from the analysis service (the browser can't read it). ---- */
 
-export const TAKE_MAX_SEC = 180;
+/** Longest take the page records, uploads or analyzes (seconds); the service allows 300 s. */
+export const TAKE_MAX_SEC = 300;
 type Marker = { measure: number; audioSec: number };
 
 /** Excerpt covering B-sync markers (video time), within the take limit; markers shifted to excerpt time. */

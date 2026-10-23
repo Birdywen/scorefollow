@@ -26,7 +26,7 @@ from .quality import QUALITY_VERSION, assess_quality
 from .engine import VERSION as STRING_VERSION, crepe_backend
 from .job_store import JobStore, QueueFull, TERMINAL
 
-MAX_BODY = 16_000_000
+MAX_BODY = 24_000_000  # a 300 s take is ~17.6 MB as base64 WAV, plus the MusicXML
 MAX_OMR_BODY = 21_000_000
 TTL = 3600
 jobs: dict[str, dict] = {}
