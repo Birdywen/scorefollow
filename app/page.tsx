@@ -16,6 +16,9 @@ const BASE = process.env.NEXT_PUBLIC_SF_BASE ?? "/scorefollow";
 // 分析数据跟随载入时整体提前，影子不再慢半拍。
 // 只用于分析数据跟随(TAP/手动同步点/整态恢复不走这里)。
 const FOLLOW_LEAD_SEC = 0.035;
+// While media plays, the shade is drawn this far (wall-clock seconds) ahead of the playhead,
+// so it lands on a bar as its first note sounds instead of visibly after it.
+const PLAY_LEAD_SEC = 0.1;
 import {
   analyzePage,
   clearPageCache,
@@ -1568,7 +1571,8 @@ export default function ScoreFollowPage() {
   const applyFollowCursor = useCallback((c: { x: number; y: number; w: number; h: number; measure: number }) => {
     const prevMix = curMixRef.current;
     curMixRef.current = c.measure;
-    setCursor({ x: c.x, y: c.y, w: c.w, h: c.h });
+    // Same rect as last frame: keep the state object so the page does not re-render every frame.
+    setCursor((p) => p && p.x === c.x && p.y === c.y && p.w === c.w && p.h === c.h ? p : { x: c.x, y: c.y, w: c.w, h: c.h });
     if (c.measure !== prevMix) scrollMeasureIntoView(c.y);
   }, [scrollMeasureIntoView]);
 
@@ -2003,6 +2007,13 @@ export default function ScoreFollowPage() {
     return c.base + ((performance.now() - c.t0) / 1000) * speed;
   }, [mediaURL, speed]);
 
+  // Shade position for playhead t, PLAY_LEAD_SEC ahead in real time (scaled by playback rate).
+  const followAt = useCallback((t: number) => {
+    const m = mediaRef.current as { playbackRate?: number } | null;
+    const rate = m && mediaURL && typeof m.playbackRate === "number" && m.playbackRate > 0 ? m.playbackRate : speed;
+    return wijzerRef.current.time2x(t + PLAY_LEAD_SEC * rate, opt.lncsr === 1);
+  }, [mediaURL, speed]);
+
   const tick = useCallback(() => {
     const w = wijzerRef.current;
     let t = now();
@@ -2014,13 +2025,13 @@ export default function ScoreFollowPage() {
         else clockRef.current = { t0: performance.now(), base: t, running: true };
       }
     }
-    const c = w.time2x(t, opt.lncsr === 1);
+    const c = followAt(t);
     if (c) {
       applyFollowCursor(c);
-      setCursorInfo(`m${c.measure + 1} t=${t.toFixed(2)}s`);
+      setCursorInfo(`m${c.measure + 1} t=${(Math.floor(t * 4) / 4).toFixed(2)}s`); // 4 Hz label: no per-frame re-render
     }
     rafRef.current = requestAnimationFrame(tick);
-  }, [now, mediaURL]);
+  }, [now, mediaURL, followAt]);
 
   // 单时钟规则：一个视图同一时间只跟一个时钟、只显示一个阴影。
   // 播录音（doPlay/原生播放）→ 停掉旧节拍器引擎并藏起它的 sga-shade，demaat 接管；
@@ -3936,7 +3947,7 @@ export default function ScoreFollowPage() {
 
       <div className={styles.mainarea}>
       {mediaURL && mediaKind === "video" && (
-        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={(e) => { if (playing && !e.currentTarget.paused) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
+        <video className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={(e) => { if (playing && !e.currentTarget.paused) { const c = followAt(now()); if (c) applyFollowCursor(c); } }} />
       )}
       {mediaURL && mediaKind === "youtube" && (() => {
         const yt = parseYouTube(mediaURL);
@@ -3957,7 +3968,7 @@ export default function ScoreFollowPage() {
           }} />;
       })()}
       {mediaURL && mediaKind === "audio" && (
-        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={(e) => { if (playing && !e.currentTarget.paused) { const c = wijzerRef.current.time2x(now(), opt.lncsr === 1); if (c) applyFollowCursor(c); } }} />
+        <audio className={styles.mediaStrip} ref={(el) => { mediaRef.current = el; }} src={mediaURL} controls onPlay={() => { syncMediaPlaying(); }} onPause={() => { doPause(); }} onEnded={() => { doPause(); }} onTimeUpdate={(e) => { if (playing && !e.currentTarget.paused) { const c = followAt(now()); if (c) applyFollowCursor(c); } }} />
       )}
 
         <div
