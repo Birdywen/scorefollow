@@ -38,6 +38,8 @@ import {
   type HomrGateFile,
 } from "@/lib/synpdf-core";
 import { Wijzer, buildMeasures } from "@/lib/synpdf-wijzer";
+import { barLoopWindow } from "@/lib/take-loop";
+import VideoExportDialog, { type VideoExportSource } from "./VideoExportDialog";
 import PerformancePanel from "./PerformancePanel";
 import AnalysisHelp from "./AnalysisHelp";
 import MetroDock from "./MetroDock";
@@ -161,6 +163,14 @@ export default function ScoreFollowPage() {
   const [barNumMap, setBarNumMap] = useState<Record<number, number>>({});
   const [loopM, setLoopM] = useState<{ on: boolean; from: number; to: number }>({ on: false, from: 1, to: 1 });
   const [loopMark, setLoopMark] = useState(false);
+  // Bar loop of a followed take (0-based measure indexes); mark 1/2 = waiting for the start/end bar tap.
+  const [takeLoop, setTakeLoop] = useState<{ on: boolean; from: number; to: number }>({ on: false, from: 0, to: 0 });
+  const takeLoopRef = useRef(takeLoop);
+  const followUrlRef = useRef("");
+  const [takeLoopMark, setTakeLoopMark] = useState<0 | 1 | 2>(0);
+  // The take being followed: scores and instrument for the video's cards, last bar end for its length.
+  const [followMeta, setFollowMeta] = useState<{ name: string; scores?: [string, string][]; instrument?: string; endSec?: number } | null>(null);
+  const [videoOpen, setVideoOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [expertOpen, setExpertOpen] = useState(() => { try { return localStorage.getItem("sf-expert-open") === "1"; } catch { return false; } });
   // 调整模式(对标纠错模式): 点小节弹设置框(拍号/小节号/Loop), 与纠错互斥
@@ -990,6 +1000,11 @@ export default function ScoreFollowPage() {
     redoRef.current = [];
     wijzerRef.current.loadTimes([]);
     wijzerRef.current.setLoop(0, 0);
+    takeLoopRef.current = { on: false, from: 0, to: 0 };
+    setTakeLoop(takeLoopRef.current);
+    setTakeLoopMark(0);
+    setFollowMeta(null);
+    setVideoOpen(false);
     setTapCount(0);
     setSelectedBar(null);
     setPie(null);
@@ -1593,6 +1608,68 @@ export default function ScoreFollowPage() {
   }, [mediaURL, analysis]);
 
   // 上/下排切换(原版 goUpDown 小节模式): 同 x 中心跳到相邻系统行
+  // Turn the bar range into a time window of the take (the pass nearest the playhead when bars repeat).
+  const applyTakeLoop = useCallback((next: { on: boolean; from: number; to: number }): boolean => {
+    const w = wijzerRef.current;
+    const set = (v: { on: boolean; from: number; to: number }) => { takeLoopRef.current = v; setTakeLoop(v); };
+    if (!next.on) { set(next); w.setLoop(0, 0); setStatus(lang === "zh" ? "小节循环已关" : "Bar loop off"); return true; }
+    const md = mediaRef.current as { currentTime?: number; duration?: number } | null;
+    const dur = md && typeof md.duration === "number" && Number.isFinite(md.duration) && md.duration > 0 ? md.duration - 0.05 : Infinity;
+    const win = barLoopWindow(w.times, next.from, next.to, md?.currentTime ?? 0, dur);
+    if (!win) {
+      set({ ...next, on: false }); w.setLoop(0, 0);
+      setStatus(lang === "zh" ? "录音里找不到这几个小节，没法循环" : "Those bars are not in the recording");
+      return false;
+    }
+    set(next);
+    w.setLoop(win.start, win.end);
+    setStatus(lang === "zh" ? `循环第 ${next.from + 1}–${next.to + 1} 小节（录音 ${win.start.toFixed(1)}–${win.end.toFixed(1)} 秒）`
+      : `Looping bars ${next.from + 1}–${next.to + 1} (take ${win.start.toFixed(1)}–${win.end.toFixed(1)} s)`);
+    return true;
+  }, [lang]);
+  const takeLoopTap = useCallback((mix: number) => {
+    if (takeLoopMark === 1) {
+      const v = { on: false, from: mix, to: mix };
+      takeLoopRef.current = v; setTakeLoop(v); setTakeLoopMark(2);
+      setStatus(lang === "zh" ? `起点第 ${mix + 1} 小节 · 再点终点小节（点同一小节=只循环这一小节）` : `Start bar ${mix + 1} · now tap the end bar (same bar = loop just it)`);
+      return;
+    }
+    const from = Math.min(takeLoopRef.current.from, mix), to = Math.max(takeLoopRef.current.from, mix);
+    setTakeLoopMark(0);
+    applyTakeLoop({ on: true, from, to });
+  }, [takeLoopMark, lang, applyTakeLoop]);
+
+  // What the video dialog needs: the page canvases as drawn, bar boxes, the take's bar times and audio.
+  const videoSource = (): VideoExportSource => {
+    const zh = lang === "zh";
+    const title = (pdfName || "").replace(/\.[a-z0-9]{2,5}$/i, "").replace(/[_]+/g, " ").trim();
+    return {
+      title,
+      performer: followMeta?.instrument ?? "",
+      scores: followMeta?.scores?.length ? followMeta.scores : undefined,
+      loopBars: takeLoop.on ? [takeLoop.from + 1, takeLoop.to + 1] : undefined,
+      build: (layout, onlyLoop, meta) => {
+        const w = wijzerRef.current;
+        if (!mediaURL || w.times.length < 2) return zh ? "先跟随一遍录音再导出" : "Follow a take first";
+        const pages = new Map<number, HTMLCanvasElement>();
+        pagesHostRef.current?.querySelectorAll<HTMLCanvasElement>("canvas[data-page]").forEach((c) => pages.set(Number(c.dataset.page), c));
+        if (!pages.size) return zh ? "谱面还没画好" : "The score is not drawn yet";
+        const md = mediaRef.current as { duration?: number } | null;
+        const dur = md && typeof md.duration === "number" && Number.isFinite(md.duration) ? md.duration : Infinity;
+        let a: number, b: number;
+        if (onlyLoop && takeLoop.on && w.loopEnd > w.loopStart) { a = w.loopStart; b = Math.min(dur, w.loopEnd + 0.3); }
+        else {
+          a = Math.max(0, w.times[0].t - 0.8);
+          const lastStart = w.times[w.times.length - 1].t;
+          const last = Math.max(lastStart + 0.5, followMeta?.endSec ?? lastStart + 2);
+          b = Math.min(dur, last + 1.5);
+        }
+        if (!(b - a > 1)) return zh ? "这段太短，导不出视频" : "That part is too short for a video";
+        return { layout, pages, offsets: pageOffsetsRef.current, measures: w.measures, times: w.times, mediaUrl: mediaURL, a, b, meta };
+      },
+    };
+  };
+
   const stepSystem = useCallback((dir: 1 | -1) => {
     const w = wijzerRef.current;
     const ms = w.measures;
@@ -1797,6 +1874,7 @@ export default function ScoreFollowPage() {
       }
       const hit = wijzerRef.current.x2time(p.x, p.y, (mediaRef.current as { currentTime?: number } | null)?.currentTime);
       if (!hit) { setSelectedBar(null); return; }
+      if (takeLoopMark) { takeLoopTap(hit.measure); return; }
       if (loopMark) { loopMarkTap(engineMeasureFromRaw(hit.measure + 1)); return; }
       placeCursor(hit.measure, hit.t);
       const sibi = sibiOfRaw(hit.measure + 1);
@@ -1804,7 +1882,7 @@ export default function ScoreFollowPage() {
       // metro 点小节由引擎 host 监听统一处理(播放中=暖机重起, 未播放=只移动头),
       // 这里不再另发 metro-jump, 避免双通道重复重起
     },
-    [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, measureClientRect, pageNum, placeCursor, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw, adjustMode, engineOfSibi, dispOf],
+    [analysis, canvasCoords, correctMode, findMeasureAt, findNearestBar, measureClientRect, pageNum, placeCursor, engineMeasureFromRaw, loopMark, loopMarkTap, sibiOfRaw, adjustMode, engineOfSibi, dispOf, takeLoopMark, takeLoopTap],
   );
 
   // 纠错新增小节线(长按/双击共用): 点位须落在某系统行内
@@ -3069,7 +3147,7 @@ export default function ScoreFollowPage() {
       if (e.key === "Escape") {
         if (helpOpen) { e.preventDefault(); setHelpOpen(false); return; }
         if (preloadPreview) { closePreview(); return; }
-        setHelpOpen(false); setMenuOpen(false); setOpenMenu(false); setAdvOpen(false); setPie(null); setSelectedBar(null); setBarPop(null); setLoopMark(false);
+        setHelpOpen(false); setMenuOpen(false); setOpenMenu(false); setAdvOpen(false); setPie(null); setSelectedBar(null); setBarPop(null); setLoopMark(false); setTakeLoopMark(0);
         return;
       }
       if (preloadPreview || helpOpen) return;
@@ -3439,6 +3517,7 @@ export default function ScoreFollowPage() {
            {menuOpen && <div className={styles.tbMenu} id="sf-settings" role="region" aria-label={tx("settings")}>
             <div className={styles.tbMenuRow}>
               <label><input type="checkbox" checked={loopB > loopA} onChange={(e) => {
+                if (takeLoopRef.current.on) { takeLoopRef.current = { ...takeLoopRef.current, on: false }; setTakeLoop(takeLoopRef.current); }
                 if (e.target.checked) wijzerRef.current.setLoop(loopA || 0, loopB || Math.max(loopA + 4, 4));
                 else wijzerRef.current.setLoop(0, 0);
               }} /> loop</label>
@@ -3530,6 +3609,25 @@ export default function ScoreFollowPage() {
                   onClick={() => { const mc = metroControl(); if (mc) { if (metroPlaying) mc.stop(); else if (mc.play()) yieldToMetro(); } }}
                   title={lang === "zh" ? "节拍器独立播放/停止(含预备拍); 播放中点小节=暖机重起" : "Metro play/stop with count-in; tap a measure while playing to restart there"}>
                   🥁
+                </button>
+              )}
+              {tapCount >= 2 && (
+                <button className={`${styles.practiceBtn} ${takeLoop.on || takeLoopMark ? styles.practiceBtnActive : ""}`} aria-pressed={takeLoop.on}
+                  onClick={() => {
+                    if (takeLoopMark) { setTakeLoopMark(0); setStatus(lang === "zh" ? "已取消选小节" : "Bar pick cancelled"); }
+                    else if (takeLoop.on) applyTakeLoop({ ...takeLoop, on: false });
+                    else { setLoopMark(false); setTakeLoopMark(1); setStatus(lang === "zh" ? "在谱面上点要循环的第一个小节" : "Tap the first bar to loop on the score"); }
+                  }}
+                  title={lang === "zh" ? "循环录音里的几个小节：点这里，再在谱面点起点和终点小节；再点一次关闭" : "Loop bars of the recording: click, then tap the start and end bars on the score; click again to stop"}>
+                  🔁 {takeLoopMark === 1 ? (lang === "zh" ? "点起点小节" : "Tap start bar")
+                    : takeLoopMark === 2 ? (lang === "zh" ? "点终点小节" : "Tap end bar")
+                    : takeLoop.on ? `${takeLoop.from + 1}–${takeLoop.to + 1}` : <span className={styles.phoneHide}>{lang === "zh" ? "循环小节" : "Loop bars"}</span>}
+                </button>
+              )}
+              {tapCount >= 2 && mediaKind !== "youtube" && (
+                <button className={styles.practiceBtn} onClick={() => { doPause(); setVideoOpen(true); }}
+                  title={lang === "zh" ? "把这一遍录音和谱面合成 MP4（带片头片尾）" : "Make an MP4 of this take with the score (with title and closing cards)"}>
+                  🎬 <span className={styles.phoneHide}>{lang === "zh" ? "导出视频" : "Export video"}</span>
                 </button>
               )}
             </>
@@ -3796,7 +3894,7 @@ export default function ScoreFollowPage() {
             setTapCount(entries.length);
             return null;
           }}
-          onFollowTake={({ name, url, starts, onsets }) => {
+          onFollowTake={({ name, url: takeUrl, blob, starts, onsets, meta }) => {
             const w = wijzerRef.current;
             if (!w.measures.length) return lang === "zh" ? "谱面尚未分析出小节" : "Score measures not analyzed yet";
             const entries = (starts ?? [])
@@ -3814,18 +3912,28 @@ export default function ScoreFollowPage() {
               if (!Number.isFinite(o.sec) || !Number.isFinite(o.frac) || mix < 0 || mix >= w.measures.length) continue;
               onsetMap.set(mix, [...(onsetMap.get(mix) ?? []), { frac: o.frac, t: o.sec }].sort((a, b) => a.frac - b.frac));
             }
+            // The panel revokes its take URLs when it closes; play (and export) from our own URL of the take.
+            let url = takeUrl;
+            if (blob) {
+              if (followUrlRef.current) URL.revokeObjectURL(followUrlRef.current);
+              url = followUrlRef.current = URL.createObjectURL(blob);
+            }
             setMediaURL(url);
             setMediaName(name);
             setMediaKind("audio");
             parkLegacyShade();
             w.loadTimes(entries, onsetMap);
             setTapCount(entries.length);
+            setFollowMeta({ name, ...meta });
+            // A bar loop keeps its bars and is re-timed for the new take.
+            if (takeLoopRef.current.on) applyTakeLoop(takeLoopRef.current);
             if (!showCursor) return { warning: lang === "zh"
               ? "光标覆盖层已关闭，播放时看不到蓝色阴影：请在“面板”工作台打开“光标”，或关闭“干净视图”"
               : "The cursor overlay is off, so no shade will show during playback. Enable “Cursor” in the Panel workspace or turn off Clean view." };
             return null;
           }}
          onJump={(measure) => placeCursor(measure - 1)} onClose={() => setPerformanceOpen(false)} />}
+        {videoOpen && <VideoExportDialog lang={lang === "zh" ? "zh" : "en"} source={videoSource()} onClose={() => setVideoOpen(false)} />}
         {chromeOpen && advOpen && (
           <aside id="sf-control-panel" className={`${styles.advpanel} ${styles.controlPanel}`} aria-label={tx("panelBtn")}>
             <div className={styles.pcardHead}><span>{lang === "zh" ? "练习工作台" : "Practice workspace"}</span><button onClick={() => setAdvOpen(false)} aria-label={tx("closePanel")}>×</button></div>
@@ -4077,6 +4185,16 @@ export default function ScoreFollowPage() {
             }))}
           </svg>
         )}
+        {(takeLoop.on || takeLoopMark === 2) && wijzerRef.current.measures.slice(takeLoop.from, (takeLoopMark === 2 ? takeLoop.from : takeLoop.to) + 1).map((m, i) => (
+          <div key={`tl${i}`} aria-hidden="true" style={{
+            position: "absolute", pointerEvents: "none", borderRadius: 6,
+            border: "2px dashed rgba(234,88,12,0.8)", background: "rgba(251,146,60,0.07)",
+            left: `${(m.x / (analysis?.pageW || 1)) * 100}%`,
+            top: `${(m.y / (analysis?.pageH || 1)) * 100}%`,
+            width: `${(m.w / (analysis?.pageW || 1)) * 100}%`,
+            height: `${(m.h / (analysis?.pageH || 1)) * 100}%`,
+          }} />
+        ))}
         {showCursor && cursor && (
           <div className="demaat" style={{
             position: "absolute",

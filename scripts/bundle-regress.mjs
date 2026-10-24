@@ -27,7 +27,7 @@ const TOL = 4;
 
 const tmp = mkdtempSync(join(tmpdir(), "sf-bundlereg-"));
 execSync(
-  `npx tsc lib/synpdf-legacy.ts --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`,
+  `npx tsc lib/synpdf-legacy.ts --skipLibCheck --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`,
   { cwd: root, stdio: "pipe" },
 );
 const { pathToFileURL } = await import("node:url");

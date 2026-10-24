@@ -1,0 +1,23 @@
+.backdrop { position: fixed; inset: 0; z-index: 2000; background: rgba(15, 23, 42, 0.55); display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 24px 16px; }
+.dialog { width: min(640px, 100%); background: #fff; color: #1f2937; border-radius: 14px; padding: 18px 20px 20px; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3); box-sizing: border-box; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 17px; }
+.head button { border: 0; background: none; font-size: 24px; line-height: 1; cursor: pointer; color: #64748b; }
+.hint { color: #64748b; font-size: 13px; margin: 4px 0 12px; }
+.error { color: #b91c1c; font-size: 14px; margin: 8px 0; }
+.grid { display: grid; gap: 10px; }
+.grid > label { display: grid; gap: 4px; font-size: 13px; color: #475569; }
+.grid input:not([type]) { font: inherit; font-size: 15px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; color: #0f172a; min-width: 0; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 14px; }
+.row > span { color: #475569; font-size: 13px; }
+.row label, .check { display: flex !important; align-items: center; gap: 6px; font-size: 14px; color: #1f2937 !important; }
+.preview { display: block; margin: 14px auto 0; max-width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; }
+.preview[data-layout="portrait"] { max-height: 420px; }
+.progress { position: relative; margin-top: 14px; height: 30px; background: #e2e8f0; border-radius: 8px; overflow: hidden; }
+.progress > div { position: absolute; inset: 0 auto 0 0; background: #93c5fd; transition: width .2s; }
+.progress > span { position: relative; display: block; line-height: 30px; text-align: center; font-size: 13px; color: #0f172a; }
+.done { display: grid; gap: 10px; margin-top: 14px; justify-items: center; }
+.done video { max-width: 100%; border-radius: 8px; background: #000; }
+.done video[data-layout="portrait"] { max-height: 460px; }
+.actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.actions button, .primary { font: inherit; font-size: 15px; padding: 9px 18px; border-radius: 9px; border: 1px solid #cbd5e1; background: #fff; color: #1f2937; cursor: pointer; text-decoration: none; }
+.primary { background: #2563eb !important; border-color: #2563eb !important; color: #fff !important; font-weight: 600; }

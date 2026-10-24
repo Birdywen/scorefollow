@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = mkdtempSync(join(tmpdir(), "sf-system-debug-"));
-execSync(`npx tsc lib/synpdf-legacy.ts --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`, { cwd: root, stdio: "pipe" });
+execSync(`npx tsc lib/synpdf-legacy.ts --skipLibCheck --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`, { cwd: root, stdio: "pipe" });
 const legacy = await import(pathToFileURL(join(tmp, "synpdf-legacy.js")).href);
 const [score, pageStr] = process.argv.slice(2);
 const page = Number(pageStr);

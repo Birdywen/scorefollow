@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 const root = new URL("..", import.meta.url);
 const tmp = mkdtempSync(join(tmpdir(), "sf-regression-"));
 execSync(
-  `npx tsc lib/synpdf-legacy.ts lib/synpdf-core.ts lib/synpdf-wijzer.ts --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`,
+  `npx tsc lib/synpdf-legacy.ts lib/synpdf-core.ts lib/synpdf-wijzer.ts --skipLibCheck --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`,
   { cwd: new URL(root).pathname, stdio: "inherit" },
 );
 const legacy = await import(pathToFileURL(join(tmp, "synpdf-legacy.js")).href);

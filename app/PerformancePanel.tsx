@@ -280,7 +280,8 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
   getSyncedAudio?: () => SyncedAudio | null;
   captureYouTube?: CaptureYouTube; youtubeLink?: string;
   onApplyMeasureSync?: (markers: { measure: number; audioSec: number }[]) => string | null;
-  onFollowTake?: (take: { name: string; url: string; starts: { measure: number; startSec: number }[]; onsets?: FollowOnset[] }) => string | { warning: string } | null;
+  onFollowTake?: (take: { name: string; url: string; blob?: Blob | null; starts: { measure: number; startSec: number }[]; onsets?: FollowOnset[];
+    meta?: { scores?: [string, string][]; instrument?: string; endSec?: number } }) => string | { warning: string } | null;
 }) {
   const [api, setApi] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -905,7 +906,8 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
 
   const scoreOpen = stepOpen.score ?? takes.length === 0;
   const setupOpen = stepOpen.setup ?? takes.length === 0;
-  const instrumentName = ({ violin: zh ? "小提琴" : "Violin", viola: zh ? "中提琴" : "Viola", cello: zh ? "大提琴" : "Cello", piano: zh ? "钢琴" : "Piano" } as Record<string, string>)[instrument] ?? instrument;
+  const nameOfInstrument = (i: string) => ({ violin: zh ? "小提琴" : "Violin", viola: zh ? "中提琴" : "Viola", cello: zh ? "大提琴" : "Cello", piano: zh ? "钢琴" : "Piano" } as Record<string, string>)[i] ?? i;
+  const instrumentName = nameOfInstrument(instrument);
   const notices = !result ? [] : [
     result.quality?.outcome === "score_audio_mismatch" ? (zh ? "录音和谱面好像对不上（可能不是同一首或同一段），这次的分数先别当真。" : "The recording may not match the score; scores are not reliable.") : "",
     result.summary.tempoMismatch ? (zh ? `录音的速度约 ${result.summary.detectedBpm ?? "—"} BPM，和设定的 ${selected?.bpm ?? bpm} BPM 差得比较多，节奏分仅供参考。` : `Detected tempo ≈ ${result.summary.detectedBpm ?? "—"} BPM differs from the set tempo; rhythm score is indicative only.`) : "",
@@ -936,7 +938,15 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
   function followTake(): boolean {
     if (!selected || !result || !onFollowTake) return false;
     const anchors = followAnchors(result.measureIntervals ?? [], result.notes, result.syncSuggestion?.appliedOffsetSec ?? 0);
-    const res = onFollowTake({ name: selected.name, url: selected.url, ...anchors });
+    const mismatch = result.quality?.outcome === "score_audio_mismatch";
+    const scores = mismatch ? [] : ([
+      [zh ? "音准" : "Pitch", result.summary.pitchScore],
+      [zh ? "跟拍" : "Timing", result.summary.rhythmScore],
+      [zh ? "综合" : "Overall", result.quality?.overallScore],
+    ] as [string, number | null | undefined][]).filter(([, v]) => v != null).map(([l, v]) => [l, String(v)] as [string, string]);
+    const ends = (result.measureIntervals ?? []).map((m) => m.endSec).filter(Number.isFinite);
+    const res = onFollowTake({ name: selected.name, url: selected.url, blob: selected.blob, ...anchors,
+      meta: { scores, instrument: nameOfInstrument(result.instrument || instrument), endSec: ends.length ? Math.max(...ends) : undefined } });
     if (typeof res === "string") { setError(res); setSyncMsg(""); setSyncWarn(false); return false; }
     setError("");
     const measureCount = result.summary.measureCount ?? 0;

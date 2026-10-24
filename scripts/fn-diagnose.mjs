@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = mkdtempSync(join(tmpdir(), "sf-fndiag-"));
 execSync(
-  `npx tsc lib/synpdf-legacy.ts --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`,
+  `npx tsc lib/synpdf-legacy.ts --skipLibCheck --outDir ${tmp} --module nodenext --target es2020 --moduleResolution nodenext --declaration false --sourceMap false`,
   { cwd: root, stdio: "pipe" },
 );
 const { pathToFileURL } = await import("node:url");
