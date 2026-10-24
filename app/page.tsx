@@ -40,6 +40,8 @@ import {
 import { Wijzer, buildMeasures } from "@/lib/synpdf-wijzer";
 import { barLoopWindow } from "@/lib/take-loop";
 import VideoExportDialog, { type VideoExportSource } from "./VideoExportDialog";
+import AccountDialog from "./AccountDialog";
+import { me as fetchMe, type Me } from "../lib/account";
 import PerformancePanel from "./PerformancePanel";
 import AnalysisHelp from "./AnalysisHelp";
 import MetroDock from "./MetroDock";
@@ -170,6 +172,9 @@ export default function ScoreFollowPage() {
   const [takeLoopMark, setTakeLoopMark] = useState<0 | 1 | 2>(0);
   // The take being followed: scores and instrument for the video's cards, last bar end for its length.
   const [followMeta, setFollowMeta] = useState<{ name: string; scores?: [string, string][]; instrument?: string; endSec?: number } | null>(null);
+  const [account, setAccount] = useState<Me>({ user: null, usage: null });
+  const [accountOpen, setAccountOpen] = useState(false);
+  useEffect(() => { void fetchMe(BASE).then(setAccount); }, []);
   const [videoOpen, setVideoOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [expertOpen, setExpertOpen] = useState(() => { try { return localStorage.getItem("sf-expert-open") === "1"; } catch { return false; } });
@@ -3512,6 +3517,7 @@ export default function ScoreFollowPage() {
          <span className={styles.tbTitle} data-empty={pdfName ? "false" : "true"} title={pdfName || undefined}>{pdfName || tx("noScore")}{numPages ? ` · ${numPages}${tx("pageUnit")}` : ""}</span>
           {loopM.on && <span className={styles.tbGroup} title={lang === "zh" ? "节拍器练习区间(点谱面小节可改)" : "Metro practice range (tap score bars to change)"}>Loop {barNumRef.current[loopM.from] ?? loopM.from}–{barNumRef.current[loopM.to] ?? loopM.to}</span>}
         <span className={styles.tbSpacer} />
+        <button className={styles.tbBtn} onClick={() => setAccountOpen(true)} title={account.user?.email ?? (lang === "zh" ? "登录 / 注册" : "Sign in / Sign up")}>{account.user ? `👤 ${account.user.displayName || account.user.email.split("@")[0]}` : (lang === "zh" ? "登录" : "Sign in")}</button>
         <span className={styles.tbMenuWrap}>
           <button className={styles.tbBtn} aria-label={tx("tuner")} onClick={() => setTunerOpen(true)} title={tx("tuner")}>🎚</button>
            <button className={styles.tbBtn} onClick={() => { setMenuOpen((v) => !v); setOpenMenu(false); }} aria-expanded={menuOpen} aria-controls="sf-settings" title={tx("settings")}>⚙ {tx("settings")}</button>
@@ -3934,6 +3940,7 @@ export default function ScoreFollowPage() {
             return null;
           }}
          onJump={(measure) => placeCursor(measure - 1)} onClose={() => setPerformanceOpen(false)} />}
+        {accountOpen && <AccountDialog lang={lang === "zh" ? "zh" : "en"} base={BASE} state={account} onState={setAccount} onClose={() => setAccountOpen(false)} />}
         {videoOpen && <VideoExportDialog lang={lang === "zh" ? "zh" : "en"} source={videoSource()} onClose={() => setVideoOpen(false)} />}
         {chromeOpen && advOpen && (
           <aside id="sf-control-panel" className={`${styles.advpanel} ${styles.controlPanel}`} aria-label={tx("panelBtn")}>

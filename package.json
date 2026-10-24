@@ -15,12 +15,13 @@
     "follow-anchors": "node scripts/follow-anchors-regression.mjs",
     "take-loop": "node scripts/take-loop-regression.mjs",
     "youtube": "node scripts/youtube-regression.mjs",
-    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run practice-sync && npm run follow-anchors && npm run take-loop && npm run youtube && npm run score-edit && npm run analysis-test && npm run build",
+    "verify": "npx tsc --noEmit && npm run regression && npm run synth && npm run practice-sync && npm run follow-anchors && npm run take-loop && npm run youtube && npm run score-edit && npm run analysis-test && npm run account-test && npm run build",
     "score-edit": "node scripts/score-edit-regression.mjs && node scripts/score-abc-regression.mjs",
     "voice-fill-ui": "node scripts/verify-voice-fill.mjs",
     "abc-edit-ui": "node scripts/verify-abc-edit.mjs",
     "voice-fix-report-ui": "node scripts/verify-voice-fix-report.mjs",
-    "dev-mode-ui": "node scripts/verify-dev-mode.mjs"
+    "dev-mode-ui": "node scripts/verify-dev-mode.mjs",
+    "account-test": "python3 -B -m unittest discover -s account_service -t ."
   },
   "dependencies": {
     "@mediabunny/aac-encoder": "1.61.3",

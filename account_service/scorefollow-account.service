@@ -1,0 +1,22 @@
+[Unit]
+Description=scorefollow account API (email-code sign-in, daily quota)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+# Run from the deploy copy, never the live build tree.
+WorkingDirectory=/home/ubuntu/n/scorefollow-deploy
+Environment=PYTHONDONTWRITEBYTECODE=1
+# ACCOUNT_SECRET (>=16 bytes), ACCOUNT_MAIL_MODE=resend, RESEND_API_KEY, ACCOUNT_QUOTA_MODE=count|enforce|off
+EnvironmentFile=/home/ubuntu/.config/scorefollow-account.env
+ExecStart=/usr/bin/python3 -m account_service.server
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
