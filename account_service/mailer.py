@@ -30,7 +30,8 @@ def send_code(email: str, code: str, lang: str = "zh") -> None:
     body = json.dumps({"from": os.environ.get("ACCOUNT_MAIL_FROM", "mega-metro <no-reply@mega-metro.online>"),
                        "to": [email], "subject": subject, "text": text}).encode()
     req = urllib.request.Request("https://api.resend.com/emails", data=body, method="POST", headers={
-        "Authorization": "Bearer " + os.environ["RESEND_API_KEY"], "Content-Type": "application/json"})
+        "Authorization": "Bearer " + os.environ["RESEND_API_KEY"], "Content-Type": "application/json",
+        "User-Agent": "scorefollow-account/1"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         if resp.status >= 300:
             raise RuntimeError(f"mail api status {resp.status}")
