@@ -20,7 +20,7 @@ export async function sha256Hex(data: Blob | ArrayBuffer): Promise<string> {
 
 /** Stable key that groups takes of one piece: file name without extension, lower-cased. */
 export function scoreKeyOf(name: string): string {
-  return name.replace(/\.(pdf|musicxml|xml|abc)$/i, "").trim().replace(/\s+/g, " ").toLowerCase().slice(0, 200);
+  return name.trim().replace(/\.(pdf|musicxml|xml|abc)$/i, "").trim().replace(/\s+/g, " ").toLowerCase().slice(0, 200);
 }
 
 /**
@@ -86,6 +86,41 @@ export async function pullTake(base: string, take: CloudTake): Promise<{ blob: B
     if (response.ok) result = (await response.json()).result ?? null;
   }
   return { blob, result };
+}
+
+/** Upload a score file (PDF) and its record; the id is the content fingerprint, so re-uploads are no-ops. */
+export async function pushScore(base: string, score: { title: string; kind: CloudScore["kind"]; blob: Blob; edits?: Record<string, unknown> }): Promise<string> {
+  const fileSha = await putBlob(base, score.blob);
+  const id = fileSha.slice(0, 32);
+  await ok(await call(base, "PUT", `/scores/${id}`, { title: score.title, kind: score.kind, fileSha, edits: score.edits ?? {} }));
+  return id;
+}
+
+export async function pullScoreBlob(base: string, score: CloudScore): Promise<Blob> {
+  const blob = await (await ok(await call(base, "GET", `/blobs/${score.fileSha}`))).blob();
+  if (await sha256Hex(blob) !== score.fileSha) throw new Error("cloud score failed its integrity check");
+  return blob;
+}
+
+export async function deleteCloudScore(base: string, id: string): Promise<void> {
+  const response = await call(base, "DELETE", `/scores/${encodeURIComponent(id)}`);
+  if (response.status !== 404) await ok(response);
+}
+
+export type HistoryPoint = { id: string; t: number; pitch: number | null; rhythm: number | null };
+
+/** Chart series from /history rows: oldest first, scores kept only when they are finite numbers in 0..100. */
+export function historySeries(rows: { id: string; created: number; summary?: { pitchScore?: unknown; rhythmScore?: unknown } | null }[]): HistoryPoint[] {
+  const score = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100 ? v : null);
+  return rows
+    .map((r) => ({ id: r.id, t: r.created, pitch: score(r.summary?.pitchScore), rhythm: score(r.summary?.rhythmScore) }))
+    .filter((p) => p.pitch != null || p.rhythm != null)
+    .sort((a, b) => a.t - b.t);
+}
+
+export async function fetchHistory(base: string, scoreKey: string): Promise<HistoryPoint[]> {
+  const data = await (await ok(await call(base, "GET", `/history?scoreKey=${encodeURIComponent(scoreKey)}`))).json();
+  return historySeries(data.takes ?? []);
 }
 
 export async function deleteCloudTake(base: string, id: string): Promise<void> {

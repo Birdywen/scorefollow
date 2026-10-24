@@ -1,0 +1,20 @@
+.fold { margin: 8px 0 12px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px 12px; background: #fff; }
+.fold > summary { cursor: pointer; font-size: 14px; color: #1f2937; }
+.chart { width: 100%; height: auto; display: block; margin-top: 8px; }
+.axis { stroke: #e2e8f0; stroke-width: 1; }
+.tick { fill: #64748b; font-size: 10px; }
+.pitch { stroke: #2563eb; fill: none; stroke-width: 2; }
+.rhythm { stroke: #d97706; fill: none; stroke-width: 2; stroke-dasharray: 5 3; }
+.dotPitch { fill: #2563eb; }
+.dotRhythm { fill: #d97706; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: #475569; margin: 6px 0 2px; }
+.note { font-size: 13px; color: #64748b; margin: 6px 0; }
+@media (prefers-color-scheme: dark) {
+  .fold { background: #1e293b; border-color: #334155; }
+  .fold > summary { color: #e2e8f0; }
+  .axis { stroke: #334155; }
+  .tick { fill: #94a3b8; }
+  .pitch { stroke: #60a5fa; } .dotPitch { fill: #60a5fa; }
+  .rhythm { stroke: #fbbf24; } .dotRhythm { fill: #fbbf24; }
+  .legend, .note { color: #cbd5e1; }
+}

@@ -13,6 +13,8 @@ import {
 import { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
 import ReportDashboard from "./ReportDashboard";
 import { useCloudTakes, type PulledTake } from "./hooks/useCloudTakes";
+import ProgressCurve from "./ProgressCurve";
+import { scoreKeyOf } from "@/lib/cloud-sync";
 import { isValidAnalysisResult, isValidJobEnvelope } from "@/lib/analysis-guard";
 import MeasureSyncEditor, { validateMarkers, type MeasureMarker, type SyncedAudio } from "./MeasureSyncEditor";
 import { useAnalysisJob } from "./hooks/useAnalysisJob";
@@ -989,6 +991,7 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
     {cloud.status !== "off" && <p className={styles.hint} role="status" data-cloud={cloud.status}>{cloud.status === "syncing" ? (zh ? "☁ 正在同步录音…" : "☁ Syncing takes…")
       : cloud.status === "ok" ? (zh ? "☁ 录音与报告已同步到你的账户" : "☁ Takes and reports are synced to your account")
       : (zh ? "☁ 同步失败，稍后自动重试（本机数据不受影响）" : "☁ Sync failed; retrying shortly (your local data is safe)")}</p>}
+    {cloudBase && <ProgressCurve lang={lang} base={cloudBase} scoreKey={scoreKeyOf(pdfName)} refreshKey={`${cloud.status}:${takes.filter((t) => t.result).length}`} />}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     <p className={styles.hint}>{zh ? "直接上传录音即可分析（可自动定位片段）· 最多 3 遍" : "Upload a take to analyze (excerpts auto-located) · max 3 takes"}</p>
     <ol className={styles.stepNav} aria-label={zh ? "分析步骤" : "Analysis steps"}>

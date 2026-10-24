@@ -83,13 +83,24 @@ try {
   await panelA.getByRole("button", { name: /^(Analyze|\u5206\u6790\u8fd9\u4e00\u904d)$/ }).click();
   await panelA.getByText(/\u97f3\u51c6 93|Pitch 93/).first().waitFor({ timeout: 30000 });
   await panelA.getByText(/\u5df2\u540c\u6b65\u5230\u4f60\u7684\u8d26\u6237|synced to your account/).waitFor({ timeout: 30000 });
+  // A second, different take -> two points for the progress curve.
+  const wav2 = Buffer.from(wav); wav2.writeInt16LE(1234, 44 + 2 * 1000);
+  await panelA.locator('input[accept^="audio/"]').setInputFiles({ name: "take2.wav", mimeType: "audio/wav", buffer: wav2 });
+  const analyzeBtn = panelA.getByRole("button", { name: /^(Analyze|\u5206\u6790\u8fd9\u4e00\u904d)$/ });
+  await analyzeBtn.nth(1).waitFor({ timeout: 15000 });   // the second take is listed
+  await analyzeBtn.nth(1).click();
+  await panelA.getByText(/\u97f3\u51c6 93|Pitch 93/).nth(1).waitFor({ timeout: 30000 }).catch(async (e) => {
+    console.log("PANEL_TEXT", (await panelA.innerText()).split("\n").filter((l) => /\u9047|\u5206\u6790|Take|\u97f3\u51c6|Pitch|\u5931\u8d25|\u9519\u8bef|rror/.test(l)).join(" | ").slice(0, 1500));
+    throw e;
+  });
   // Wait until the cloud really has take + report.
   const cookies = await ctxA.cookies();
   const snap = async () => (await fetch(`http://127.0.0.1:${accPort}/sync`, { headers: { Cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; ") } })).json();
   let s;
-  for (let i = 0; i < 50; i++) { s = await snap(); if (s.takes[0]?.hasResult) break; await a.waitForTimeout(200); }
-  assert.equal(s.takes.length, 1, "one take in the cloud");
-  assert.ok(s.takes[0].hasResult, "report in the cloud");
+  for (let i = 0; i < 100; i++) { s = await snap(); if (s.takes.length === 2 && s.takes.every((t) => t.hasResult) && s.scores.length) break; await a.waitForTimeout(200); }
+  assert.equal(s.takes.length, 2, "two takes in the cloud");
+  assert.ok(s.takes.every((t) => t.hasResult), "reports in the cloud");
+  assert.equal(s.scores.length, 1, "the PDF is saved as a score");
   assert.ok(s.usedBytes > 100000, "audio uploaded");
   // --- device B: fresh browser profile, same session cookie ---
   const ctxB = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -101,11 +112,31 @@ try {
   await panelB.locator("audio").first().waitFor({ state: "attached" });
   const sec = await panelB.locator("audio").first().evaluate((e) => new Promise((res) => { if (e.duration) res(e.duration); else e.onloadedmetadata = () => res(e.duration); }));
   assert.ok(Math.abs(sec - 6) < 0.5, `audio came across intact (${sec}s)`);
-  // --- delete on B removes it from the cloud ---
-  await panelB.getByRole("button", { name: /^(\u5220\u9664|Delete)$/ }).first().click();
+  // --- progress curve on B ---
+  await panelB.getByText(/\u8fdb\u6b65\u66f2\u7ebf|Progress/).first().click();
+  await panelB.getByRole("img", { name: /\u5171 2 \u6b21|over 2 analyses/ }).waitFor({ timeout: 15000 });
+  if (process.env.SF_SHOTS) await panelB.screenshot({ path: join(process.env.SF_SHOTS, "progress.png") });
+  // --- device C: only the session, no PDF loaded: open the score from the cloud ---
+  const ctxC = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctxC.addCookies(cookies);
+  const c = await ctxC.newPage();
+  c.on("pageerror", (e) => errors.push("C " + e.message));
+  await c.goto("http://127.0.0.1:18999/scorefollow/");
+  await c.locator('button[aria-controls="sf-open"]').click();
+  await c.getByRole("menuitem", { name: /\u6211\u7684\u4e50\u8c31 \(1\)|My scores \(1\)/ }).click();
+  await c.getByRole("menuitem", { name: /Dotzauer/ }).first().click();
+  await c.getByText("\u5c0f\u8282").first().waitFor({ timeout: 90000 });   // the PDF opened and was analyzed
+  // --- deleting takes on B removes them (and their audio) from the cloud ---
+  const before = (await snap()).usedBytes;
+  const del = panelB.getByRole("button", { name: /^(\u5220\u9664|Delete)$/ });
+  await del.first().click();
+  for (let i = 0; i < 50; i++) { s = await snap(); if (s.takes.length === 1) break; await b.waitForTimeout(200); }
+  assert.equal(s.takes.length, 1, "one take deleted from the cloud");
+  assert.ok(s.usedBytes < before, "its audio was freed");
+  await del.first().click();
   for (let i = 0; i < 50; i++) { s = await snap(); if (!s.takes.length) break; await b.waitForTimeout(200); }
-  assert.equal(s.takes.length, 0, "deleted from the cloud");
-  assert.equal(s.usedBytes, 0, "audio freed");
+  assert.equal(s.takes.length, 0, "all takes deleted");
+  assert.equal(s.scores.length, 1, "the score stays");
   assert.deepEqual(errors, [], "no page errors");
   console.log("CLOUD_SYNC_OK");
 } finally {

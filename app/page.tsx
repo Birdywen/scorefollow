@@ -42,6 +42,7 @@ import { barLoopWindow } from "@/lib/take-loop";
 import VideoExportDialog, { type VideoExportSource } from "./VideoExportDialog";
 import AccountDialog from "./AccountDialog";
 import { me as fetchMe, type Me } from "../lib/account";
+import { deleteCloudScore, fetchSnapshot, pullScoreBlob, pushScore, type CloudScore } from "../lib/cloud-sync";
 import PerformancePanel from "./PerformancePanel";
 import AnalysisHelp from "./AnalysisHelp";
 import MetroDock from "./MetroDock";
@@ -1023,6 +1024,24 @@ export default function ScoreFollowPage() {
     setHomrGate(null);
     setHomrGateInfo("");
   }, []);
+  // Signed in: keep a cloud copy of each opened PDF and list them under "My scores".
+  const [cloudScores, setCloudScores] = useState<CloudScore[]>([]);
+  const [cloudScoresOpen, setCloudScoresOpen] = useState(false);
+  const scoreSyncedRef = useRef(new Set<string>());
+  const refreshCloudScores = useCallback(async () => {
+    if (!account.user) { setCloudScores([]); return; }
+    try { setCloudScores((await fetchSnapshot(BASE)).scores.filter((s) => s.kind === "pdf")); } catch { /* offline: keep the old list */ }
+  }, [account.user]);
+  useEffect(() => { void refreshCloudScores(); }, [refreshCloudScores]);
+  useEffect(() => {
+    const bytes = pdfBytesRef.current;
+    if (!account.user || !pdfName || !bytes || bytes.byteLength > 25_000_000) return;
+    const key = `${account.user.id}:${pdfName}:${bytes.byteLength}`;
+    if (scoreSyncedRef.current.has(key)) return;
+    scoreSyncedRef.current.add(key);
+    pushScore(BASE, { title: pdfName.replace(/\.pdf$/i, ""), kind: "pdf", blob: new Blob([bytes], { type: "application/pdf" }) })
+      .then(refreshCloudScores).catch(() => scoreSyncedRef.current.delete(key));
+  }, [account.user, pdfName, numPages, refreshCloudScores]);
   const onPdfFile = useCallback(
     async (f: File) => {
       setScorePhase("loading");
@@ -3499,6 +3518,20 @@ export default function ScoreFollowPage() {
               <button type="submit" disabled={!ytText.trim()}>{lang === "zh" ? "载入" : "Load"}</button>
               {ytErr && <span className={styles.ytErr} role="alert">{ytErr}</span>}
             </form>}
+            {account.user && <><div className={styles.menuSep} role="separator" />
+            <button role="menuitem" className={styles.openItem} aria-expanded={cloudScoresOpen} onClick={() => setCloudScoresOpen((v) => !v)}>☁ {lang === "zh" ? "我的乐谱" : "My scores"} ({cloudScores.length})</button>
+            {cloudScoresOpen && (cloudScores.length === 0 ? <span className={styles.ytErr}>{lang === "zh" ? "还没有云端乐谱：打开一个 PDF 就会自动保存" : "Nothing yet: opening a PDF saves it here"}</span>
+              : cloudScores.map((s) => <div key={s.id} style={{ display: "flex", alignItems: "center" }}>
+                <button role="menuitem" className={styles.openItem} style={{ flex: 1, textAlign: "left" }} onClick={async () => {
+                  try {
+                    const blob = await pullScoreBlob(BASE, s);
+                    setOpenMenu(false);
+                    await onPdfFile(new File([blob], `${s.title}.pdf`, { type: "application/pdf" }));
+                  } catch { setStatus(lang === "zh" ? "云端乐谱下载失败" : "Could not download the score"); }
+                }}>{s.title}</button>
+                <button role="menuitem" className={styles.openItem} aria-label={lang === "zh" ? `从云端删除 ${s.title}` : `Remove ${s.title} from the cloud`}
+                  onClick={() => { void deleteCloudScore(BASE, s.id).then(refreshCloudScores).catch(() => undefined); }}>×</button>
+              </div>))}</>}
             {dev && <><div className={styles.menuSep} role="separator" />
             <button role="menuitem" className={styles.openItem} onClick={() => { setOpenMenu(false); preloadInputRef.current?.click(); }}>📥 {tx("loadPreload")} · {tx("expertDev")}</button></>}
           </div>}
