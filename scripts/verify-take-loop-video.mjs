@@ -54,6 +54,12 @@ try {
   // Close the analysis panel so it cannot cover the score while picking bars.
   if (await panel.isVisible()) await panel.getByRole("button", { name: /^(关闭|Close|×)$/ }).first().click({ timeout: 2000 }).catch(() => {});
 
+  // Clean view (V) hides the analysis outlines but keeps the follow cursor.
+  await page.locator("body").press("v");
+  await page.waitForTimeout(400);
+  assert.ok(await page.locator(".demaat").isVisible(), "cursor stays visible in clean view");
+  assert.ok(await page.getByText(/干净视图：已隐藏分析框线|Clean view: analysis outlines hidden/).first().isVisible(), "clean view is on");
+
   // Pick bars: the shade sits on bar 1; tap it, then the bar right of it.
   const box = await page.locator(".demaat").boundingBox();
   assert.ok(box && box.width > 10, "cursor box");

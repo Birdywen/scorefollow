@@ -236,7 +236,7 @@ export default function ScoreFollowPage() {
   const [showLowConf, setShowLowConf] = useState(true);
   const [diagnosticMode, setDiagnosticMode] = useState(false);
   const dev = useDevMode();
-  // 干净视图: 一键隐藏全部覆盖层(含 line cursor), 供 metronome 播放时用, 再按恢复
+  // 干净视图: 一键隐藏分析覆盖层(光标保留), 再按恢复
   const [cleanView, setCleanView] = useState(false);
   const cleanSavedRef = useRef<{ sys: boolean; bars: boolean; cur: boolean; low: boolean; lncsr: number } | null>(null);
   // 人工校正
@@ -1241,7 +1241,7 @@ export default function ScoreFollowPage() {
   );
 
   // V: 干净视图开关 = 四覆盖层(Systems/Barlines/Cursor/Low confidence)的总闸.
-  // 开=四开关全灭(含 line cursor, 仅更新光标样式, 不重分析);
+  // 开=Systems/Barlines/Low confidence 全灭, Cursor 保持打开(跟随时要看到阴影), line cursor 改成小节阴影(不重分析);
   // 关=四开关全开, line cursor 恢复进干净前的值. 简单可预测, 不再恢复旧勾选.
   const toggleCorrectMode = () => { if (correctMode) { setSelectedBar(null); setPie(null); } else { setAdjustMode(false); setBarPop(null); } setCorrectMode(!correctMode); };
   const toggleAdjustMode = () => { if (adjustMode) { setSelectedBar(null); setBarPop(null); } else { setCorrectMode(false); setSelectedBar(null); setPie(null); setLoopMark(false); } setAdjustMode(!adjustMode); };
@@ -1251,10 +1251,11 @@ export default function ScoreFollowPage() {
         sys: showSystems, bars: showBars, cur: showCursor, low: showLowConf,
         lncsr: (opt as unknown as Record<string, number>).lncsr ?? 1,
       };
-      setShowSystems(false); setShowBars(false); setShowCursor(false); setShowLowConf(false);
+      // The play cursor stays on: clean view hides the analysis outlines, not the follow shade.
+      setShowSystems(false); setShowBars(false); setShowCursor(true); setShowLowConf(false);
       if (((opt as unknown as Record<string, number>).lncsr ?? 1) === 1) applyAdv("lncsr", 0);
       setCleanView(true);
-      setStatus("clean view: 四覆盖层已隐藏 (V 全开)");
+      setStatus(lang === "zh" ? "干净视图：已隐藏分析框线，光标照常显示（V 恢复）" : "Clean view: analysis outlines hidden, cursor still shown (V to restore)");
     } else {
       const s = cleanSavedRef.current;
       setShowSystems(true); setShowBars(true); setShowCursor(true); setShowLowConf(true);
@@ -1262,7 +1263,7 @@ export default function ScoreFollowPage() {
       setCleanView(false);
       setStatus("clean view: 四覆盖层已全开 (V 隐藏)");
     }
-  }, [cleanView, showSystems, showBars, showCursor, showLowConf, applyAdv]);
+  }, [cleanView, showSystems, showBars, showCursor, showLowConf, applyAdv, lang]);
 
   const resetAdvDefaults = useCallback(() => {
     for (const [k, v] of Object.entries(DEFAULT_ADV)) {
@@ -3928,8 +3929,8 @@ export default function ScoreFollowPage() {
             // A bar loop keeps its bars and is re-timed for the new take.
             if (takeLoopRef.current.on) applyTakeLoop(takeLoopRef.current);
             if (!showCursor) return { warning: lang === "zh"
-              ? "光标覆盖层已关闭，播放时看不到蓝色阴影：请在“面板”工作台打开“光标”，或关闭“干净视图”"
-              : "The cursor overlay is off, so no shade will show during playback. Enable “Cursor” in the Panel workspace or turn off Clean view." };
+              ? "光标覆盖层已关闭，播放时看不到蓝色阴影：请在“面板”工作台打开“光标”"
+              : "The cursor overlay is off, so no shade will show during playback. Enable “Cursor” in the Panel workspace." };
             return null;
           }}
          onJump={(measure) => placeCursor(measure - 1)} onClose={() => setPerformanceOpen(false)} />}
