@@ -12,6 +12,7 @@ import {
 } from "@/lib/practice-sync";
 import { TakeCompare, makeMockNotes, makeMockTakes, type CompareTake } from "./VisualReport";
 import ReportDashboard from "./ReportDashboard";
+import { useCloudTakes, type PulledTake } from "./hooks/useCloudTakes";
 import { isValidAnalysisResult, isValidJobEnvelope } from "@/lib/analysis-guard";
 import MeasureSyncEditor, { validateMarkers, type MeasureMarker, type SyncedAudio } from "./MeasureSyncEditor";
 import { useAnalysisJob } from "./hooks/useAnalysisJob";
@@ -274,7 +275,9 @@ function analysisSignature(input: {
     String(input.bpm), String(input.startMeasure), input.syncMode, input.syncData].join("\n"));
 }
 
-export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio, onApplyMeasureSync, onFollowTake, captureYouTube, youtubeLink }: {
+export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfName, pdfBytes, onJump, onClose, getSyncedAudio, onApplyMeasureSync, onFollowTake, captureYouTube, youtubeLink, cloudBase = "" }: {
+  /** Site base path when signed in (turns on the cloud copy of takes); empty = local only. */
+  cloudBase?: string;
   lang: "zh" | "en"; dev?: boolean; pdfMeasures: number; pdfName: string; pdfBytes: () => ArrayBuffer | null;
   onJump: (measure: number) => void; onClose: () => void;
   getSyncedAudio?: () => SyncedAudio | null;
@@ -366,6 +369,23 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
   const startingRecordingRef = useRef(false);
   const takesRef = useRef<Take[]>([]);
   takesRef.current = takes;
+  const cloud = useCloudTakes<Take>({
+    base: cloudBase, scoreName: pdfName, takes, max: MAX_TAKES,
+    metaOf: ({ blob, url, result, id, createdAt, jobId, jobStatus, error, ...rest }) => rest,
+    onPull: (p: PulledTake) => {
+      if (!alive.current) return;
+      const result = p.result && isValidAnalysisResult(p.result) ? p.result as Result : undefined;
+      void saveTakeBlob(p.id, p.blob).catch(() => undefined);
+      if (result) void saveTakeResult(p.id, { signature: `cloud:${p.id}`, result, savedAt: Date.now() }).catch(() => undefined);
+      const take: Take = { name: "", durationSec: 0, startMeasure: 1, bpm: 60, beatsPerMeasure: 4, countInBeats: 0, firstBeatAudioSec: null, sessionId: "",
+        ...(p.meta as Partial<Take>), id: p.id, createdAt: p.createdAt, blob: p.blob, url: URL.createObjectURL(p.blob), result, jobStatus: result ? "completed" : undefined };
+      setTakes((prev) => prev.some((t) => t.id === p.id) || prev.length >= MAX_TAKES ? prev : [...prev, take].sort((a, b) => a.createdAt - b.createdAt));
+      if (!takesRef.current.length) {   // first take on this device: select it like a local restore does
+        setSelectedId(p.id); setBpm(take.bpm); setStartMeasure(take.startMeasure);
+        setBeatsPerMeasure(take.beatsPerMeasure); setCountInBeats(take.countInBeats);
+      }
+    },
+  });
   // Session analysis cache: completed Results by input signature, plus the
   // signatures currently being analyzed to suppress duplicate POST /jobs.
   const analysisCache = useRef(new Map<string, Result>());
@@ -475,7 +495,8 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
           restored.push({ ...m, blob, url: blob ? URL.createObjectURL(blob) : "", result, jobStatus });
         }
         if (alive.current && restored.length) {
-          setTakes(restored);
+          // Merge, don't replace: the cloud may already have added takes.
+          setTakes((prev) => [...restored, ...prev.filter((p) => !restored.some((r) => r.id === p.id))].slice(0, MAX_TAKES));
           setSelectedId(restored[0].id);
           setBpm(restored[0].bpm);
           setStartMeasure(restored[0].startMeasure);
@@ -541,6 +562,7 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
       const target = prev.find((t) => t.id === selectedId) ?? prev[0];
       if (target.url) URL.revokeObjectURL(target.url);
       void deleteTakeBlob(target.id).catch(() => undefined);
+      cloud.remove(target.id);
       return prev.map((t) => (t.id === target.id ? take : t));
     });
     setSelectedId(id);
@@ -964,6 +986,9 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
 
   return <aside className={styles.panel} aria-label={zh ? "演奏分析" : "Performance analysis"}>
     <div className={styles.head}><strong>{zh ? "演奏分析" : "Performance analysis"}</strong><button onClick={onClose} aria-label={zh ? "关闭" : "Close"}>×</button></div>
+    {cloud.status !== "off" && <p className={styles.hint} role="status" data-cloud={cloud.status}>{cloud.status === "syncing" ? (zh ? "☁ 正在同步录音…" : "☁ Syncing takes…")
+      : cloud.status === "ok" ? (zh ? "☁ 录音与报告已同步到你的账户" : "☁ Takes and reports are synced to your account")
+      : (zh ? "☁ 同步失败，稍后自动重试（本机数据不受影响）" : "☁ Sync failed; retrying shortly (your local data is safe)")}</p>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     <p className={styles.hint}>{zh ? "直接上传录音即可分析（可自动定位片段）· 最多 3 遍" : "Upload a take to analyze (excerpts auto-located) · max 3 takes"}</p>
     <ol className={styles.stepNav} aria-label={zh ? "分析步骤" : "Analysis steps"}>
@@ -1105,6 +1130,7 @@ export default function PerformancePanel({ lang, dev = false, pdfMeasures, pdfNa
                 setTakes((prev) => prev.filter((t) => t.id !== take.id));
                 if (take.url) URL.revokeObjectURL(take.url);
                 void deleteTakeBlob(take.id).catch(() => undefined);
+                cloud.remove(take.id);
                 if (selectedId === take.id) setSelectedId(null);
               }}>{zh ? "删除" : "Delete"}</button>
               {take.jobStatus && (() => { const chip = jobChip(take.jobStatus, zh);

@@ -11,15 +11,18 @@ import logging
 import os
 from pathlib import Path
 import threading
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from . import mailer
+from .cloud import CloudError, CloudStore
 from .store import KINDS, SESSION_TTL, AccountStore, RateLimited, normalize_email
 
 COOKIE = "sf_session"
 MAX_BODY = 4096
 logger = logging.getLogger("scorefollow.account")
 store: AccountStore | None = None  # set by main() or tests
+cloud: CloudStore | None = None
+MAX_JSON_PUT = 2_600_000
 
 
 def env_int(name: str, default: int) -> int:
@@ -94,12 +97,12 @@ class Handler(BaseHTTPRequestHandler):
         self.fail(403, "origin", "来源不允许")
         return False
 
-    def body(self) -> dict | None:
+    def body(self, limit: int = MAX_BODY) -> dict | None:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = -1
-        if not 0 <= length <= MAX_BODY or "application/json" not in (self.headers.get("Content-Type") or ""):
+        if not 0 <= length <= limit or "application/json" not in (self.headers.get("Content-Type") or ""):
             self.fail(400, "bad_request", "请求格式无效")
             return None
         try:
@@ -127,7 +130,83 @@ class Handler(BaseHTTPRequestHandler):
             if user is None:
                 return self.fail(401, "signed_out", "未登录")
             return self.respond(200, store.export(user["id"]))
+        if user is not None and self.cloud_route("GET", path, user):
+            return
+        if user is None and path.strip("/").split("/")[0] in ("sync", "history", "blobs", "takes"):
+            return self.fail(401, "signed_out", "未登录")
         self.fail(404, "not_found", "Not found")
+
+    def do_HEAD(self) -> None:
+        user = store.session_user(self.token())
+        path = urlsplit(self.path).path
+        if user is None or not path.startswith("/blobs/"):
+            return self.respond(404)
+        try:
+            self.respond(200 if cloud.blob_size(user["id"], path[7:]) is not None else 404)
+        except CloudError:
+            self.respond(404)
+
+    def do_PUT(self) -> None:
+        if not self.same_origin():
+            return
+        user = store.session_user(self.token())
+        if user is None:
+            return self.fail(401, "signed_out", "未登录")
+        if not self.cloud_route("PUT", urlsplit(self.path).path, user):
+            self.fail(404, "not_found", "Not found")
+
+    def cloud_route(self, method: str, path: str, user: dict) -> bool:
+        """Cloud storage endpoints. True when the path was one of ours (a response was sent)."""
+        uid = user["id"]
+        parts = path.strip("/").split("/")
+        try:
+            if method == "GET" and parts == ["sync"]:
+                self.respond(200, cloud.snapshot(uid))
+            elif method == "GET" and parts == ["history"]:
+                key = parse_qs(urlsplit(self.path).query).get("scoreKey", [""])[0]
+                self.respond(200, {"takes": cloud.history(uid, key)})
+            elif method == "GET" and len(parts) == 2 and parts[0] == "blobs":
+                blob = cloud.blob_path(uid, parts[1])
+                if blob is None:
+                    return self.fail(404, "not_found", "Not found") or True
+                size = blob.stat().st_size
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(size))
+                self.send_header("Cache-Control", "private, max-age=31536000, immutable")
+                self.end_headers()
+                with open(blob, "rb") as f:
+                    while chunk := f.read(65536):
+                        self.wfile.write(chunk)
+            elif method == "GET" and len(parts) == 3 and parts[0] == "takes" and parts[2] == "result":
+                got = cloud.get_result(uid, parts[1])
+                self.respond(200, got) if got else self.fail(404, "not_found", "Not found")
+            elif method == "PUT" and len(parts) == 2 and parts[0] == "blobs":
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                self.respond(200, {"size": cloud.put_blob(uid, parts[1], self.rfile, length)})
+            elif method == "PUT" and parts[:1] in (["takes"], ["scores"]) and len(parts) in (2, 3):
+                data = self.body(MAX_JSON_PUT)
+                if data is None:
+                    return True
+                if parts[0] == "takes" and len(parts) == 3 and parts[2] == "result":
+                    cloud.put_result(uid, parts[1], data)
+                    self.respond(200, {"ok": True})
+                elif len(parts) == 2:
+                    put = cloud.put_take if parts[0] == "takes" else cloud.put_score
+                    self.respond(200, put(uid, parts[1], data))
+                else:
+                    return False
+            elif method == "DELETE" and len(parts) == 2 and parts[0] in ("takes", "scores"):
+                (cloud.delete_take if parts[0] == "takes" else cloud.delete_score)(uid, parts[1])
+                self.respond(200, {"ok": True})
+            else:
+                return False
+        except CloudError as exc:
+            self.fail(exc.status, exc.code, str(exc))
+        return True
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
@@ -168,13 +247,19 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(200, {"user": store.set_display_name(user["id"], name)})
 
     def do_DELETE(self) -> None:
-        if urlsplit(self.path).path != "/me":
+        path = urlsplit(self.path).path
+        if path != "/me" and not path.startswith(("/takes/", "/scores/")):
             return self.fail(404, "not_found", "Not found")
         if not self.same_origin():
             return
         user = store.session_user(self.token())
         if user is None:
             return self.fail(401, "signed_out", "未登录")
+        if path != "/me":
+            if not self.cloud_route("DELETE", path, user):
+                self.fail(404, "not_found", "Not found")
+            return
+        cloud.delete_user(user["id"])
         store.delete_user(user["id"])
         self.respond(200, {"ok": True}, cookie="")
 
@@ -202,10 +287,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    global store
+    global store, cloud
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     secret = os.environ.get("ACCOUNT_SECRET", "").encode()
     store = AccountStore(os.environ.get("ACCOUNT_DATA_DIR", str(Path.home() / ".local/share/scorefollow-account")), secret)
+    cloud = CloudStore(store, env_int("ACCOUNT_STORAGE_BYTES", 500_000_000))
     host = os.environ.get("ACCOUNT_HOST", "127.0.0.1")
     port = int(os.environ.get("ACCOUNT_PORT", "8766"))
     logger.info(json.dumps({"event": "start", "port": port, "quotaMode": quota_mode()}))

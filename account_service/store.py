@@ -87,7 +87,8 @@ class AccountStore:
         try:
             db.execute("BEGIN IMMEDIATE")
             yield db
-            db.execute("COMMIT")
+            if db.in_transaction:  # executescript() commits on its own
+                db.execute("COMMIT")
         except BaseException:
             if db.in_transaction:
                 db.execute("ROLLBACK")

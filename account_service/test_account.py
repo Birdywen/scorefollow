@@ -9,7 +9,10 @@ from unittest import mock
 import urllib.error
 import urllib.request
 
+import hashlib
+
 from account_service import server
+from account_service.cloud import CloudStore
 from account_service.store import CODE_ATTEMPTS, SESSION_TTL, AccountStore, RateLimited, normalize_email
 
 SECRET = b"test-secret-0123456789"
@@ -120,6 +123,8 @@ ORIGIN = "https://mega-metro.online"
 
 
 class HttpTest(unittest.TestCase):
+    QUOTA = 500_000_000
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.mail = Path(self.tmp.name) / "mail"
@@ -127,6 +132,7 @@ class HttpTest(unittest.TestCase):
                                                 "ACCOUNT_COOKIE_SECURE": "0", "ACCOUNT_QUOTA_MODE": "enforce"})
         self.env.start()
         server.store = AccountStore(Path(self.tmp.name) / "db", SECRET)
+        server.cloud = CloudStore(server.store, quota_bytes=self.QUOTA)
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
@@ -158,7 +164,7 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(self.call("POST", "/code", {"email": email})[0], 200)
         for _ in range(100):  # mail goes out on a thread
             f = self.mail / f"{email}.txt"
-            if f.exists():
+            if f.exists() and "验证码是 " in f.read_text():
                 break
             threading.Event().wait(0.02)
         code = f.read_text().split("验证码是 ")[1][:6]
@@ -218,6 +224,93 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(self.call("DELETE", "/me", cookie=token, headers={"Origin": "https://evil.example"})[0], 403)
         self.assertEqual(self.call("DELETE", "/me", cookie=token)[0], 200)
         self.assertEqual(self.call("GET", "/me", cookie=token)[0], 401)
+
+
+class CloudHttpTest(HttpTest):
+    QUOTA = 3000
+
+    def put_raw(self, path, data, cookie, origin=ORIGIN):
+        req = urllib.request.Request(self.base + path, data=data, method="PUT", headers={
+            "Origin": origin, "Cookie": f"sf_session={cookie}", "Content-Type": "application/octet-stream"})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def get_raw(self, path, cookie, method="GET"):
+        req = urllib.request.Request(self.base + path, method=method, headers={"Cookie": f"sf_session={cookie}"})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+    @staticmethod
+    def sha(data):
+        return hashlib.sha256(data).hexdigest()
+
+    def upload(self, cookie, data):
+        status, _ = self.put_raw(f"/blobs/{self.sha(data)}", data, cookie)
+        self.assertEqual(status, 200)
+        return self.sha(data)
+
+    def test_sync_roundtrip_and_isolation(self):
+        a, _ = self.login("a@x.io")
+        b, _ = self.login("b@x.io")
+        audio = b"RIFF" + b"\x01" * 500
+        sha = self.upload(a, audio)
+        self.assertEqual(self.get_raw(f"/blobs/{sha}", a, "HEAD")[0], 200)
+        self.assertEqual(self.get_raw(f"/blobs/{sha}", b, "HEAD")[0], 404, "other user cannot see it")
+        self.assertEqual(self.get_raw(f"/blobs/{sha}", b)[0], 404)
+        self.assertEqual(self.get_raw(f"/blobs/{sha}", a), (200, audio))
+        self.assertEqual(self.call("PUT", "/takes/t1", {"audioSha": sha, "scoreKey": "etude", "created": 1000, "meta": {"instrument": "cello"}}, cookie=a)[0], 200)
+        self.assertEqual(self.call("PUT", "/takes/t1", {"audioSha": sha}, cookie=b)[1]["code"], "blob_missing", "b has no such blob")
+        res = {"summary": {"pitchScore": 90, "rhythmScore": 80}, "result": {"version": "x", "notes": []}}
+        self.assertEqual(self.call("PUT", "/takes/t1/result", res, cookie=a)[0], 200)
+        snap = self.call("GET", "/sync", cookie=a)[1]
+        self.assertEqual([t["id"] for t in snap["takes"]], ["t1"])
+        self.assertTrue(snap["takes"][0]["hasResult"])
+        self.assertEqual(snap["takes"][0]["meta"], {"instrument": "cello"})
+        self.assertEqual(self.call("GET", "/sync", cookie=b)[1]["takes"], [])
+        self.assertEqual(self.call("GET", "/takes/t1/result", cookie=a)[1]["summary"]["pitchScore"], 90)
+        self.assertEqual(self.call("GET", "/takes/t1/result", cookie=b)[0], 404)
+        hist = self.call("GET", "/history?scoreKey=etude", cookie=a)[1]["takes"]
+        self.assertEqual([h["summary"]["pitchScore"] for h in hist], [90])
+        xml = self.upload(a, b"<score-partwise/>")
+        self.assertEqual(self.call("PUT", "/scores/s1", {"title": "Etude", "kind": "xml", "fileSha": xml, "edits": {"measures": 3}}, cookie=a)[0], 200)
+        self.assertEqual(self.call("PUT", "/scores/s2", {"title": "x", "kind": "exe", "fileSha": xml}, cookie=a)[0], 400)
+        self.assertEqual(self.call("GET", "/sync", cookie=a)[1]["scores"][0]["edits"], {"measures": 3})
+
+    def test_blob_validation_and_quota(self):
+        a, _ = self.login("c@x.io")
+        data = b"x" * 1000
+        self.assertEqual(self.put_raw("/blobs/" + "0" * 64, data, a)[1]["code"], "hash_mismatch")
+        self.assertEqual(self.put_raw("/blobs/not-a-hash", data, a)[1]["code"], "bad_sha")
+        self.assertEqual(self.put_raw(f"/blobs/{self.sha(data)}", data, a, origin="https://evil.example")[0], 403)
+        self.upload(a, data)
+        self.upload(a, data)  # duplicate content costs nothing
+        self.upload(a, b"y" * 1000)
+        self.assertEqual(self.put_raw(f"/blobs/{self.sha(b'z' * 1500)}", b"z" * 1500, a)[1]["code"], "storage_full")
+        self.assertEqual(self.call("GET", "/sync", cookie=a)[1]["usedBytes"], 2000)
+        self.assertEqual(self.call("GET", "/sync")[0], 401)
+        self.assertEqual(self.call("GET", "/takes/../me/result", cookie=a)[0], 404)
+        self.assertEqual(self.call("PUT", "/takes/bad%20id", {"audioSha": self.sha(data)}, cookie=a)[1]["code"], "bad_id")
+
+    def test_delete_frees_blob_and_account_delete_clears_files(self):
+        a, _ = self.login("d@x.io")
+        sha = self.upload(a, b"q" * 800)
+        self.call("PUT", "/takes/t1", {"audioSha": sha}, cookie=a)
+        self.call("PUT", "/takes/t2", {"audioSha": sha}, cookie=a)
+        self.call("DELETE", "/takes/t1", cookie=a)
+        self.assertEqual(self.get_raw(f"/blobs/{sha}", a)[0], 200, "t2 still uses the audio")
+        self.assertEqual(self.call("DELETE", "/takes/t2", cookie=a)[0], 200)
+        self.assertEqual(self.get_raw(f"/blobs/{sha}", a)[0], 404, "last reference gone")
+        self.assertEqual(self.call("GET", "/sync", cookie=a)[1]["usedBytes"], 0)
+        sha = self.upload(a, b"r" * 800)
+        self.call("PUT", "/takes/t3", {"audioSha": sha}, cookie=a)
+        self.assertEqual(self.call("DELETE", "/me", cookie=a)[0], 200)
+        self.assertEqual(list((Path(self.tmp.name) / "db" / "blobs").iterdir()), [], "files removed with the account")
 
 
 if __name__ == "__main__":

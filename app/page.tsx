@@ -3850,7 +3850,7 @@ export default function ScoreFollowPage() {
       )}
 
        <div className={styles.workspace}>
-        {performanceOpen && <PerformancePanel lang={lang} dev={dev} pdfMeasures={barsTotal} pdfName={pdfName} pdfBytes={() => pdfBytesRef.current}
+        {performanceOpen && <PerformancePanel cloudBase={account.user ? BASE : ""} lang={lang} dev={dev} pdfMeasures={barsTotal} pdfName={pdfName} pdfBytes={() => pdfBytesRef.current}
           youtubeLink={mediaKind === "youtube" ? mediaURL : ""}
           captureYouTube={async ({ link, startSec, lengthSec, onProgress }) => {
             // Ask for tab audio first, while the click still counts as a user gesture.
